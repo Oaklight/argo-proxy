@@ -1,5 +1,6 @@
 # Define the function declaration for the model
 import json
+
 import httpx
 
 url = "https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/chat/"
@@ -81,12 +82,41 @@ dim_lights = {
     },
 }
 
-tools = [schedule_meeting_function, power_disco_ball, start_music, dim_lights]
+get_weather = {
+    "name": "get_weather",
+    "description": "Get the weather in a given location",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "location": {
+                "type": "string",
+                "description": "The city and state, e.g. Chicago, IL",
+            },
+            "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
+        },
+        "required": ["location"],
+    },
+}
+
+tools = [
+    schedule_meeting_function,
+    power_disco_ball,
+    start_music,
+    dim_lights,
+    get_weather,
+]
+
+messages = [
+    {
+        "role": "user",
+        "content": "What's the weather like in Chicago and Shanghai today?",
+    }
+]
 
 data = {
     "user": "pding",
     "model": "gemini25flash",
-    "messages": [{"role": "user", "content": "Turn this place into a party!"}],
+    "messages": messages,
     "stop": [],
     "temperature": 0.1,
     "top_p": 0.9,
@@ -98,12 +128,75 @@ headers = {
     "Content-Type": "application/json",
 }
 
+
 # Convert the dict to JSON
 payload = json.dumps(data)
+# Send POST request
+response = httpx.post(url, data=payload, headers=headers)
 
-# Add a header stating that the content type is JSON
-headers = {"Content-Type": "application/json"}
+# Receive the response data
+print("Status Code:", response.status_code)
+try:
+    print("LLM response: ", response.json()["response"])
+except Exception as e:
+    print(f"Error parsing JSON response: {e}")
+    print("Raw response text: ", response.text)
 
+
+mock_tool_call = {
+    "role": "assistant",
+    "tool_calls": [
+        {
+            "id": None,
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "arguments": '{"location": "Chicago, IL", "unit": "fahrenheit"}',
+            },
+        },
+        {
+            "id": None,
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "arguments": '{"location": "Shanghai, China", "unit": "fahrenheit"}',
+            },
+        },
+    ],
+    "content": "",
+}
+
+mock_tool_result = [
+    {
+        "role": "tool",
+        "tool_call_id": None,
+        "name": "get_weather",
+        "content": '{"temperature": 72, "unit": "fahrenheit", "description": "Sunny"}',
+    },
+    {
+        "role": "tool",
+        "tool_call_id": None,
+        "name": "get_weather",
+        "content": '{"temperature": 100, "unit": "fahrenheit", "description": "Sunny"}',
+    },
+]
+
+messages.append(mock_tool_call)
+messages.extend(mock_tool_result)
+
+data = {
+    "user": "pding",
+    "model": "gemini25flash",
+    "messages": messages,
+    "stop": [],
+    "temperature": 0.1,
+    "top_p": 0.9,
+    "tools": tools,
+}
+
+
+# Convert the dict to JSON
+payload = json.dumps(data)
 # Send POST request
 response = httpx.post(url, data=payload, headers=headers)
 
