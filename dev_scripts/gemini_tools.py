@@ -88,48 +88,100 @@ dim_lights = {
     },
 }
 
+get_weather = {
+    "name": "get_weather",
+    "description": "Get the weather in a given location",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "location": {
+                "type": "string",
+                "description": "The city and state, e.g. Chicago, IL",
+            },
+            "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
+        },
+        "required": ["location"],
+    },
+}
+
 
 # Configure the client and tools
 client = genai.Client(api_key=GEMINI_API_KEY, http_options=GEMINI_HTTP_OPTIONS)
 house_tools = [
-    types.Tool(function_declarations=[power_disco_ball, start_music, dim_lights])
+    types.Tool(
+        function_declarations=[
+            schedule_meeting_function,
+            power_disco_ball,
+            start_music,
+            dim_lights,
+            get_weather,
+        ]
+    )
 ]
 config = types.GenerateContentConfig(
     tools=house_tools,
     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
     # Force the model to call 'any' function, instead of chatting.
     tool_config=types.ToolConfig(
-        function_calling_config=types.FunctionCallingConfig(mode="ANY")
+        function_calling_config=types.FunctionCallingConfig(mode="AUTO")
     ),
 )
 
 
 messages = [
-    types.Content(parts=[types.Part(text="Turn this place into a party!")], role="user")
+    types.Content(
+        parts=[
+            types.Part(text="What's the weather like in Chicago and Shanghai today?")
+        ],
+        role="user",
+    )
 ]
 response = client.models.generate_content(
     model="gemini-2.5-flash", contents=messages, config=config
 )
-
+print("============= 1st Response ============")
+print(response.candidates[0])
 
 results = []
-# Print out each of the function calls requested from this single call
-print("Example 1: Forced function calling")
-for fn in response.function_calls:
-    # args = ", ".join(f"{key}={val}" for key, val in fn.args.items())
-    # print(f"{fn.name}({args})")
-    print(fn)
-    # fake some response
-    results.append(
-        types.Part.from_function_response(name=fn.name, response={"result": "done"})
+results.append(
+    types.Part.from_function_response(
+        name="get_weather",
+        response={
+            "result": {"temperature": 72, "unit": "fahrenheit", "description": "Sunny"}
+        },
     )
-# print(response.candidates)
+)
+results.append(
+    types.Part.from_function_response(
+        name="get_weather",
+        response={
+            "result": {"temperature": 100, "unit": "fahrenheit", "description": "Sunny"}
+        },
+    )
+)
+
+# results = []
+# # Print out each of the function calls requested from this single call
+# print("Example 1: Forced function calling")
+# for fn in response.function_calls:
+#     # args = ", ".join(f"{key}={val}" for key, val in fn.args.items())
+#     # print(f"{fn.name}({args})")
+#     print(fn)
+#     # fake some response
+#     results.append(
+#         types.Part.from_function_response(name=fn.name, response={"result": "done"})
+#     )
+# # print(response.candidates)
 
 messages.append(response.candidates[0].content)
 messages.append(types.Content(parts=results, role="user"))
 
+print("============= 2nd Request ============")
 print(messages)
+
 response = client.models.generate_content(
-    model="gemini-2.5-pro", contents=messages, config=config
+    model="gemini-2.5-flash", contents=messages, config=config
 )
+
+print("============= 2nd Response ============")
 print(response.candidates)
