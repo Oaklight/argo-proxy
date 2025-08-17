@@ -6,10 +6,8 @@ from google.genai import types
 
 load_dotenv()
 
-GEMINI_API_KEY = os.getenv("API_KEY")
-GEMINI_HTTP_OPTIONS = {
-    "base_url": os.getenv("GEMINI_BASE_URL"),
-}
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_HTTP_OPTIONS = {"base_url": "https://generativelanguage.googleapis.com/"}
 print(GEMINI_HTTP_OPTIONS)
 
 # Define the function declaration for the model
