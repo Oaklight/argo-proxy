@@ -12,7 +12,7 @@ Sections:
     - Google Gemini Types (TODO)
 """
 
-from typing import Dict, List, Literal, Optional, TypeAlias, Union
+from typing import Any, Dict, List, Literal, Optional, TypeAlias, Union
 
 from pydantic import BaseModel
 
@@ -290,3 +290,122 @@ class ToolUseBlock(BaseModel):
 # 3. GOOGLE GEMINI TYPES (TODO)
 # ======================================================================
 # Add Google Gemini-compatible function call types here...
+
+
+# ---------- LLM INPUT ---------
+## Use case:
+# ...
+# dim_lights = {
+#     "name": "dim_lights",
+#     "description": "Dim the lights.",
+#     "parameters": {
+#         "type": "object",
+#         "properties": {
+#             "brightness": {
+#                 "type": "number",
+#                 "description": "The brightness of the lights, 0.0 is off, 1.0 is full.",
+#             }
+#         },
+#         "required": ["brightness"],
+#     },
+# }
+# types.Tool(function_declarations=[power_disco_ball, start_music, dim_lights])
+
+
+class FunctionDeclaration(BaseModel):
+    """Defines a function that the model can generate JSON inputs for.
+
+    The inputs are based on `OpenAPI 3.0 specifications
+    <https://spec.openapis.org/oas/v3.0.3>`_.
+
+    Oaklight note:
+    Greatly simplified with Any type for behavior, parameters, parameters_json_schema, and response, and response_json_schema to match the Google Gemini API.
+    """
+
+    behavior: Optional[Any] = None
+    """Defines the function behavior."""
+
+    description: Optional[str] = None
+    (
+        """Optional. Description and purpose of the function. Model uses it to decide how and whether to call the function.""",
+    )
+
+    name: Optional[str] = None
+    (
+        """Required. The name of the function to call. Must start with a letter or an underscore. Must be a-z, A-Z, 0-9, or contain underscores, dots and dashes, with a maximum length of 64.""",
+    )
+
+    parameters: Optional[Any] = None
+    (
+        """Optional. Describes the parameters to this function in JSON Schema Object format. Reflects the Open API 3.03 Parameter Object. string Key: the name of the parameter. Parameter names are case sensitive. Schema Value: the Schema defining the type used for the parameter. For function with no parameters, this can be left unset. Parameter names must start with a letter or an underscore and must only contain chars a-z, A-Z, 0-9, or underscores with a maximum length of 64. Example with 1 required and 1 optional parameter: type: OBJECT properties: param1: type: STRING param2: type: INTEGER required: - param1""",
+    )
+
+    parameters_json_schema: Optional[Any] = None
+    (
+        """Optional. Describes the parameters to the function in JSON Schema format. The schema must describe an object where the properties are the parameters to the function. For example: ``` { "type": "object", "properties": { "name": { "type": "string" }, "age": { "type": "integer" } }, "additionalProperties": false, "required": ["name", "age"], "propertyOrdering": ["name", "age"] } ``` This field is mutually exclusive with `parameters`.""",
+    )
+
+    response: Optional[Any] = None
+    (
+        """Optional. Describes the output from this function in JSON Schema format. Reflects the Open API 3.03 Response Object. The Schema defines the type used for the response value of the function.""",
+    )
+
+    response_json_schema: Optional[Any] = None
+    (
+        """Optional. Describes the output from this function in JSON Schema format. The value specified by the schema is the response value of the function. This field is mutually exclusive with `response`.""",
+    )
+
+
+class Tool(BaseModel):
+    """Tool details of a tool that the model may use to generate a response."""
+
+    function_declarations: Optional[list[FunctionDeclaration]] = None
+    """List of function declarations that the tool supports."""
+
+    # Other fields of the Tool class omitted
+    ...
+
+
+# used in `tool_choice`
+## use case:
+# tool_config = types.ToolConfig(
+#     function_calling_config=types.FunctionCallingConfig(mode="ANY")
+# )
+
+
+class FunctionCallingConfig(BaseModel):
+    """Function calling config."""
+
+    mode: Optional[Literal["AUTO", "ANY", "NONE"]] = None
+    """Optional. Function calling mode."""
+
+    allowed_function_names: Optional[list[str]] = None
+    (
+        """Optional. Function names to call. Only set when the Mode is ANY. Function names should match [FunctionDeclaration.name]. With mode set to ANY, model will predict a function call from the set of function names provided.""",
+    )
+
+
+class ToolConfig(BaseModel):
+    """Tool config.
+
+    This config is shared for all tools provided in the request.
+    """
+
+    function_calling_config: Optional[FunctionCallingConfig] = None
+    """Optional. Function calling config."""
+
+    ...
+
+
+# --------- LLM OUTPUT ---------
+class FunctionCall(BaseModel):
+    """A function call."""
+
+    id: Optional[str] = None
+    """The unique id of the function call. If populated, the client to execute the `function_call` and return the response with the matching `id`."""
+
+    args: Optional[Dict[str, Any]] = None
+    """Optional. The function parameters and values in JSON object format. See [FunctionDeclaration.parameters] for parameter details."""
+
+    name: Optional[str] = None
+    """Required. The name of the function to call. Matches [FunctionDeclaration.name]."""
