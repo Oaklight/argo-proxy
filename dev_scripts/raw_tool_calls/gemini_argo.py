@@ -1,18 +1,9 @@
-import os
-
-from dotenv import load_dotenv
-from google import genai
-from google.genai import types
-
-load_dotenv()
-
-GEMINI_API_KEY = os.getenv("API_KEY")
-GEMINI_HTTP_OPTIONS = {
-    "base_url": os.getenv("GEMINI_BASE_URL"),
-}
-print(GEMINI_HTTP_OPTIONS)
-
 # Define the function declaration for the model
+import json
+import httpx
+
+url = "https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/chat/"
+
 schedule_meeting_function = {
     "name": "schedule_meeting",
     "description": "Schedules a meeting with specified attendees at a given time and date.",
@@ -90,48 +81,36 @@ dim_lights = {
     },
 }
 
+tools = [schedule_meeting_function, power_disco_ball, start_music, dim_lights]
 
-# Configure the client and tools
-client = genai.Client(api_key=GEMINI_API_KEY, http_options=GEMINI_HTTP_OPTIONS)
-house_tools = [
-    types.Tool(function_declarations=[power_disco_ball, start_music, dim_lights])
-]
-config = types.GenerateContentConfig(
-    tools=house_tools,
-    automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-    # Force the model to call 'any' function, instead of chatting.
-    tool_config=types.ToolConfig(
-        function_calling_config=types.FunctionCallingConfig(mode="ANY")
-    ),
-)
+data = {
+    "user": "pding",
+    "model": "gemini25flash",
+    "messages": [{"role": "user", "content": "Turn this place into a party!"}],
+    "stop": [],
+    "temperature": 0.1,
+    "top_p": 0.9,
+    "tools": tools,
+}
 
 
-messages = [
-    types.Content(parts=[types.Part(text="Turn this place into a party!")], role="user")
-]
-response = client.models.generate_content(
-    model="gemini-2.5-flash", contents=messages, config=config
-)
+headers = {
+    "Content-Type": "application/json",
+}
 
+# Convert the dict to JSON
+payload = json.dumps(data)
 
-results = []
-# Print out each of the function calls requested from this single call
-print("Example 1: Forced function calling")
-for fn in response.function_calls:
-    # args = ", ".join(f"{key}={val}" for key, val in fn.args.items())
-    # print(f"{fn.name}({args})")
-    print(fn)
-    # fake some response
-    results.append(
-        types.Part.from_function_response(name=fn.name, response={"result": "done"})
-    )
-# print(response.candidates)
+# Add a header stating that the content type is JSON
+headers = {"Content-Type": "application/json"}
 
-messages.append(response.candidates[0].content)
-messages.append(types.Content(parts=results, role="user"))
+# Send POST request
+response = httpx.post(url, data=payload, headers=headers)
 
-print(messages)
-response = client.models.generate_content(
-    model="gemini-2.5-pro", contents=messages, config=config
-)
-print(response.candidates)
+# Receive the response data
+print("Status Code:", response.status_code)
+try:
+    print("LLM response: ", response.json()["response"])
+except Exception as e:
+    print(f"Error parsing JSON response: {e}")
+    print("Raw response text: ", response.text)
