@@ -216,7 +216,7 @@ def is_supported_image_format(content_type: str, url: str = "") -> bool:
 
 def downsample_images_for_payload(
     images: List[tuple[bytes, str]], max_payload_size: int = 20971520
-) -> List[bytes]:
+) -> List[tuple[bytes, str]]:
     """
     Reduce image quality to fit within the total payload size limit.
 
@@ -225,7 +225,7 @@ def downsample_images_for_payload(
         max_payload_size: Maximum allowed total payload size in bytes (default 20MB).
 
     Returns:
-        List of processed image data that fits within the payload limit.
+        List of (processed_image_data, final_content_type) tuples that fits within the payload limit.
     """
     if not PIL_AVAILABLE:
         logger.warning("PIL not available, skipping image downsampling")
@@ -233,7 +233,7 @@ def downsample_images_for_payload(
 
     total_size = sum(len(img_data) for img_data, _ in images)
     if total_size <= max_payload_size:
-        return [img_data for img_data, _ in images]
+        return [(img_data, content_type) for img_data, content_type in images]
 
     logger.info(
         f"Total payload size {total_size} bytes exceeds limit {max_payload_size} bytes, reducing image quality"
@@ -248,6 +248,7 @@ def downsample_images_for_payload(
             # Open image with PIL
             image = Image.open(io.BytesIO(img_data))
             original_size = len(img_data)
+            final_content_type = content_type  # Track the final content type
 
             # Determine output format and progressive quality reduction
             if content_type in ["image/jpeg", "image/jpg"]:
@@ -255,6 +256,7 @@ def downsample_images_for_payload(
                 quality = max(int(85 * target_ratio), 20)  # Min quality 20
                 output_format = "JPEG"
                 save_kwargs = {"quality": quality, "optimize": True}
+                final_content_type = "image/jpeg"
 
             elif content_type == "image/png":
                 # For PNG, convert to JPEG with reduced quality for better compression
@@ -278,12 +280,14 @@ def downsample_images_for_payload(
                 )  # Lower quality for PNG->JPEG conversion
                 output_format = "JPEG"
                 save_kwargs = {"quality": quality, "optimize": True}
+                final_content_type = "image/jpeg"  # PNG converted to JPEG
 
             elif content_type == "image/webp":
                 # For WebP, reduce quality
                 quality = max(int(80 * target_ratio), 15)
                 output_format = "WEBP"
                 save_kwargs = {"quality": quality, "method": 6, "optimize": True}
+                final_content_type = "image/webp"
 
             elif content_type == "image/gif":
                 # For GIF, convert to JPEG with reduced quality
@@ -292,6 +296,7 @@ def downsample_images_for_payload(
                 quality = max(int(70 * target_ratio), 15)
                 output_format = "JPEG"
                 save_kwargs = {"quality": quality, "optimize": True}
+                final_content_type = "image/jpeg"  # GIF converted to JPEG
 
             else:
                 # Default: convert to JPEG with reduced quality
@@ -300,6 +305,7 @@ def downsample_images_for_payload(
                 quality = max(int(75 * target_ratio), 15)
                 output_format = "JPEG"
                 save_kwargs = {"quality": quality, "optimize": True}
+                final_content_type = "image/jpeg"  # Default conversion to JPEG
 
             # Save to bytes
             output_buffer = io.BytesIO()
@@ -308,14 +314,15 @@ def downsample_images_for_payload(
 
             logger.info(
                 f"Image quality reduced: {original_size} bytes -> {len(downsampled_data)} bytes "
-                f"(quality: {save_kwargs.get('quality', 'optimized')}, format: {output_format})"
+                f"(quality: {save_kwargs.get('quality', 'optimized')}, format: {output_format}, "
+                f"content-type: {content_type} -> {final_content_type})"
             )
 
-            processed_images.append(downsampled_data)
+            processed_images.append((downsampled_data, final_content_type))
 
         except Exception as e:
             logger.warning(f"Failed to reduce image quality: {e}, using original")
-            processed_images.append(img_data)
+            processed_images.append((img_data, content_type))
 
     return processed_images
 
@@ -653,17 +660,20 @@ async def process_chat_images(
                 (img_data, content_type)
                 for img_data, content_type, _, _ in successful_downloads
             ]
-            processed_images = downsample_images_for_payload(
+            processed_images_with_types = downsample_images_for_payload(
                 images_for_processing, max_payload_size
             )
 
             # Update the base64 data with processed images
-            for i, (_, content_type, url, _) in enumerate(successful_downloads):
-                if i < len(processed_images):
-                    processed_b64 = base64.b64encode(processed_images[i]).decode(
-                        "utf-8"
+            for i, (_, _, url, _) in enumerate(successful_downloads):
+                if i < len(processed_images_with_types):
+                    processed_img_data, final_content_type = (
+                        processed_images_with_types[i]
                     )
-                    url_to_base64[url] = f"data:{content_type};base64,{processed_b64}"
+                    processed_b64 = base64.b64encode(processed_img_data).decode("utf-8")
+                    url_to_base64[url] = (
+                        f"data:{final_content_type};base64,{processed_b64}"
+                    )
                 else:
                     url_to_base64[url] = None
         else:
