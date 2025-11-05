@@ -19,6 +19,73 @@ SUPPORTED_IMAGE_FORMATS: Set[str] = {
 SUPPORTED_EXTENSIONS: Set[str] = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 
 
+def truncate_base64_for_logging(data_url: str, max_length: int = 100) -> str:
+    """
+    Truncates base64 data URLs for cleaner logging.
+
+    Args:
+        data_url: The data URL containing base64 content.
+        max_length: Maximum length to show before truncation.
+
+    Returns:
+        Truncated string with placeholder for readability.
+    """
+    if not data_url.startswith("data:"):
+        return data_url
+
+    # Split into header and data parts
+    if ";base64," in data_url:
+        header, base64_data = data_url.split(";base64,", 1)
+        if len(base64_data) > max_length:
+            truncated = base64_data[:max_length]
+            remaining_chars = len(base64_data) - max_length
+            return f"{header};base64,{truncated}...[{remaining_chars} more chars]"
+
+    return data_url
+
+
+def sanitize_data_for_logging(
+    data: Dict[str, Any], max_base64_length: int = 100
+) -> Dict[str, Any]:
+    """
+    Sanitizes request data for logging by truncating base64 content.
+
+    Args:
+        data: The request data dictionary.
+        max_base64_length: Maximum length to show for base64 content.
+
+    Returns:
+        Sanitized data dictionary with truncated base64 content.
+    """
+    import copy
+
+    # Deep copy to avoid modifying original data
+    sanitized = copy.deepcopy(data)
+
+    # Process messages if they exist
+    if "messages" in sanitized and isinstance(sanitized["messages"], list):
+        for message in sanitized["messages"]:
+            if isinstance(message, dict) and "content" in message:
+                content = message["content"]
+
+                # Process list-type content (multimodal messages)
+                if isinstance(content, list):
+                    for content_part in content:
+                        if (
+                            isinstance(content_part, dict)
+                            and content_part.get("type") == "image_url"
+                            and "image_url" in content_part
+                            and "url" in content_part["image_url"]
+                        ):
+                            url = content_part["image_url"]["url"]
+                            if url.startswith("data:"):
+                                content_part["image_url"]["url"] = (
+                                    truncate_base64_for_logging(url, max_base64_length)
+                                )
+
+    return sanitized
+
+
 async def download_image_to_base64(
     session: aiohttp.ClientSession, url: str, timeout: int = 30
 ) -> Optional[str]:
@@ -215,7 +282,7 @@ async def process_image_content_part(
         content_part["image_url"] = image_url_obj.copy()
         content_part["image_url"]["url"] = base64_url
         logger.info(
-            f"Successfully converted image URL to base64 (size: {len(base64_url)} chars)"
+            f"Successfully converted image URL to base64 (size: {len(base64_url)} chars): {truncate_base64_for_logging(base64_url)}"
         )
     else:
         logger.error(f"Failed to convert image URL to base64: {url}")
