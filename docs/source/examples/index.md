@@ -23,6 +23,11 @@ For examples of how to use the raw request utilities (e.g., `httpx`, `requests`)
 - **Embedding Example**: [embedding.py](https://github.com/Oaklight/argo-proxy/blob/master/examples/raw_requests/embedding.py)
 - **o1 Mini Chat Completions Example**: [o1_mini_chat_completions.py](https://github.com/Oaklight/argo-proxy/blob/master/examples/raw_requests/o1_mini_chat_completions.py)
 
+### Vision and Image Input
+
+- **Image Chat (Base64) Example**: [image_chat_base64.py](https://github.com/Oaklight/argo-proxy/blob/master/examples/raw_requests/image_chat_base64.py)
+- **Image Chat (URLs) Example**: [image_chat_direct_urls.py](https://github.com/Oaklight/argo-proxy/blob/master/examples/raw_requests/image_chat_direct_urls.py)
+
 ## OpenAI Client
 
 For examples demonstrating the use case of the OpenAI client (`openai.OpenAI`), refer to:
@@ -35,6 +40,11 @@ For examples demonstrating the use case of the OpenAI client (`openai.OpenAI`), 
 - **Responses Stream Example**: [responses_stream.py](https://github.com/Oaklight/argo-proxy/blob/master/examples/openai_client/responses_stream.py)
 - **Embedding Example**: [embedding.py](https://github.com/Oaklight/argo-proxy/blob/master/examples/openai_client/embedding.py)
 - **O3 Mini Simple Chatbot Example**: [o3_mini_simple_chatbot.py](https://github.com/Oaklight/argo-proxy/blob/master/examples/openai_client/o3_mini_simple_chatbot.py)
+
+### Vision and Image Input
+
+- **Image Chat (Base64) Example**: [image_chat_base64.py](https://github.com/Oaklight/argo-proxy/blob/master/examples/openai_client/image_chat_base64.py)
+- **Image Chat (URLs) Example**: [image_chat_direct_urls.py](https://github.com/Oaklight/argo-proxy/blob/master/examples/openai_client/image_chat_direct_urls.py)
 
 ## Tool Call Examples
 
