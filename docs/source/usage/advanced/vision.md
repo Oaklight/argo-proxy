@@ -9,8 +9,13 @@ Argo-proxy provides comprehensive support for vision models and image input proc
 - [Key Features](#key-features)
 - [Basic Usage Examples](#basic-usage-examples)
   - [Image Chat with URLs](#image-chat-with-urls)
+  - [Image Chat with Base64](#image-chat-with-base64)
   - [OpenAI Client Usage](#openai-client-usage)
   - [Multiple Images](#multiple-images)
+- [Base64 Usage](#base64-usage)
+  - [When to Use Base64](#when-to-use-base64)
+  - [Base64 Data URL Format](#base64-data-url-format)
+  - [Best Practices for Base64](#best-practices-for-base64)
 - [Configuration](#configuration)
   - [Image Processing Settings](#image-processing-settings)
   - [Payload Compression](#payload-compression)
@@ -24,7 +29,13 @@ Argo-proxy provides comprehensive support for vision models and image input proc
 
 ## Overview
 
-The vision feature automatically processes image inputs in chat completions, supporting both base64-encoded images and HTTP/HTTPS image URLs. When you provide image URLs, argo-proxy automatically downloads and converts them to base64 format for compatibility with AI models.
+The vision feature provides comprehensive support for image inputs in chat completions, supporting both base64-encoded images and HTTP/HTTPS image URLs. You can:
+
+- **Use HTTP/HTTPS URLs**: Argo-proxy automatically downloads and converts them to base64 format for compatibility with AI models
+- **Use Base64 Data URLs**: Directly provide base64-encoded images using the standard `data:image/type;base64,data` format
+- **Mix Both Formats**: Combine URL and base64 images in the same request
+
+This flexibility allows you to work with both remote images and local files seamlessly, with automatic format handling and optimization.
 
 ## Supported Image Formats
 
@@ -75,7 +86,55 @@ response = requests.post(
 )
 ```
 
+### Image Chat with Base64
+
+For local images or when you need direct control over image data, use base64 encoding:
+
+```python
+import base64
+import mimetypes
+import requests
+
+def file_to_data_url(file_path: str) -> str:
+    """Convert a local image file to a data URL with base64 encoding."""
+    mime_type, _ = mimetypes.guess_type(file_path)
+    mime_type = mime_type or "application/octet-stream"
+
+    with open(file_path, "rb") as f:
+        base64_data = base64.b64encode(f.read()).decode("utf-8")
+
+    return f"data:{mime_type};base64,{base64_data}"
+
+# Convert local image to base64 data URL
+image_data_url = file_to_data_url("path/to/your/image.jpg")
+
+response = requests.post(
+    "http://localhost:8000/v1/chat/completions",
+    headers={"Authorization": "Bearer your_anl_username"},
+    json={
+        "model": "argo:gpt-4.1-nano",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "What's in this image?"},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": image_data_url
+                        }
+                    }
+                ]
+            }
+        ],
+        "max_tokens": 300
+    }
+)
+```
+
 ### OpenAI Client Usage
+
+#### With URLs
 
 ```python
 from openai import OpenAI
@@ -105,7 +164,54 @@ response = client.chat.completions.create(
 )
 ```
 
+#### With Base64
+
+```python
+import base64
+import mimetypes
+from openai import OpenAI
+
+def file_to_data_url(file_path: str) -> str:
+    """Convert a local image file to a data URL with base64 encoding."""
+    mime_type, _ = mimetypes.guess_type(file_path)
+    mime_type = mime_type or "application/octet-stream"
+
+    with open(file_path, "rb") as f:
+        base64_data = base64.b64encode(f.read()).decode("utf-8")
+
+    return f"data:{mime_type};base64,{base64_data}"
+
+client = OpenAI(
+    api_key="your_anl_username",
+    base_url="http://localhost:8000/v1"
+)
+
+# Convert local image to base64
+image_data_url = file_to_data_url("path/to/your/image.jpg")
+
+response = client.chat.completions.create(
+    model="argo:gpt-4.1-nano",
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Analyze this image"},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": image_data_url
+                    }
+                }
+            ]
+        }
+    ],
+    max_tokens=300
+)
+```
+
 ### Multiple Images
+
+#### With URLs
 
 ```python
 response = client.chat.completions.create(
@@ -130,6 +236,90 @@ response = client.chat.completions.create(
 )
 ```
 
+#### With Base64
+
+```python
+import base64
+import mimetypes
+from pathlib import Path
+
+def file_to_data_url(file_path: str) -> str:
+    """Convert a local image file to a data URL with base64 encoding."""
+    mime_type, _ = mimetypes.guess_type(file_path)
+    mime_type = mime_type or "application/octet-stream"
+
+    with open(file_path, "rb") as f:
+        base64_data = base64.b64encode(f.read()).decode("utf-8")
+
+    return f"data:{mime_type};base64,{base64_data}"
+
+# Convert multiple local images
+image_paths = ["image1.jpg", "image2.jpg"]
+image_data_urls = [file_to_data_url(path) for path in image_paths]
+
+response = client.chat.completions.create(
+    model="argo:gpt-4.1-nano",
+    messages=[
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Compare these images:"},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": image_data_urls[0]}
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {"url": image_data_urls[1]}
+                }
+            ]
+        }
+    ],
+    max_tokens=500
+)
+```
+
+## Base64 Usage
+
+### When to Use Base64
+
+Base64 encoding is ideal for:
+
+- **Local Images**: When working with images stored locally on your system
+- **Security**: When you don't want to expose image URLs publicly
+- **Control**: When you need precise control over image data and processing
+- **Offline Processing**: When internet connectivity is limited or unreliable
+- **Privacy**: When images contain sensitive information that shouldn't be transmitted via URLs
+
+### Base64 Data URL Format
+
+Argo-proxy supports the standard data URL format for base64-encoded images:
+
+```
+data:[<mediatype>][;base64],<data>
+```
+
+Examples:
+
+- `data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD...`
+- `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB...`
+- `data:image/webp;base64,UklGRiIAAABXRUJQVlA4IBYAAAAw...`
+
+### Best Practices for Base64
+
+#### 1. Proper MIME Type Detection
+
+```python
+import mimetypes
+
+def get_image_mime_type(file_path: str) -> str:
+    """Get the correct MIME type for an image file."""
+    mime_type, _ = mimetypes.guess_type(file_path)
+    return mime_type or "application/octet-stream"
+```
+
+Some models could still process the base64 encoded image data even if `mime_type` is fixed to `jpeg`. We encourage you to carefully explore and fully test out before making production requests.
+
 ## Configuration
 
 ### Image Processing Settings
@@ -143,6 +333,8 @@ max_payload_size: 20 # MB default (total for all images)
 image_timeout: 30 # seconds
 concurrent_downloads: 10 # parallel downloads
 ```
+
+Some upstream providers have payload size limits. For example, Anthropic's Claude models have a 30MB limit and OpenAI has 50MB in their public facing API service. It's not clear what's the maximum payload size for Argo's OpenAI, Anthropic, and Google models. If you happen to find out, please email me and Matthew Dearing.
 
 ### Payload Compression
 
