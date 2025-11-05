@@ -218,7 +218,7 @@ def downsample_images_for_payload(
     images: List[tuple[bytes, str]], max_payload_size: int = 20971520
 ) -> List[bytes]:
     """
-    Downsample images to fit within the total payload size limit.
+    Reduce image quality to fit within the total payload size limit.
 
     Args:
         images: List of (image_data, content_type) tuples.
@@ -236,11 +236,11 @@ def downsample_images_for_payload(
         return [img_data for img_data, _ in images]
 
     logger.info(
-        f"Total payload size {total_size} bytes exceeds limit {max_payload_size} bytes, downsampling images"
+        f"Total payload size {total_size} bytes exceeds limit {max_payload_size} bytes, reducing image quality"
     )
 
-    # Calculate reduction factor for all images
-    reduction_factor = (max_payload_size / total_size) ** 0.5
+    # Calculate target compression ratio
+    target_ratio = max_payload_size / total_size
 
     processed_images = []
     for img_data, content_type in images:
@@ -249,40 +249,65 @@ def downsample_images_for_payload(
             image = Image.open(io.BytesIO(img_data))
             original_size = len(img_data)
 
-            # Calculate new dimensions
-            new_width = max(int(image.width * reduction_factor), 64)
-            new_height = max(int(image.height * reduction_factor), 64)
-
-            # Resize image
-            resized_image = image.resize(
-                (new_width, new_height), Image.Resampling.LANCZOS
-            )
-
-            # Determine output format and quality
-            output_format = "JPEG"
-            save_kwargs = {"quality": 85, "optimize": True}
-
-            if content_type == "image/png":
-                output_format = "PNG"
-                save_kwargs = {"optimize": True}
+            # Determine output format and progressive quality reduction
+            if content_type in ["image/jpeg", "image/jpg"]:
+                # For JPEG, reduce quality
+                quality = max(int(85 * target_ratio), 20)  # Min quality 20
+                output_format = "JPEG"
+                save_kwargs = {"quality": quality, "optimize": True}
+                
+            elif content_type == "image/png":
+                # For PNG, convert to JPEG with reduced quality for better compression
+                if image.mode in ("RGBA", "LA", "P"):
+                    # Handle transparency by creating white background
+                    background = Image.new("RGB", image.size, (255, 255, 255))
+                    if image.mode == "P":
+                        image = image.convert("RGBA")
+                    background.paste(image, mask=image.split()[-1] if image.mode in ("RGBA", "LA") else None)
+                    image = background
+                else:
+                    image = image.convert("RGB")
+                
+                quality = max(int(75 * target_ratio), 15)  # Lower quality for PNG->JPEG conversion
+                output_format = "JPEG"
+                save_kwargs = {"quality": quality, "optimize": True}
+                
             elif content_type == "image/webp":
+                # For WebP, reduce quality
+                quality = max(int(80 * target_ratio), 15)
                 output_format = "WEBP"
-                save_kwargs = {"quality": 85, "method": 6}
+                save_kwargs = {"quality": quality, "method": 6, "optimize": True}
+                
+            elif content_type == "image/gif":
+                # For GIF, convert to JPEG with reduced quality
+                if image.mode != "RGB":
+                    image = image.convert("RGB")
+                quality = max(int(70 * target_ratio), 15)
+                output_format = "JPEG"
+                save_kwargs = {"quality": quality, "optimize": True}
+                
+            else:
+                # Default: convert to JPEG with reduced quality
+                if image.mode != "RGB":
+                    image = image.convert("RGB")
+                quality = max(int(75 * target_ratio), 15)
+                output_format = "JPEG"
+                save_kwargs = {"quality": quality, "optimize": True}
 
             # Save to bytes
             output_buffer = io.BytesIO()
-            resized_image.save(output_buffer, format=output_format, **save_kwargs)
+            image.save(output_buffer, format=output_format, **save_kwargs)
             downsampled_data = output_buffer.getvalue()
 
             logger.info(
-                f"Image downsampled: {original_size} bytes -> {len(downsampled_data)} bytes "
-                f"({image.width}x{image.height} -> {new_width}x{new_height})"
+                f"Image quality reduced: {original_size} bytes -> {len(downsampled_data)} bytes "
+                f"(quality: {save_kwargs.get('quality', 'optimized')}, format: {output_format})"
             )
 
             processed_images.append(downsampled_data)
 
         except Exception as e:
-            logger.warning(f"Failed to downsample image: {e}, using original")
+            logger.warning(f"Failed to reduce image quality: {e}, using original")
             processed_images.append(img_data)
 
     return processed_images
