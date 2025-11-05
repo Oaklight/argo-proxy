@@ -11,6 +11,7 @@ load_dotenv()
 MODEL = os.getenv("MODEL", "argo:gpt-4o")
 BASE_URL = os.getenv("BASE_URL", "http://localhost:44501")
 API_KEY = os.getenv("API_KEY", "whatever+random")
+STREAM = os.getenv("STREAM", "false").lower() == "true"
 
 client = openai.OpenAI(
     api_key=API_KEY,
@@ -53,10 +54,15 @@ def image_chat_test():
             model=MODEL,
             messages=messages,
             max_tokens=4096,
-            stream=False,
+            stream=STREAM,
         )
         print("Response Body:")
-        print(response)
+        if STREAM:
+            for chunk in response:
+                # Stream each chunk as it arrives
+                print(chunk)
+        else:
+            print(response)
     except Exception as e:
         print("\nError:", e)
 
