@@ -643,7 +643,7 @@ async def proxy_request(
             raise ValueError("Invalid input. Expected JSON data.")
         if config.verbose:
             logger.info(make_bar("[chat] input"))
-            logger.info(json.dumps(data, indent=4))
+            logger.info(json.dumps(sanitize_data_for_logging(data), indent=4))
             logger.info(make_bar())
 
         # Use the shared HTTP session from app context for connection pooling
