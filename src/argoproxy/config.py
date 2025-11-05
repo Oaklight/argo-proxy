@@ -52,6 +52,7 @@ class ArgoConfig:
     _provider_tool_format: bool = False
 
     # Image processing settings
+    enable_payload_control: bool = False  # Enable automatic payload size control
     max_payload_size: int = 20  # MB default (total for all images)
     image_timeout: int = 30  # seconds
     concurrent_downloads: int = 10  # parallel downloads

@@ -255,7 +255,7 @@ def downsample_images_for_payload(
                 quality = max(int(85 * target_ratio), 20)  # Min quality 20
                 output_format = "JPEG"
                 save_kwargs = {"quality": quality, "optimize": True}
-                
+
             elif content_type == "image/png":
                 # For PNG, convert to JPEG with reduced quality for better compression
                 if image.mode in ("RGBA", "LA", "P"):
@@ -263,21 +263,28 @@ def downsample_images_for_payload(
                     background = Image.new("RGB", image.size, (255, 255, 255))
                     if image.mode == "P":
                         image = image.convert("RGBA")
-                    background.paste(image, mask=image.split()[-1] if image.mode in ("RGBA", "LA") else None)
+                    background.paste(
+                        image,
+                        mask=image.split()[-1]
+                        if image.mode in ("RGBA", "LA")
+                        else None,
+                    )
                     image = background
                 else:
                     image = image.convert("RGB")
-                
-                quality = max(int(75 * target_ratio), 15)  # Lower quality for PNG->JPEG conversion
+
+                quality = max(
+                    int(75 * target_ratio), 15
+                )  # Lower quality for PNG->JPEG conversion
                 output_format = "JPEG"
                 save_kwargs = {"quality": quality, "optimize": True}
-                
+
             elif content_type == "image/webp":
                 # For WebP, reduce quality
                 quality = max(int(80 * target_ratio), 15)
                 output_format = "WEBP"
                 save_kwargs = {"quality": quality, "method": 6, "optimize": True}
-                
+
             elif content_type == "image/gif":
                 # For GIF, convert to JPEG with reduced quality
                 if image.mode != "RGB":
@@ -285,7 +292,7 @@ def downsample_images_for_payload(
                 quality = max(int(70 * target_ratio), 15)
                 output_format = "JPEG"
                 save_kwargs = {"quality": quality, "optimize": True}
-                
+
             else:
                 # Default: convert to JPEG with reduced quality
                 if image.mode != "RGB":
@@ -593,6 +600,9 @@ async def process_chat_images(
 
     # Get configuration values
     timeout = getattr(config, "image_timeout", 30) if config else 30
+    enable_payload_control = (
+        getattr(config, "enable_payload_control", True) if config else True
+    )
     max_payload_mb = getattr(config, "max_payload_size", 20) if config else 20
     max_payload_size = max_payload_mb * 1024 * 1024  # Convert MB to bytes
 
@@ -634,9 +644,9 @@ async def process_chat_images(
             f"Total image payload size: {total_size} bytes ({total_size / 1024 / 1024:.2f} MB)"
         )
 
-        if total_size > max_payload_size:
+        if enable_payload_control and total_size > max_payload_size:
             logger.warning(
-                f"Payload size [{total_size}] MB exceeds limit [{max_payload_size}]MB, downsampling images"
+                f"Payload size [{total_size / 1024 / 1024:.2f}] MB exceeds limit [{max_payload_mb}] MB, reducing image quality"
             )
             # Prepare data for downsampling
             images_for_processing = [
@@ -657,7 +667,11 @@ async def process_chat_images(
                 else:
                     url_to_base64[url] = None
         else:
-            # Use original images
+            # Use original images (either payload control disabled or size within limit)
+            if not enable_payload_control and total_size > max_payload_size:
+                logger.info(
+                    f"Payload control disabled - passing through {total_size / 1024 / 1024:.2f} MB payload (exceeds {max_payload_mb} MB limit)"
+                )
             for _, _, url, original_result in successful_downloads:
                 url_to_base64[url] = original_result
 
