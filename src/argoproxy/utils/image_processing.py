@@ -1,11 +1,22 @@
 import asyncio
 import base64
 import mimetypes
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 from urllib.parse import urlparse
 
 import aiohttp
 from loguru import logger
+
+# Supported image formats
+SUPPORTED_IMAGE_FORMATS: Set[str] = {
+    "image/png",
+    "image/jpeg",
+    "image/jpg",
+    "image/webp",
+    "image/gif",
+}
+
+SUPPORTED_EXTENSIONS: Set[str] = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 
 
 async def download_image_to_base64(
@@ -42,16 +53,24 @@ async def download_image_to_base64(
             image_data = await response.read()
 
             # Determine MIME type
-            content_type = response.headers.get("content-type")
+            content_type = response.headers.get("content-type", "").lower()
             if not content_type:
                 # Fallback to guessing from URL
                 mime_type, _ = mimetypes.guess_type(url)
-                content_type = mime_type or "application/octet-stream"
+                content_type = (mime_type or "application/octet-stream").lower()
 
-            # Validate it's an image
-            if not content_type.startswith("image/"):
+            # Validate it's a supported image format
+            if not is_supported_image_format(content_type, url):
                 logger.warning(
-                    f"URL does not point to an image: {url} (content-type: {content_type})"
+                    f"Unsupported image format: {url} (content-type: {content_type})"
+                )
+                logger.info(f"Supported formats: {', '.join(SUPPORTED_IMAGE_FORMATS)}")
+                return None
+
+            # Validate image content with magic bytes
+            if not validate_image_content(image_data, content_type):
+                logger.warning(
+                    f"Image content validation failed: {url} (content-type: {content_type})"
                 )
                 return None
 
@@ -91,6 +110,70 @@ def is_http_url(url: str) -> bool:
         True if it's an HTTP/HTTPS URL, False otherwise.
     """
     return url.startswith(("http://", "https://"))
+
+
+def is_supported_image_format(content_type: str, url: str = "") -> bool:
+    """
+    Checks if the content type or URL extension indicates a supported image format.
+
+    Args:
+        content_type: The MIME type from HTTP headers.
+        url: The URL to check for file extension fallback.
+
+    Returns:
+        True if it's a supported image format, False otherwise.
+    """
+    # Check content type first
+    if content_type and content_type.lower() in SUPPORTED_IMAGE_FORMATS:
+        return True
+
+    # Fallback to URL extension
+    if url:
+        parsed_url = urlparse(url)
+        path = parsed_url.path.lower()
+        for ext in SUPPORTED_EXTENSIONS:
+            if path.endswith(ext):
+                return True
+
+    return False
+
+
+def validate_image_content(image_data: bytes, content_type: str) -> bool:
+    """
+    Validates image content by checking magic bytes/signatures.
+
+    Args:
+        image_data: The raw image data.
+        content_type: The MIME type.
+
+    Returns:
+        True if the image data matches expected format, False otherwise.
+    """
+    if not image_data or len(image_data) < 8:
+        return False
+
+    # Check magic bytes for different formats
+    if content_type in ["image/png"]:
+        # PNG signature: 89 50 4E 47 0D 0A 1A 0A
+        return image_data[:8] == b"\x89PNG\r\n\x1a\n"
+
+    elif content_type in ["image/jpeg", "image/jpg"]:
+        # JPEG signature: FF D8 FF
+        return image_data[:3] == b"\xff\xd8\xff"
+
+    elif content_type in ["image/webp"]:
+        # WebP signature: RIFF....WEBP
+        return (
+            len(image_data) >= 12
+            and image_data[:4] == b"RIFF"
+            and image_data[8:12] == b"WEBP"
+        )
+
+    elif content_type in ["image/gif"]:
+        # GIF signature: GIF87a or GIF89a
+        return image_data[:6] == b"GIF87a" or image_data[:6] == b"GIF89a"
+
+    return True  # Allow other formats to pass through
 
 
 async def process_image_content_part(
