@@ -14,6 +14,7 @@ argo_embedding_url: "https://apps.inside.anl.gov/argoapi/api/v1/resource/embed/"
 verbose: true
 
 # Image processing settings
-max_payload_size: 20 # MB default (total for all images)
-image_timeout: 30 # seconds
-concurrent_downloads: 10 # parallel downloads
+enable_payload_control: false  # Enable automatic payload size control
+max_payload_size: 20  # MB default (total for all images)
+image_timeout: 30  # seconds
+concurrent_downloads: 10  # parallel downloads
