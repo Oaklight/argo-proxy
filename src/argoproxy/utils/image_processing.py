@@ -1,7 +1,7 @@
 import asyncio
 import base64
 import mimetypes
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 from urllib.parse import urlparse
 
 import aiohttp
@@ -243,18 +243,50 @@ def validate_image_content(image_data: bytes, content_type: str) -> bool:
     return True  # Allow other formats to pass through
 
 
-async def process_image_content_part(
-    session: aiohttp.ClientSession, content_part: Dict[str, Any]
-) -> Dict[str, Any]:
+def collect_image_urls_from_content_part(content_part: Dict[str, Any]) -> List[str]:
     """
-    Processes a single content part that may contain an image URL.
+    Collects image URLs from a single content part.
 
     Args:
-        session: The aiohttp ClientSession for making requests.
         content_part: A content part dictionary from a message.
 
     Returns:
-        The processed content part with image URL converted to base64 if needed.
+        List of image URLs that need to be downloaded.
+    """
+    urls = []
+
+    # Only process image_url type content
+    if content_part.get("type") != "image_url":
+        return urls
+
+    image_url_obj = content_part.get("image_url", {})
+    url = image_url_obj.get("url", "")
+
+    # Skip if already a data URL
+    if is_data_url(url):
+        return urls
+
+    # Only collect HTTP/HTTPS URLs
+    if is_http_url(url):
+        urls.append(url)
+    else:
+        logger.warning(f"Unsupported URL scheme for image: {url}")
+
+    return urls
+
+
+async def apply_downloaded_images_to_content_part(
+    content_part: Dict[str, Any], url_to_base64: Dict[str, Optional[str]]
+) -> Dict[str, Any]:
+    """
+    Applies downloaded base64 images to a content part.
+
+    Args:
+        content_part: A content part dictionary from a message.
+        url_to_base64: Mapping of URLs to their base64 representations.
+
+    Returns:
+        The processed content part with image URL converted to base64 if available.
     """
     # Only process image_url type content
     if content_part.get("type") != "image_url":
@@ -267,22 +299,15 @@ async def process_image_content_part(
     if is_data_url(url):
         return content_part
 
-    # Only process HTTP/HTTPS URLs
-    if not is_http_url(url):
-        logger.warning(f"Unsupported URL scheme for image: {url}")
-        return content_part
-
-    # Download and convert to base64
-    logger.info(f"Converting image URL to base64: {url}")
-    base64_url = await download_image_to_base64(session, url)
-
-    if base64_url:
+    # Apply downloaded base64 if available
+    if url in url_to_base64 and url_to_base64[url]:
+        base64_url = url_to_base64[url]
         # Update the content part with the base64 data URL
         content_part = content_part.copy()
         content_part["image_url"] = image_url_obj.copy()
         content_part["image_url"]["url"] = base64_url
         logger.info(
-            f"Successfully converted image URL to base64 (size: {len(base64_url)} chars): {truncate_base64_for_logging(base64_url)}"
+            f"Successfully applied downloaded image (size: {len(base64_url)} chars): {truncate_base64_for_logging(base64_url)}"
         )
     else:
         logger.error(f"Failed to convert image URL to base64: {url}")
@@ -290,15 +315,40 @@ async def process_image_content_part(
     return content_part
 
 
-async def process_message_images(
-    session: aiohttp.ClientSession, message: Dict[str, Any]
-) -> Dict[str, Any]:
+def collect_image_urls_from_message(message: Dict[str, Any]) -> List[str]:
     """
-    Processes a single message to convert any image URLs to base64.
+    Collects all image URLs from a single message.
 
     Args:
-        session: The aiohttp ClientSession for making requests.
         message: A message dictionary.
+
+    Returns:
+        List of image URLs that need to be downloaded.
+    """
+    urls = []
+    content = message.get("content")
+
+    # Only process list-type content (multimodal messages)
+    if not isinstance(content, list):
+        return urls
+
+    # Collect URLs from each content part
+    for content_part in content:
+        if isinstance(content_part, dict):
+            urls.extend(collect_image_urls_from_content_part(content_part))
+
+    return urls
+
+
+async def apply_downloaded_images_to_message(
+    message: Dict[str, Any], url_to_base64: Dict[str, Optional[str]]
+) -> Dict[str, Any]:
+    """
+    Applies downloaded base64 images to a message.
+
+    Args:
+        message: A message dictionary.
+        url_to_base64: Mapping of URLs to their base64 representations.
 
     Returns:
         The processed message with image URLs converted to base64.
@@ -313,7 +363,9 @@ async def process_message_images(
     processed_content = []
     for content_part in content:
         if isinstance(content_part, dict):
-            processed_part = await process_image_content_part(session, content_part)
+            processed_part = await apply_downloaded_images_to_content_part(
+                content_part, url_to_base64
+            )
             processed_content.append(processed_part)
         else:
             processed_content.append(content_part)
@@ -328,10 +380,10 @@ async def process_chat_images(
     session: aiohttp.ClientSession, data: Dict[str, Any]
 ) -> Dict[str, Any]:
     """
-    Processes chat completion data to convert image URLs to base64.
+    Processes chat completion data to convert image URLs to base64 with parallel downloading.
 
     This function intercepts direct image URLs in chat messages and downloads
-    them as temporary files, then converts them to base64 data URLs before
+    them concurrently, then converts them to base64 data URLs before
     sending to the upstream service.
 
     Args:
@@ -348,11 +400,41 @@ async def process_chat_images(
     if not isinstance(messages, list):
         return data
 
-    # Process each message
+    # Step 1: Collect all unique image URLs from all messages
+    all_urls = set()
+    for message in messages:
+        if isinstance(message, dict):
+            urls = collect_image_urls_from_message(message)
+            all_urls.update(urls)
+
+    if not all_urls:
+        return data  # No images to process
+
+    # Step 2: Download all images concurrently
+    logger.info(f"Starting parallel download of {len(all_urls)} images")
+    download_tasks = [download_image_to_base64(session, url) for url in all_urls]
+
+    # Use asyncio.gather for concurrent downloads
+    download_results = await asyncio.gather(*download_tasks, return_exceptions=True)
+
+    # Step 3: Create URL to base64 mapping
+    url_to_base64 = {}
+    for url, result in zip(all_urls, download_results):
+        if isinstance(result, Exception):
+            logger.error(f"Failed to download image {url}: {result}")
+            url_to_base64[url] = None
+        else:
+            url_to_base64[url] = result
+            if result:
+                logger.info(f"Successfully downloaded image: {url}")
+
+    # Step 4: Apply downloaded images to all messages
     processed_messages = []
     for message in messages:
         if isinstance(message, dict):
-            processed_message = await process_message_images(session, message)
+            processed_message = await apply_downloaded_images_to_message(
+                message, url_to_base64
+            )
             processed_messages.append(processed_message)
         else:
             processed_messages.append(message)
