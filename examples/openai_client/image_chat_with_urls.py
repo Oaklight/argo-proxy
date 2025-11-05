@@ -19,9 +19,15 @@ print("Running Chat Test with Direct Image URLs")
 
 
 def image_chat_test_with_urls():
-    # Using direct HTTP URLs - these will be automatically converted to base64 by the proxy
+    # Using direct HTTP URLs with different supported formats - these will be automatically converted to base64 by the proxy
+    # JPEG format
     image_url_1 = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
+    # PNG format
     image_url_2 = "https://upload.wikimedia.org/wikipedia/commons/thumb/5/50/Vd-Orig.png/256px-Vd-Orig.png"
+    # WebP format (if available)
+    image_url_3 = "https://convertico.com/samples/webp/webp-sample.webp"
+    # GIF format (if available)
+    image_url_4 = "https://convertico.com/samples/gif/gif-sample.gif"
 
     messages = [
         {
@@ -30,6 +36,8 @@ def image_chat_test_with_urls():
                 {"type": "text", "text": "Describe these images in detail."},
                 {"type": "image_url", "image_url": {"url": image_url_1}},
                 {"type": "image_url", "image_url": {"url": image_url_2}},
+                {"type": "image_url", "image_url": {"url": image_url_3}},
+                {"type": "image_url", "image_url": {"url": image_url_4}},
             ],
         },
     ]
