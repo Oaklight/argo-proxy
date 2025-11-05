@@ -27,6 +27,7 @@ from ..types import (
     StreamChoice,
 )
 from ..types.chat_completion import FINISH_REASONS
+from ..utils.image_processing import process_chat_images
 from ..utils.input_handle import (
     handle_multiple_entries_prompt,
     handle_no_sys_msg,
@@ -645,6 +646,12 @@ async def proxy_request(
             logger.info(json.dumps(data, indent=4))
             logger.info(make_bar())
 
+        # Use the shared HTTP session from app context for connection pooling
+        session = request.app["http_session"]
+
+        # Process image URLs before other transformations
+        data = await process_chat_images(session, data)
+
         # Prepare the request data (includes message scrutinization and normalization)
         data = prepare_chat_request_data(
             data, config, model_registry, enable_tools=True
@@ -652,8 +659,6 @@ async def proxy_request(
 
         # Apply username passthrough if enabled
         apply_username_passthrough(data, request, config.user)
-        # Use the shared HTTP session from app context for connection pooling
-        session = request.app["http_session"]
 
         logger.warning(f"[chat] data: {json.dumps(data, indent=4)}")
 
