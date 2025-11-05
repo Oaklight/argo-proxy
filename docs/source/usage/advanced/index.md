@@ -8,5 +8,6 @@ This section covers advanced features and integrations for argo-openai-proxy.
 :maxdepth: 1
 
 streaming
+vision
 tools/index
 ```
