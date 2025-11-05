@@ -51,6 +51,11 @@ class ArgoConfig:
     _tool_prompt: bool = False
     _provider_tool_format: bool = False
 
+    # Image processing settings
+    max_payload_size: int = 20  # MB default (total for all images)
+    image_timeout: int = 30  # seconds
+    concurrent_downloads: int = 10  # parallel downloads
+
     # chat endpoint
     @property
     def argo_url(self):
