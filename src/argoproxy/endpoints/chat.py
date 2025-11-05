@@ -27,7 +27,7 @@ from ..types import (
     StreamChoice,
 )
 from ..types.chat_completion import FINISH_REASONS
-from ..utils.image_processing import process_chat_images
+from ..utils.image_processing import process_chat_images, sanitize_data_for_logging
 from ..utils.input_handle import (
     handle_multiple_entries_prompt,
     handle_no_sys_msg,
@@ -660,7 +660,9 @@ async def proxy_request(
         # Apply username passthrough if enabled
         apply_username_passthrough(data, request, config.user)
 
-        logger.warning(f"[chat] data: {json.dumps(data, indent=4)}")
+        logger.warning(
+            f"[chat] data: {json.dumps(sanitize_data_for_logging(data), indent=4)}"
+        )
 
         if stream:
             return await send_streaming_request(
