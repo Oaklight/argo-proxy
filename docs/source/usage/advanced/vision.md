@@ -2,6 +2,10 @@
 
 Argo-proxy provides comprehensive support for vision models and image input processing, enabling you to send images to AI models that support visual understanding.
 
+```note
+This feature is only available in version 2.7.8 and above.
+```
+
 ## Table of Contents
 
 - [Overview](#overview)
