@@ -25,6 +25,7 @@ The machine or server making API calls to Argo must be connected to the Argonne 
 usage/index
 examples/index
 api/index
+changelog
 ```
 
 ## Bug Reports and Contributions
