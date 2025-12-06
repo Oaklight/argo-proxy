@@ -119,8 +119,8 @@ print(f"Embedding dimension: {len(response.data[0].embedding)}")
 In native OpenAI mode:
 
 1. **No Transformation**: Requests and responses are passed through directly without any format conversion
-2. **No Tool Processing**: Tool calls or function calls are not processed
-3. **No Image Processing**: Image URLs are not processed or optimized
+2. **Tool Call Processing**: Tool calls are automatically converted to the appropriate format for the target model
+3. **Image Processing**: Image URLs are automatically downloaded and converted to base64
 4. **Preserve Original Response**: Upstream API responses are returned as-is to the client
 
 ### Differences from Standard Mode
@@ -129,7 +129,7 @@ In native OpenAI mode:
 | ---------------------------- | ------------- | ------------------ |
 | Request Transformation       | ✓             | N/A                |
 | Response Transformation      | ✓             | N/A                |
-| Tool Call Processing         | ✓             | N/A                |
+| Tool Call Processing         | ✓             | ✓                  |
 | Image Processing             | ✓             | ✓                  |
 | Model Name Mapping           | ✓             | ✓                  |
 | Message Format Normalization | ✓             | N/A                |
@@ -154,6 +154,45 @@ response = client.chat.completions.create(
 )
 ```
 
+## Tool Call Processing
+
+Native OpenAI mode supports automatic tool call processing. When you include tools in your chat completion requests, the proxy will:
+
+1. **Convert tool formats** between different providers (OpenAI, Anthropic, Google)
+2. **Handle tool choice** parameters appropriately for each model
+3. **Process tool calls** in messages for multi-turn conversations
+4. **Fallback to prompting** for models without native tool support
+
+Example with tools:
+```python
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Get the current weather in a location",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "The city and state, e.g. San Francisco, CA"
+                    }
+                },
+                "required": ["location"]
+            }
+        }
+    }
+]
+
+response = client.chat.completions.create(
+    model="argo:gpt-4o",
+    messages=[{"role": "user", "content": "What's the weather in SF?"}],
+    tools=tools,
+    tool_choice="auto"
+)
+```
+
 ## Notes
 
 1. **Network Access**: Ensure your environment can access the native OpenAI endpoint URL
@@ -162,6 +201,7 @@ response = client.chat.completions.create(
 4. **Username Passthrough**: If `--username-passthrough` is enabled, user information will still be added to requests
 5. **Model Name Mapping**: Argo model aliases (e.g., `argo:gpt-4o`) are supported and will be resolved automatically
 6. **Image Processing**: HTTP/HTTPS image URLs are automatically downloaded and converted to base64, with optional payload size optimization
+7. **Tool Call Processing**: Tools and tool calls are automatically converted to the appropriate format for the target model
 
 ## Troubleshooting
 
