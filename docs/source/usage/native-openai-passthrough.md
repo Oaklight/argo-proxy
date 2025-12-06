@@ -127,12 +127,12 @@ In native OpenAI mode:
 
 | Feature                      | Standard Mode | Native OpenAI Mode |
 | ---------------------------- | ------------- | ------------------ |
-| Request Transformation       | ✓             | ✗                  |
-| Response Transformation      | ✓             | ✗                  |
-| Tool Call Processing         | ✓             | ✗                  |
-| Image Processing             | ✓             | ✗                  |
+| Request Transformation       | ✓             | N/A                |
+| Response Transformation      | ✓             | N/A                |
+| Tool Call Processing         | ✓             | N/A                |
+| Image Processing             | ✓             | ✓                  |
 | Model Name Mapping           | ✓             | ✓                  |
-| Message Format Normalization | ✓             | ✗                  |
+| Message Format Normalization | ✓             | N/A                |
 
 ## Model Name Mapping
 
@@ -161,6 +161,7 @@ response = client.chat.completions.create(
 3. **Compatibility**: In native mode, all requests must conform to the upstream API's format requirements
 4. **Username Passthrough**: If `--username-passthrough` is enabled, user information will still be added to requests
 5. **Model Name Mapping**: Argo model aliases (e.g., `argo:gpt-4o`) are supported and will be resolved automatically
+6. **Image Processing**: HTTP/HTTPS image URLs are automatically downloaded and converted to base64, with optional payload size optimization
 
 ## Troubleshooting
 
