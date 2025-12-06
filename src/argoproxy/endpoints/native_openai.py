@@ -15,6 +15,7 @@ from loguru import logger
 
 from ..config import ArgoConfig
 from ..models import ModelRegistry
+from ..utils.image_processing import process_chat_images
 from ..utils.misc import apply_username_passthrough, make_bar
 
 
@@ -47,21 +48,27 @@ async def proxy_native_openai_request(
             logger.info(json.dumps(data, indent=4))
             logger.info(make_bar())
 
+        # Use the shared HTTP session from app context
+        session = request.app["http_session"]
+
         # Resolve model name if present (supports argo: aliases)
         if "model" in data:
             original_model = data["model"]
             # Determine model type based on endpoint
             model_type = "embed" if endpoint_path == "embeddings" else "chat"
-            data["model"] = model_registry.resolve_model_name(original_model, model_type)
-            
+            data["model"] = model_registry.resolve_model_name(
+                original_model, model_type
+            )
+
             if config.verbose and data["model"] != original_model:
                 logger.info(f"Model name resolved: {original_model} -> {data['model']}")
 
+        # Process image URLs for chat endpoints (download and convert to base64)
+        if endpoint_path == "chat/completions":
+            data = await process_chat_images(session, data, config)
+
         # Apply username passthrough if enabled
         apply_username_passthrough(data, request, config.user)
-
-        # Use the shared HTTP session from app context
-        session = request.app["http_session"]
 
         # Construct the full upstream URL
         upstream_url = f"{config.native_openai_base_url}{endpoint_path}"
