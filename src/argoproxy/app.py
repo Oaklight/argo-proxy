@@ -7,8 +7,8 @@ from aiohttp import web
 from loguru import logger
 
 from .__init__ import __version__
-from .config import load_config
-from .endpoints import chat, completions, embed, extras, responses
+from .config import ArgoConfig, load_config
+from .endpoints import chat, completions, embed, extras, native_openai, responses
 from .endpoints.extras import get_latest_pypi_version
 from .models import ModelRegistry
 from .performance import (
@@ -75,11 +75,25 @@ async def proxy_embedding_directly(request: web.Request):
 
 async def proxy_openai_chat_compatible(request: web.Request):
     logger.info("/v1/chat/completions")
+    config: ArgoConfig = request.app["config"]
+
+    # If native OpenAI mode is enabled, use passthrough
+    if config.use_native_openai:
+        return await native_openai.proxy_native_openai_request(
+            request, "chat/completions"
+        )
+
     return await chat.proxy_request(request)
 
 
 async def proxy_openai_legacy_completions_compatible(request: web.Request):
     logger.info("/v1/completions")
+    config: ArgoConfig = request.app["config"]
+
+    # If native OpenAI mode is enabled, use passthrough
+    if config.use_native_openai:
+        return await native_openai.proxy_native_openai_request(request, "completions")
+
     return await completions.proxy_request(request)
 
 
@@ -90,6 +104,12 @@ async def proxy_openai_responses_request(request: web.Request):
 
 async def proxy_openai_embedding_request(request: web.Request):
     logger.info("/v1/embeddings")
+    config: ArgoConfig = request.app["config"]
+
+    # If native OpenAI mode is enabled, use passthrough
+    if config.use_native_openai:
+        return await native_openai.proxy_native_openai_request(request, "embeddings")
+
     return await embed.proxy_request(request, convert_to_openai=True)
 
 

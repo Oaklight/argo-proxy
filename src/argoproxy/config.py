@@ -46,6 +46,10 @@ class ArgoConfig:
     _argo_embedding_url: str = ""
     _argo_model_url: str = ""
 
+    # Native OpenAI endpoint
+    _native_openai_base_url: str = "https://apps-dev.inside.anl.gov/argoapi/v1/"
+    _use_native_openai: bool = False
+
     # CLI flags
     _real_stream: bool = True
     _tool_prompt: bool = False
@@ -96,6 +100,16 @@ class ArgoConfig:
             return False
         return True
 
+    @property
+    def native_openai_base_url(self):
+        """Get the native OpenAI base URL."""
+        return self._native_openai_base_url
+
+    @property
+    def use_native_openai(self):
+        """Check if native OpenAI mode is enabled."""
+        return self._use_native_openai
+
     @classmethod
     def from_dict(cls, config_dict: dict):
         """Create ArgoConfig instance from a dictionary."""
@@ -105,6 +119,8 @@ class ArgoConfig:
             "argo_stream_url": "_argo_stream_url",
             "argo_embedding_url": "_argo_embedding_url",
             "real_stream": "_real_stream",
+            "native_openai_base_url": "_native_openai_base_url",
+            "use_native_openai": "_use_native_openai",
         }
         valid_fields = {
             k: v for k, v in config_dict.items() if k in cls.__annotations__
@@ -467,6 +483,9 @@ def _apply_env_overrides(config_data: ArgoConfig) -> ArgoConfig:
 
     if env_provider_tool_format := os.getenv("PROVIDER_TOOL_FORMAT"):
         config_data._provider_tool_format = str_to_bool(env_provider_tool_format)
+
+    if env_use_native_openai := os.getenv("USE_NATIVE_OPENAI"):
+        config_data._use_native_openai = str_to_bool(env_use_native_openai)
 
     return config_data
 
