@@ -15,8 +15,10 @@ from loguru import logger
 
 from ..config import ArgoConfig
 from ..models import ModelRegistry
+from ..tool_calls.input_handle import handle_tools
 from ..utils.image_processing import process_chat_images
 from ..utils.misc import apply_username_passthrough, make_bar
+from ..utils.models import determine_model_family
 
 
 async def proxy_native_openai_request(
@@ -66,6 +68,16 @@ async def proxy_native_openai_request(
         # Process image URLs for chat endpoints (download and convert to base64)
         if endpoint_path == "chat/completions":
             data = await process_chat_images(session, data, config)
+
+            # Handle tool calls if present
+            if "tools" in data:
+                model_family = determine_model_family(data.get("model", "gpt4o"))
+                if model_family in ["google", "unknown"]:
+                    # Use prompting based tool handling for Google and unknown models
+                    data = handle_tools(data, native_tools=False)
+                else:
+                    # Use native tool handling for OpenAI and Anthropic models
+                    data = handle_tools(data, native_tools=config.native_tools)
 
         # Apply username passthrough if enabled
         apply_username_passthrough(data, request, config.user)
