@@ -2,6 +2,57 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v2.7.9 (2025-12-14)
+
+### Major Features
+
+- **Native OpenAI Passthrough Mode**: Added complete native OpenAI endpoint passthrough functionality
+- **Dynamic Version Configuration**: Updated build system to use dynamic version configuration from `argoproxy.__version__`
+- **Enhanced Startup Experience**: Added ASCII banner with version information and styled model registry display
+
+### New Features
+
+- **Native OpenAI Mode**:
+  - Added `use_native_openai` configuration flag and `--native-openai` CLI option
+  - Implemented pure passthrough for chat/completions, completions, and embeddings endpoints
+  - Added support for model name mapping even in native mode (argo:gpt-4o aliases)
+  - Integrated tool call processing for native OpenAI mode with model family detection
+  - Added image processing support with automatic URL download and base64 conversion
+
+- **Startup Enhancements**:
+  - Added ASCII banner for Argo Proxy with version information
+  - Implemented styled model registry display with model count
+  - Added startup banner with update availability check
+  - Enhanced configuration mode logging with visual indicators
+
+- **Tool Call Improvements**:
+  - Added streaming response handling with data prefix parsing in function calling examples
+  - Implemented [DONE] message detection for stream termination
+  - Added environment variable support for stream control in examples
+
+### Improvements
+
+- **Configuration Management**:
+  - Added native OpenAI mode warnings and status indicators
+  - Improved mode logging logic to properly handle native vs standard mode
+  - Enhanced logging consistency across modules with standardized formatting
+
+- **Documentation**:
+  - Added comprehensive native OpenAI passthrough documentation
+  - Updated feature comparison tables and endpoint availability information
+  - Added tool call processing documentation with model compatibility matrix
+  - Included troubleshooting section with common error messages and solutions
+
+- **Build System**:
+  - Migrated from static to dynamic version configuration
+  - Updated pyproject.toml to read version from `argoproxy.__version__` attribute
+
+### Bug Fixes
+
+- Fixed streaming response handling in function calling chat examples
+- Improved error handling for non-JSON data in streams
+- Enhanced model name resolution formatting for better readability
+
 ## v2.7.8 (2025-11-07)
 
 ### New Features
