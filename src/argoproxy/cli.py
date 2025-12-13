@@ -97,6 +97,12 @@ def parsing_args() -> argparse.Namespace:
         action="store_true",
         help="Enable username passthrough mode - use API key from request headers as user field",
     )
+    parser.add_argument(
+        "--native-openai",
+        action="store_true",
+        default=False,
+        help="Enable native OpenAI endpoint passthrough mode - directly forward requests to native OpenAI endpoint without transformation",
+    )
 
     parser.add_argument(
         "--edit",
@@ -152,6 +158,8 @@ def set_config_envs(args: argparse.Namespace):
         os.environ["PROVIDER_TOOL_FORMAT"] = str(True)
     if args.username_passthrough:
         os.environ["USERNAME_PASSTHROUGH"] = str(True)
+    if args.native_openai:
+        os.environ["USE_NATIVE_OPENAI"] = str(True)
 
 
 def open_in_editor(config_path: Optional[str] = None):
