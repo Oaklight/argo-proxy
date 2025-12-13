@@ -62,59 +62,8 @@ When native OpenAI mode is enabled, the following endpoints are available:
 
 **Unavailable Endpoints:**
 
-- `/v1/completions` → `{base_url}/completions` ✗ (404 Not Found)
-- `/v1/embeddings` → `{base_url}/embeddings` ✗ (404 Not Found)
-
-## Usage Examples
-
-### Python (OpenAI SDK)
-
-```python
-from openai import OpenAI
-
-# Configure client to use local proxy
-client = OpenAI(
-    api_key="your-api-key",
-    base_url="http://localhost:44497/v1",
-)
-
-# Chat completion
-response = client.chat.completions.create(
-    model="gpt-4o",
-    messages=[
-        {"role": "user", "content": "Hello!"}
-    ],
-)
-
-print(response.choices[0].message.content)
-```
-
-### Streaming Response
-
-```python
-stream = client.chat.completions.create(
-    model="gpt-4o",
-    messages=[
-        {"role": "user", "content": "Count from 1 to 5"}
-    ],
-    stream=True,
-)
-
-for chunk in stream:
-    if chunk.choices[0].delta.content:
-        print(chunk.choices[0].delta.content, end="", flush=True)
-```
-
-### Embeddings
-
-```python
-response = client.embeddings.create(
-    model="text-embedding-3-small",
-    input="Hello, world!",
-)
-
-print(f"Embedding dimension: {len(response.data[0].embedding)}")
-```
+- `/v1/completions` → `{base_url}/completions` ✗ (`404 Not Found` from upstream)
+- `/v1/embeddings` → `{base_url}/embeddings` ✗ (`404 Not Found` from upstream)
 
 ## Behavior
 
