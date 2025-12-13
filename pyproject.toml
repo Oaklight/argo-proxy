@@ -4,7 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "argo-proxy"
-version = "2.7.8"
+# version = "2.7.8"
+dynamic = ["version"]
 authors = [{ name = "Peng Ding", email = "oaklight@gmx.com" }]
 description = "Proxy server to Argo API, OpenAI format compatible"
 readme = "README.md"
@@ -52,3 +53,6 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "argoproxy" = ["py.typed"]
+
+[tool.setuptools.dynamic]
+version = { attr = "argoproxy.__version__" }
