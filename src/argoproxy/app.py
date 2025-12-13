@@ -25,6 +25,13 @@ async def prepare_app(app):
     app["model_registry"] = ModelRegistry(config=app["config"])
     await app["model_registry"].initialize()
 
+    # Display model information with styling
+    model_count = len(app["model_registry"].available_models)
+    logger.info("=" * 60)
+    logger.warning(f"🤖 MODEL REGISTRY: [{model_count} MODELS AVAILABLE]")
+    logger.info("   └─ Model availability refreshed successfully")
+    logger.info("=" * 60)
+
     # Apply event loop optimizations
     await optimize_event_loop()
 

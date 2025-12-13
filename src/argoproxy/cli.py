@@ -187,6 +187,18 @@ def open_in_editor(config_path: Optional[str] = None):
     sys.exit(1)
 
 
+def get_ascii_banner() -> str:
+    """Generate ASCII banner for Argo Proxy"""
+    return """
+ █████╗ ██████╗  ██████╗  ██████╗     ██████╗ ██████╗  ██████╗ ██╗  ██╗██╗   ██╗
+██╔══██╗██╔══██╗██╔════╝ ██╔═══██╗    ██╔══██╗██╔══██╗██╔═══██╗╚██╗██╔╝╚██╗ ██╔╝
+███████║██████╔╝██║  ███╗██║   ██║    ██████╔╝██████╔╝██║   ██║ ╚███╔╝  ╚████╔╝
+██╔══██║██╔══██╗██║   ██║██║   ██║    ██╔═══╝ ██╔══██╗██║   ██║ ██╔██╗   ╚██╔╝
+██║  ██║██║  ██║╚██████╔╝╚██████╔╝    ██║     ██║  ██║╚██████╔╝██╔╝ ██╗   ██║
+╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝     ╚═╝     ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝   ╚═╝
+"""
+
+
 def version_check() -> str:
     ver_content = [__version__]
     latest = asyncio.run(get_latest_pypi_version())
@@ -204,6 +216,25 @@ def version_check() -> str:
     return "\n".join(ver_content)
 
 
+def display_startup_banner():
+    """Display startup banner with version information"""
+    banner = get_ascii_banner()
+    latest = asyncio.run(get_latest_pypi_version())
+
+    # Print banner
+    print(banner)
+
+    # Version information with styling
+    logger.info("=" * 80)
+    if latest and version.parse(latest) > version.parse(__version__):
+        logger.warning(f"🚀 ARGO PROXY v{__version__}")
+        logger.warning(f"🆕 UPDATE AVAILABLE: v{latest}")
+        logger.info("   └─ Run: pip install --upgrade argo-proxy")
+    else:
+        logger.warning(f"🚀 ARGO PROXY v{__version__} (Latest)")
+    logger.info("=" * 80)
+
+
 def main():
     args = parsing_args()
 
@@ -214,8 +245,10 @@ def main():
     set_config_envs(args)
 
     try:
+        # Display startup banner
+        display_startup_banner()
+
         # Validate config in main process only
-        logger.warning(f"Running Argo-Proxy {version_check()}")
         config_instance = validate_config(args.config, args.show)
         if args.validate:
             logger.info("Configuration validation successful.")
