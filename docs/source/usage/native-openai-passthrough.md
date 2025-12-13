@@ -48,18 +48,20 @@ The default base URL for the native OpenAI endpoint is:
 https://apps-dev.inside.anl.gov/argoapi/v1/
 ```
 
-You can customize this URL via the `native_openai_base_url` parameter in your configuration file to point to either:
-
-- **Development endpoint**: `https://apps-dev.inside.anl.gov/argoapi/v1/`
-- **Production endpoint**: `https://apps.inside.anl.gov/argoapi/v1/`
+In the future, if Argo team provides other native openai endpoints (production version, for example), you may update this URL setting.
 
 ## Supported Endpoints
 
-When native OpenAI mode is enabled, the following endpoints are directly passed through to upstream:
+When native OpenAI mode is enabled, the following endpoints are available:
 
-- `/v1/chat/completions` → `{base_url}/chat/completions`
-- `/v1/completions` → `{base_url}/completions`
-- `/v1/embeddings` → `{base_url}/embeddings`
+**Available Endpoints:**
+
+- `/v1/chat/completions` → `{base_url}/chat/completions` ✓
+
+**Unavailable Endpoints:**
+
+- `/v1/completions` → `{base_url}/completions` ✗ (404 Not Found)
+- `/v1/embeddings` → `{base_url}/embeddings` ✗ (404 Not Found)
 
 ## Usage Examples
 
@@ -129,7 +131,7 @@ In native OpenAI mode:
 | ---------------------------- | ------------- | ------------------ |
 | Request Transformation       | ✓             | N/A                |
 | Response Transformation      | ✓             | N/A                |
-| Tool Call Processing         | ✓             | ✓                  |
+| Tool Call Processing         | ✓             | See Tool Call Processing section |
 | Image Processing             | ✓             | ✓                  |
 | Model Name Mapping           | ✓             | ✓                  |
 | Message Format Normalization | ✓             | N/A                |
@@ -156,52 +158,89 @@ response = client.chat.completions.create(
 
 ## Tool Call Processing
 
-Native OpenAI mode supports automatic tool call processing. When you include tools in your chat completion requests, the proxy will:
+⚠️ **Limited Compatibility**: Tool calling in native OpenAI mode is currently only supported for OpenAI models. As of December 2025:
 
-1. **Convert tool formats** between different providers (OpenAI, Anthropic, Google)
-2. **Handle tool choice** parameters appropriately for each model
-3. **Process tool calls** in messages for multi-turn conversations
-4. **Fallback to prompting** for models without native tool support
+**Working Models:**
 
-Example with tools:
-```python
-tools = [
-    {
-        "type": "function",
+- OpenAI models (argo:gpt-4o, argo:gpt-4o-mini, etc.) ✓
+
+**Non-Working Models:**
+
+- Claude models (argo:claude-4-sonnet, etc.) ✗ (400 Bad Request)
+- Gemini models (argo:gemini-2.5-flash, etc.) ✗ (500 Internal Server Error)
+
+**Known Issues:**
+
+- Claude models: `tool_choice: Input should be a valid dictionary or object to extract fields from`
+- Gemini models: `'name' KeyError`
+
+**Workaround**: For non-OpenAI models, use standard mode instead of native OpenAI mode for tool calling functionality.
+
+### Streaming Tool Call Behavior ⚠️
+
+**Important**: The streaming tool call behavior in native OpenAI mode differs significantly from standard mode:
+
+#### Standard Mode (Non-Native)
+
+- **Pseudo Streaming**: Upstream API doesn't support tool calls in streaming mode
+- **Fake Implementation**: Tool calls are simulated using pseudo stream at non-streaming upstream endpoint
+- **Complete Objects**: Returned tool call objects are complete as single pieces
+- **No Assembly Required**: Tool call data arrives as complete, ready-to-use objects
+
+#### Native OpenAI Mode
+
+- **Real Streaming**: Upstream API supports actual OpenAI streaming tool calls
+- **Piecewise Delivery**: Tool call blocks are returned in pieces/chunks across multiple streaming events
+- **Manual Assembly Required**: Programmers must collect and assemble tool call pieces themselves
+- **Fragmented Data**: Each streaming chunk may contain partial tool call information
+
+**Example of streaming tool call data in native mode:**
+
+```json
+// Stream chunk 1: initial tool call with name and ID
+{
+  "choices": [{
+    "delta": {
+      "tool_calls": [{
+        "index": 0,
+        "id": "call_H8p0Tts1AmjZLFwxHxEgfdev",
         "function": {
-            "name": "get_weather",
-            "description": "Get the current weather in a location",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "location": {
-                        "type": "string",
-                        "description": "The city and state, e.g. San Francisco, CA"
-                    }
-                },
-                "required": ["location"]
-            }
-        }
+          "arguments": "",
+          "name": "add"
+        },
+        "type": "function"
+      }]
     }
-]
+  }]
+}
 
-response = client.chat.completions.create(
-    model="argo:gpt-4o",
-    messages=[{"role": "user", "content": "What's the weather in SF?"}],
-    tools=tools,
-    tool_choice="auto"
-)
+// Stream chunks 2-9: arguments field built character by character
+{"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"{\""}}]}}]}
+{"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"a"}}]}}]}
+{"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"\":"}}]}}]}
+{"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"12"}}]}}]}
+{"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"\","}}]}}]}
+{"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"b"}}]}}]}
+{"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"\":"}}]}}]}
+{"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"30"}}]}}]}
+{"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"}"}}]}}]}
+
+// Final chunk: tool_calls completed
+{"choices":[{"delta":{"tool_calls":null},"finish_reason":"tool_calls"}]}
 ```
+
+**Implementation Note**: When using native OpenAI mode with streaming tool calls, you need to:
+
+1. Collect all `tool_calls` pieces across streaming chunks
+2. Assemble the complete tool call object by combining fragments
+3. Handle the incremental nature of tool call data delivery
+
+For simpler usage, consider using non-streaming mode or standard mode if you need complete tool call objects without manual assembly.
 
 ## Notes
 
-1. **Network Access**: Ensure your environment can access the native OpenAI endpoint URL
-2. **Authentication**: If the upstream endpoint requires authentication, include appropriate authentication in request headers
-3. **Compatibility**: In native mode, all requests must conform to the upstream API's format requirements
-4. **Username Passthrough**: If `--username-passthrough` is enabled, user information will still be added to requests
-5. **Model Name Mapping**: Argo model aliases (e.g., `argo:gpt-4o`) are supported and will be resolved automatically
-6. **Image Processing**: HTTP/HTTPS image URLs are automatically downloaded and converted to base64, with optional payload size optimization
-7. **Tool Call Processing**: Tools and tool calls are automatically converted to the appropriate format for the target model
+1. **Model Name Mapping**: Argo model aliases (e.g., `argo:gpt-4o`) are supported and will be resolved automatically (same as standard mode)
+2. **Image Processing**: HTTP/HTTPS image URLs are automatically downloaded and converted to base64, with optional payload size optimization (same as standard mode)
 
 ## Troubleshooting
 
@@ -209,24 +248,42 @@ response = client.chat.completions.create(
 
 If you encounter connection errors:
 
-1. Check if you're on the ANL network or connected via VPN
+1. Check if you're on the ANL network, or connected via VPN, or tunneled through SSH.
 2. Verify the `native_openai_base_url` configuration is correct
-3. Confirm the endpoint URL is accessible
-
-### Authentication Errors
-
-If you encounter authentication errors:
-
-1. Ensure valid API key is included in request headers
-2. Check your credentials have access to the native endpoint
+3. Confirm the endpoint URL is accessible from an ANL computer.
 
 ### Format Errors
 
 If you encounter format errors:
 
 1. Ensure your request conforms to OpenAI API specifications
-2. Check model names are correct
+2. Check model names are correct (argo-proxy aliases supported)
 3. Verify request parameters are valid
+
+### Endpoint Availability Issues
+
+If you encounter 404 errors for certain endpoints:
+
+- **Legacy Completions** (`/v1/completions`): Currently unavailable in native OpenAI mode
+- **Embeddings** (`/v1/embeddings`): Currently unavailable in native OpenAI mode
+- **Workaround**: Use `/v1/chat/completions` for text generation or switch to standard mode
+
+### Tool Calling Errors
+
+If you encounter tool calling errors:
+
+1. **Claude models**: If you get `tool_choice: Input should be a valid dictionary or object to extract fields from`, switch to standard mode
+2. **Gemini models**: If you get `'name' KeyError`, switch to standard mode
+3. **OpenAI models**: Tool calling should work correctly in native OpenAI mode
+
+### Common Error Messages
+
+| Error Message                                               | Model  | Solution                              |
+| ----------------------------------------------------------- | ------ | ------------------------------------- |
+| `404 Client Error: Not Found`                               | All    | Endpoint not available in native mode |
+| `tool_choice: Input should be a valid dictionary or object` | Claude | Use standard mode instead             |
+| `'name' KeyError`                                           | Gemini | Use standard mode instead             |
+| `500 Internal Server Error`                                 | Gemini | Use standard mode instead             |
 
 ## Testing
 
