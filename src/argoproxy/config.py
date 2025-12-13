@@ -613,4 +613,9 @@ def validate_config(
     else:
         logger.warning("Stream Mode: [Pseudo]")
 
+    if config_data.use_native_openai:
+        logger.warning("Native OpenAI Mode: [Enabled] - Direct passthrough mode active")
+        logger.warning("⚠️  Tool call streaming behavior may differ from standard mode")
+        logger.warning("⚠️  Some argo-proxy features may be bypassed in native mode")
+
     return config_data
