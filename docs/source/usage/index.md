@@ -7,6 +7,7 @@ installation
 running
 models
 endpoints
+native-openai-passthrough
 basics/index
 advanced/index
 ```
@@ -21,6 +22,7 @@ Argo Proxy provides a comprehensive OpenAI-compatible interface to the ARGO API 
 - [**Running**](running): Start the proxy server and perform first-time setup
 - [**Models**](models): Choose from available chat and embedding models
 - [**Endpoints**](endpoints): Learn about available API endpoints
+- [**Native OpenAI Passthrough**](native-openai-passthrough): Direct passthrough mode for Argo Native OpenAI-compatible endpoints (optional, WIP)
 - [**Basics Topics**](basics/index): Configuration and CLI usage in depth
 - [**Advanced Topics**](advanced/index): Advanced features and topics
 

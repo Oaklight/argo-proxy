@@ -4,9 +4,11 @@
 
 The Native OpenAI endpoint passthrough mode allows you to directly forward requests to a native OpenAI-compatible endpoint without any transformation or processing. This is useful when:
 
-- You want to use the native OpenAI endpoint without Argo's transformation layer
+- You want to use the native OpenAI endpoint without Argo Proxy's transformation layer
 - You need complete passthrough of requests and responses
 - You want to test native endpoint behavior
+
+This is a feature work in progress, so you may encounter issues or limitations.
 
 ## Configuration
 
@@ -127,14 +129,14 @@ In native OpenAI mode:
 
 ### Differences from Standard Mode
 
-| Feature                      | Standard Mode | Native OpenAI Mode |
-| ---------------------------- | ------------- | ------------------ |
-| Request Transformation       | ✓             | N/A                |
-| Response Transformation      | ✓             | N/A                |
+| Feature                      | Standard Mode | Native OpenAI Mode               |
+| ---------------------------- | ------------- | -------------------------------- |
+| Request Transformation       | ✓             | N/A                              |
+| Response Transformation      | ✓             | N/A                              |
 | Tool Call Processing         | ✓             | See Tool Call Processing section |
-| Image Processing             | ✓             | ✓                  |
-| Model Name Mapping           | ✓             | ✓                  |
-| Message Format Normalization | ✓             | N/A                |
+| Image Processing             | ✓             | ✓                                |
+| Model Name Mapping           | ✓             | ✓                                |
+| Message Format Normalization | ✓             | N/A                              |
 
 ## Model Name Mapping
 
