@@ -132,8 +132,51 @@ TIKTOKEN_ENCODING_PREFIX_MAPPING = {
 
 
 class Model(BaseModel):
+    """Model representation supporting both old and new API formats.
+
+    This class provides backward compatibility for API format changes:
+    - Old format: {"id": "gpt35", "model_name": "GPT-3.5 Turbo"}
+    - New format: {"id": "GPT-3.5 Turbo", "internal_id": "gpt35", ...}
+    """
+
     id: str
-    model_name: str
+    # New format fields (optional)
+    internal_id: Optional[str] = None
+    object: Optional[str] = "model"
+    created: Optional[int] = None
+    owned_by: Optional[str] = None
+    # Old format fields (optional)
+    model_name: Optional[str] = None
+
+    @property
+    def display_name(self) -> str:
+        """Gets the display name, compatible with both old and new formats.
+
+        Returns:
+            The model display name. For old format, returns model_name.
+            For new format, returns id.
+        """
+        if self.model_name:
+            # Old format: model_name is the display name
+            return self.model_name
+        else:
+            # New format: id is the display name
+            return self.id
+
+    @property
+    def internal_identifier(self) -> str:
+        """Gets the internal identifier, compatible with both old and new formats.
+
+        Returns:
+            The internal model identifier. For new format, returns internal_id.
+            For old format, returns id.
+        """
+        if self.internal_id:
+            # New format: internal_id is the internal identifier
+            return self.internal_id
+        else:
+            # Old format: id is the internal identifier
+            return self.id
 
 
 class OpenAIModel(BaseModel):
@@ -150,59 +193,148 @@ CLAUDE_PATTERN = "claude*"
 
 def produce_argo_model_list(upstream_models: List[Model]) -> Dict[str, str]:
     """
-    Generates a dictionary mapping standardized Argo model identifiers to their corresponding IDs.
+    Generates a dictionary mapping standardized Argo model identifiers to their corresponding internal IDs.
 
     Args:
-        upstream_models (List[Model]): A list of Model objects containing `model_name` and `id`.
+        upstream_models (List[Model]): A list of Model objects (supports both old and new API formats).
 
     Returns:
         Dict[str, str]: A dictionary where keys are formatted Argo model identifiers
-                        (e.g., "argo:gpt-4o", "argo:claude-4-opus") and values are model IDs.
+                        (e.g., "argo:gpt-4o", "argo:claude-4-opus") and values are internal IDs.
 
     The method creates special cases for specific models like GPT-O and Claude, adding additional granularity
     in the naming convention. It appends regular model mappings under the `argo:` prefix for all models.
+
+    Supports both API formats:
+    - Old format: {"id": "gpt35", "model_name": "GPT-3.5 Turbo"}
+    - New format: {"id": "GPT-3.5 Turbo", "internal_id": "gpt35", ...}
     """
     argo_models = {}
     for model in upstream_models:
-        model.model_name = model.model_name.replace(" ", "-").lower()
+        # 使用兼容属性获取显示名称和内部标识符
+        display_name = model.display_name
+        internal_id = model.internal_identifier
 
-        if fnmatch.fnmatch(model.id, GPT_O_PATTERN):
+        model_name = display_name.replace(" ", "-").lower()
+
+        if fnmatch.fnmatch(internal_id, GPT_O_PATTERN):
             # special: argo:gpt-o1
-            argo_models[f"argo:gpt-{model.model_name}"] = model.id
+            argo_models[f"argo:gpt-{model_name}"] = internal_id
 
-        elif fnmatch.fnmatch(model.id, CLAUDE_PATTERN):
-            _, codename, gen_num, *version = model.model_name.split("-")
+        elif fnmatch.fnmatch(internal_id, CLAUDE_PATTERN):
+            _, codename, gen_num, *version = model_name.split("-")
             if version:
                 # special: argo:claude-3.5-sonnet-v2
-                argo_models[f"argo:claude-{gen_num}-{codename}-{version[0]}"] = model.id
+                argo_models[f"argo:claude-{gen_num}-{codename}-{version[0]}"] = (
+                    internal_id
+                )
             else:
                 # special: argo:claude-4-opus
-                argo_models[f"argo:claude-{gen_num}-{codename}"] = model.id
+                argo_models[f"argo:claude-{gen_num}-{codename}"] = internal_id
 
         # regular: argo:gpt-4o, argo:o1 or argo:claude-opus-4
-        argo_models[f"argo:{model.model_name}"] = model.id
+        argo_models[f"argo:{model_name}"] = internal_id
 
     return argo_models
 
 
 def get_upstream_model_list(url: str) -> Dict[str, str]:
-    """
-    Fetches the list of available models from the upstream server.
+    """Fetches the list of available models from the upstream server.
+
     Args:
-        url (str): The URL of the upstream server.
+        url: The URL of the upstream server.
+
     Returns:
-       Dict[str, Any]: A dictionary containing the list of available models.
+        A dictionary containing the list of available models mapping
+        argo model names to internal IDs.
     """
+    logger.info(f"Starting model list fetch from: {url}")
+
     try:
-        with urllib.request.urlopen(url) as response:
-            raw_data = json.loads(response.read().decode())["data"]
-            models = [Model(**model) for model in raw_data]
+        # Create request object
+        req = urllib.request.Request(url)
+        req.add_header("User-Agent", "argo-proxy/1.0")
+
+        logger.info(f"Sending request to: {url}")
+
+        # Use detailed parameters
+        with urllib.request.urlopen(req, timeout=30) as response:
+            status_code = response.getcode()
+            logger.info(f"Received response with status code: {status_code}")
+
+            raw_data = response.read().decode()
+            logger.info(f"Response data length: {len(raw_data)} characters")
+
+            # Parse JSON
+            data = json.loads(raw_data)
+            model_count = len(data.get("data", []))
+            logger.info(f"Parsed {model_count} models")
+
+            # Detect API format
+            if data.get("data") and len(data["data"]) > 0:
+                sample_model = data["data"][0]
+                if "model_name" in sample_model:
+                    logger.info("Detected old format API (contains model_name field)")
+                elif "internal_id" in sample_model:
+                    logger.info("Detected new format API (contains internal_id field)")
+                else:
+                    logger.warning("Detected unknown format API")
+                logger.info(f"Sample model data: {sample_model}")
+
+            models = (
+                [Model(**model) for model in data.get("data", [])]
+                if data.get("data")
+                else []
+            )
 
             argo_models = produce_argo_model_list(models)
+            logger.info(
+                f"Successfully fetched model list with {len(argo_models)} models"
+            )
+
+            # Show first few model mappings for verification
+            if argo_models:
+                sample_mappings = list(argo_models.items())[:3]
+                logger.info(f"Sample model mappings: {sample_mappings}")
 
             return argo_models
+
+    except urllib.error.HTTPError as e:
+        logger.error(f"HTTP error fetching model list from {url}")
+        logger.error(f"HTTP status code: {e.code}")
+        logger.error(f"HTTP error message: {e.reason}")
+        if hasattr(e, "read"):
+            try:
+                error_body = e.read().decode()
+                logger.error(f"HTTP error response body: {error_body}")
+            except:
+                pass
+        logger.warning("Using built-in model list.")
+        return _DEFAULT_CHAT_MODELS
+
+    except urllib.error.URLError as e:
+        logger.error(f"URL error fetching model list from {url}")
+        logger.error(f"Network error message: {e.reason}")
+        logger.warning("Using built-in model list.")
+        return _DEFAULT_CHAT_MODELS
+
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON parsing error fetching model list from {url}")
+        logger.error(f"JSON error: {e}")
+        logger.error(
+            f"Response content first 200 chars: {raw_data[:200] if 'raw_data' in locals() else 'unknown'}"
+        )
+        logger.warning("Using built-in model list.")
+        return _DEFAULT_CHAT_MODELS
+
     except Exception as e:
-        logger.error(f"Error fetching model list from {url}")
+        logger.error(f"Unknown error fetching model list from {url}")
+        logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"Error message: {str(e)}")
+        logger.error(f"Detailed error: {e}")
+        import traceback
+
+        logger.error(f"Exception traceback: {traceback.format_exc()}")
         logger.warning("Using built-in model list.")
         return _DEFAULT_CHAT_MODELS
 
@@ -360,8 +492,16 @@ class ModelRegistry:
             raise ValueError("Failed to load valid configuration")
 
         # Initial model list fetch
+        logger.info(
+            f"Starting model registry initialization, URL: {self._config.argo_model_url}"
+        )
         self._chat_models = get_upstream_model_list(self._config.argo_model_url)
-        logger.info(f"Initialized model registry with {len(self._chat_models)} models")
+        logger.info(
+            f"Model registry initialization completed with {len(self._chat_models)} models"
+        )
+        logger.info(
+            f"Model registry initialization mode: {'Upstream API' if len(self._chat_models) > 32 else 'Built-in list'}"
+        )
 
         try:
             if real_test:
