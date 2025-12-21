@@ -2,6 +2,14 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v2.7.10 (2025-12-21)
+
+### Bug Fixes
+
+- **Model Fetching**: Enhanced error handling in model fetching with detailed logging for HTTP, URL, JSON, and unknown errors
+- **API Compatibility**: Added support for both old and new API formats in Model class with backward compatibility
+- **Network Reliability**: Added request timeouts and improved error recovery with fallback to built-in model list
+
 ## v2.7.9 (2025-12-14)
 
 ### Major Features
@@ -13,6 +21,7 @@ This page records the major version changes and important feature updates of the
 ### New Features
 
 - **Native OpenAI Mode**:
+
   - Added `use_native_openai` configuration flag and `--native-openai` CLI option
   - Implemented pure passthrough for chat/completions, completions, and embeddings endpoints
   - Added support for model name mapping even in native mode (argo:gpt-4o aliases)
@@ -20,6 +29,7 @@ This page records the major version changes and important feature updates of the
   - Added image processing support with automatic URL download and base64 conversion
 
 - **Startup Enhancements**:
+
   - Added ASCII banner for Argo Proxy with version information
   - Implemented styled model registry display with model count
   - Added startup banner with update availability check
@@ -33,11 +43,13 @@ This page records the major version changes and important feature updates of the
 ### Improvements
 
 - **Configuration Management**:
+
   - Added native OpenAI mode warnings and status indicators
   - Improved mode logging logic to properly handle native vs standard mode
   - Enhanced logging consistency across modules with standardized formatting
 
 - **Documentation**:
+
   - Added comprehensive native OpenAI passthrough documentation
   - Updated feature comparison tables and endpoint availability information
   - Added tool call processing documentation with model compatibility matrix
