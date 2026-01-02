@@ -660,6 +660,71 @@ class ModelRegistry:
     def native_tool_call_models(self):
         return self._native_tool_call_models or NATIVE_TOOL_CALL_MODELS
 
+    @property
+    def unique_model_count(self) -> int:
+        """Get the count of unique models (not aliases)."""
+        return len(set(self.available_models.values()))
+
+    @property
+    def alias_count(self) -> int:
+        """Get the count of all aliases (including model names)."""
+        return len(self.available_models)
+
+    def _classify_model_by_family(self, model_id: str) -> str:
+        """Classify a model by its family based on model ID patterns."""
+        model_id_lower = model_id.lower()
+
+        # OpenAI models
+        if any(pattern in model_id_lower for pattern in ["gpt", "o1", "o3", "o4"]):
+            return "openai"
+
+        # Anthropic models
+        if "claude" in model_id_lower:
+            return "anthropic"
+
+        # Google models
+        if "gemini" in model_id_lower:
+            return "google"
+
+        # Embedding models (mostly OpenAI)
+        if any(pattern in model_id_lower for pattern in ["ada", "embedding"]):
+            return "openai"
+
+        # Default to unknown
+        return "unknown"
+
+    def get_model_stats(self) -> dict:
+        """Get detailed model statistics including model family breakdown."""
+        unique_models = set(self.available_models.values())
+        chat_models = set(self.available_chat_models.values())
+        embed_models = set(self.available_embed_models.values())
+
+        # Classify models by family
+        family_counts = {"openai": 0, "anthropic": 0, "google": 0, "unknown": 0}
+        chat_family_counts = {"openai": 0, "anthropic": 0, "google": 0, "unknown": 0}
+        embed_family_counts = {"openai": 0, "anthropic": 0, "google": 0, "unknown": 0}
+
+        for model_id in unique_models:
+            family = self._classify_model_by_family(model_id)
+            family_counts[family] += 1
+
+            if model_id in chat_models:
+                chat_family_counts[family] += 1
+            elif model_id in embed_models:
+                embed_family_counts[family] += 1
+
+        return {
+            "total_aliases": len(self.available_models),
+            "unique_models": len(unique_models),
+            "unique_chat_models": len(chat_models),
+            "unique_embed_models": len(embed_models),
+            "chat_aliases": len(self.available_chat_models),
+            "embed_aliases": len(self.available_embed_models),
+            "family_counts": family_counts,
+            "chat_family_counts": chat_family_counts,
+            "embed_family_counts": embed_family_counts,
+        }
+
 
 if __name__ == "__main__":
     import asyncio

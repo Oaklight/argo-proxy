@@ -26,9 +26,51 @@ async def prepare_app(app):
     await app["model_registry"].initialize()
 
     # Display model information with styling
-    model_count = len(app["model_registry"].available_models)
+    model_stats = app["model_registry"].get_model_stats()
+    family_counts = model_stats["family_counts"]
+    chat_family_counts = model_stats["chat_family_counts"]
+    embed_family_counts = model_stats["embed_family_counts"]
+
     logger.info("=" * 60)
-    logger.warning(f"🤖 MODEL REGISTRY: [{model_count} MODELS AVAILABLE]")
+    logger.warning(
+        f"🤖 MODEL REGISTRY: [{model_stats['unique_models']} MODELS, {model_stats['total_aliases']} ALIASES]"
+    )
+    logger.info(
+        f"   ├─ Chat models: {model_stats['unique_chat_models']} models ({model_stats['chat_aliases']} aliases)"
+    )
+
+    # Show chat model family breakdown
+    chat_families = []
+    if chat_family_counts["openai"] > 0:
+        chat_families.append(f"OpenAI: {chat_family_counts['openai']}")
+    if chat_family_counts["anthropic"] > 0:
+        chat_families.append(f"Anthropic: {chat_family_counts['anthropic']}")
+    if chat_family_counts["google"] > 0:
+        chat_families.append(f"Google: {chat_family_counts['google']}")
+    if chat_family_counts["unknown"] > 0:
+        chat_families.append(f"Other: {chat_family_counts['unknown']}")
+
+    if chat_families:
+        logger.info(f"   │  └─ {', '.join(chat_families)}")
+
+    logger.info(
+        f"   ├─ Embed models: {model_stats['unique_embed_models']} models ({model_stats['embed_aliases']} aliases)"
+    )
+
+    # Show embed model family breakdown
+    embed_families = []
+    if embed_family_counts["openai"] > 0:
+        embed_families.append(f"OpenAI: {embed_family_counts['openai']}")
+    if embed_family_counts["anthropic"] > 0:
+        embed_families.append(f"Anthropic: {embed_family_counts['anthropic']}")
+    if embed_family_counts["google"] > 0:
+        embed_families.append(f"Google: {embed_family_counts['google']}")
+    if embed_family_counts["unknown"] > 0:
+        embed_families.append(f"Other: {embed_family_counts['unknown']}")
+
+    if embed_families:
+        logger.info(f"   │  └─ {', '.join(embed_families)}")
+
     logger.info("   └─ Model availability refreshed successfully")
     logger.info("=" * 60)
 
