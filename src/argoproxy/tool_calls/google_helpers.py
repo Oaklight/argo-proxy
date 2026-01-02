@@ -144,6 +144,162 @@ class GeminiToolCallConverter:
 
         return response_data
 
+    def convert_streaming_chunk(
+        self, chunk_data: Dict[str, Any], model_name: str = ""
+    ) -> Dict[str, Any]:
+        """Convert Gemini tool call format in streaming chunk data
+
+        Args:
+            chunk_data: Original streaming chunk data dictionary
+            model_name: Model name, used to determine if conversion is needed
+
+        Returns:
+            Converted chunk data with tool_calls in delta if found
+        """
+        # Check if conversion is needed
+        if not self.is_gemini_model(model_name):
+            return chunk_data
+
+        if not chunk_data.get("choices"):
+            return chunk_data
+
+        for choice in chunk_data["choices"]:
+            delta = choice.get("delta", {})
+            content = delta.get("content", "")
+
+            # Skip if no content or tool_calls already exist
+            if not content or delta.get("tool_calls"):
+                continue
+
+            # Check if this chunk contains tool calls
+            if self.has_tool_calls_in_content(content):
+                tool_calls = self.extract_tool_calls_from_content(content)
+
+                if tool_calls:
+                    # Convert to streaming format - add tool_calls to delta
+                    delta["tool_calls"] = []
+                    for i, tool_call in enumerate(tool_calls):
+                        streaming_tool_call = {
+                            "index": i,
+                            "id": tool_call["id"],
+                            "type": "function",
+                            "function": {
+                                "name": tool_call["function"]["name"],
+                                "arguments": tool_call["function"]["arguments"],
+                            },
+                        }
+                        delta["tool_calls"].append(streaming_tool_call)
+
+                    # Clean content or set to empty
+                    cleaned_content = self.remove_tool_call_tags(content)
+                    delta["content"] = cleaned_content if cleaned_content else None
+
+                    if self.verbose:
+                        logger.info(
+                            f"Converted {len(tool_calls)} Gemini tool calls in streaming chunk"
+                        )
+
+        return chunk_data
+
+    def should_force_tool_call(
+        self, request_data: Dict[str, Any], model_name: str = ""
+    ) -> bool:
+        """Check if we should force a tool call for Gemini models
+
+        Args:
+            request_data: Original request data
+            model_name: Model name
+
+        Returns:
+            True if tool call should be forced
+        """
+        if not self.is_gemini_model(model_name):
+            return False
+
+        tool_choice = request_data.get("tool_choice")
+        if not tool_choice or not request_data.get("tools"):
+            return False
+
+        # Check for forced tool choice patterns
+        if tool_choice == "required":
+            return True
+        elif isinstance(tool_choice, dict) and tool_choice.get("type") == "function":
+            return True
+
+        return False
+
+    def modify_request_for_forced_tool_call(
+        self, request_data: Dict[str, Any], model_name: str = ""
+    ) -> Dict[str, Any]:
+        """Modify request to encourage tool calling for Gemini models
+
+        Args:
+            request_data: Original request data
+            model_name: Model name
+
+        Returns:
+            Modified request data
+        """
+        if not self.should_force_tool_call(request_data, model_name):
+            return request_data
+
+        # Create a copy to avoid modifying original
+        modified_data = request_data.copy()
+        messages = modified_data.get("messages", [])
+        tools = modified_data.get("tools", [])
+        tool_choice = modified_data.get("tool_choice")
+
+        if not messages or not tools:
+            return modified_data
+
+        # Get the last user message
+        last_message = None
+        for msg in reversed(messages):
+            if msg.get("role") == "user":
+                last_message = msg
+                break
+
+        if not last_message:
+            return modified_data
+
+        # Modify the last user message to encourage tool usage
+        modified_messages = messages.copy()
+
+        # Find the specific tool if forced
+        forced_tool_name = None
+        if isinstance(tool_choice, dict) and tool_choice.get("type") == "function":
+            forced_tool_name = tool_choice.get("function", {}).get("name")
+
+        # Create enhanced prompt
+        original_content = last_message.get("content", "")
+
+        if forced_tool_name:
+            # Force specific tool
+            enhanced_content = f"{original_content}\n\nIMPORTANT: You must use the {forced_tool_name} function to respond. Do not provide a text response - only call the function."
+        else:
+            # Force any available tool
+            tool_names = [tool.get("function", {}).get("name", "") for tool in tools]
+            tool_list = ", ".join(filter(None, tool_names))
+            enhanced_content = f"{original_content}\n\nIMPORTANT: You must use one of these functions to respond: {tool_list}. Do not provide a text response - only call the appropriate function."
+
+        # Update the last user message
+        for i in range(len(modified_messages) - 1, -1, -1):
+            if modified_messages[i].get("role") == "user":
+                modified_messages[i] = {
+                    **modified_messages[i],
+                    "content": enhanced_content,
+                }
+                break
+
+        modified_data["messages"] = modified_messages
+
+        if self.verbose:
+            logger.info(
+                f"Modified request to force tool call for Gemini model: {model_name}"
+            )
+
+        return modified_data
+
 
 def is_parallel_tool_call_message(message: Dict[str, Any]) -> bool:
     """Check if a message contains multiple tool calls (parallel tool calls)."""

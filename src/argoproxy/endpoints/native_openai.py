@@ -80,6 +80,15 @@ async def proxy_native_openai_request(
                     # Use native tool handling for OpenAI and Anthropic models
                     data = handle_tools(data, native_tools=config.native_tools)
 
+        # Apply Gemini tool choice modifications if needed
+        model_name = data.get("model", "")
+        converter = GeminiToolCallConverter(verbose=config.verbose)
+
+        if endpoint_path == "chat/completions" and converter.is_gemini_model(
+            model_name
+        ):
+            data = converter.modify_request_for_forced_tool_call(data, model_name)
+
         # Apply username passthrough if enabled
         apply_username_passthrough(data, request, config.user)
 
@@ -105,7 +114,7 @@ async def proxy_native_openai_request(
         if stream:
             # Handle streaming response
             return await _handle_streaming_passthrough(
-                session, upstream_url, headers, data, request
+                session, upstream_url, headers, data, request, config
             )
         else:
             # Handle non-streaming response
@@ -209,9 +218,10 @@ async def _handle_streaming_passthrough(
     headers: dict,
     data: dict,
     request: web.Request,
+    config: ArgoConfig,
 ) -> web.StreamResponse:
     """
-    Handle streaming passthrough request.
+    Handle streaming passthrough request with Gemini tool call conversion support.
 
     Args:
         session: The client session for making the request.
@@ -219,6 +229,7 @@ async def _handle_streaming_passthrough(
         headers: Request headers.
         data: The JSON payload.
         request: The original web request.
+        config: Configuration object for verbose logging and other settings.
 
     Returns:
         A web.StreamResponse with the upstream streaming response.
@@ -275,7 +286,12 @@ async def _handle_streaming_passthrough(
             response.enable_chunked_encoding()
             await response.prepare(request)
 
-            # Stream the response chunks with enhanced error handling
+            # Initialize Gemini converter for streaming
+            model_name = data.get("model", "")
+            converter = GeminiToolCallConverter(verbose=config.verbose)
+            is_gemini = converter.is_gemini_model(model_name)
+
+            # Stream the response chunks with enhanced error handling and Gemini conversion
             chunk_count = 0
             error_count = 0
 
@@ -283,7 +299,33 @@ async def _handle_streaming_passthrough(
                 if chunk:
                     chunk_count += 1
                     try:
-                        await response.write(chunk)
+                        # Process chunk for Gemini tool call conversion if needed
+                        processed_chunk = chunk
+
+                        if is_gemini:
+                            # Try to parse and convert streaming chunks
+                            chunk_str = chunk.decode("utf-8", errors="ignore")
+                            if chunk_str.strip().startswith("data: "):
+                                data_part = chunk_str.strip()[
+                                    6:
+                                ]  # Remove 'data: ' prefix
+                                if data_part != "[DONE]":
+                                    try:
+                                        chunk_data = json.loads(data_part)
+                                        converted_chunk = (
+                                            converter.convert_streaming_chunk(
+                                                chunk_data, model_name
+                                            )
+                                        )
+                                        if converted_chunk != chunk_data:
+                                            # Chunk was modified, re-encode
+                                            new_data = f"data: {json.dumps(converted_chunk)}\n\n"
+                                            processed_chunk = new_data.encode("utf-8")
+                                    except json.JSONDecodeError:
+                                        # Not valid JSON, keep original chunk
+                                        pass
+
+                        await response.write(processed_chunk)
                     except Exception as e:
                         error_count += 1
                         logger.warning(
