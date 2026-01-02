@@ -159,6 +159,87 @@ def handle_tools_prompt(data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ======================================================================
+# GOOGLE/GEMINI SPECIFIC HANDLING
+# ======================================================================
+
+
+def handle_google_parallel_tool_calls(
+    messages: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """
+    Handle Google/Gemini's parallel tool calls by converting them to sequential format.
+
+    Gemini API requires that the number of function response parts equals the number
+    of function call parts. To solve this, we convert parallel tool calls into
+    individual call-result pairs.
+
+    Transforms:
+    [user_msg, assistant_msg_with_multiple_tool_calls, tool_result1, tool_result2]
+
+    Into:
+    [user_msg, assistant_msg_with_tool_call1, tool_result1, assistant_msg_with_tool_call2, tool_result2]
+
+    Args:
+        messages: List of message dictionaries
+
+    Returns:
+        List of transformed message dictionaries with sequential tool calls
+    """
+    from .google_helpers import (
+        collect_tool_results,
+        create_sequential_call_result_pairs,
+        is_parallel_tool_call_message,
+    )
+
+    transformed_messages = []
+    i = 0
+
+    while i < len(messages):
+        message = messages[i]
+
+        if is_parallel_tool_call_message(message):
+            logger.warning(
+                f"[Google Sequential] Found assistant message with {len(message['tool_calls'])} parallel tool calls"
+            )
+
+            # Collect consecutive tool result messages
+            tool_results, next_index = collect_tool_results(messages, i + 1)
+
+            # Validate tool calls and results count match
+            if len(tool_results) != len(message["tool_calls"]):
+                logger.warning(
+                    f"[Google Sequential] Mismatch: {len(message['tool_calls'])} tool calls but {len(tool_results)} tool results"
+                )
+                # Fallback: keep original structure
+                transformed_messages.append(message)
+                i += 1
+                continue
+
+            # Convert to sequential call-result pairs
+            sequential_pairs = create_sequential_call_result_pairs(
+                message["tool_calls"], tool_results, message.get("content", "")
+            )
+
+            transformed_messages.extend(sequential_pairs)
+
+            logger.warning(
+                f"[Google Sequential] Converted {len(message['tool_calls'])} parallel tool calls to {len(sequential_pairs) // 2} sequential pairs"
+            )
+
+            # Skip the original tool result messages
+            i = next_index
+        else:
+            # Keep other messages as-is
+            transformed_messages.append(message)
+            i += 1
+
+    logger.warning(
+        f"[Google Sequential] Transformed {len(messages)} messages into {len(transformed_messages)} messages"
+    )
+    return transformed_messages
+
+
+# ======================================================================
 # VALIDATION FUNCTIONS
 # ======================================================================
 
@@ -267,6 +348,10 @@ def handle_tools_native(data: Dict[str, Any]) -> Dict[str, Any]:
 
     # Process tool_calls and tool messages if present
     if messages:
+        # Special handling for Google/Gemini models: convert parallel tool calls to sequential format
+        if model_type == "google":
+            messages = handle_google_parallel_tool_calls(messages)
+
         converted_messages = []
         for message in messages:
             converted_message = message.copy()
@@ -317,7 +402,7 @@ def handle_tools_native(data: Dict[str, Any]) -> Dict[str, Any]:
                         )
 
                     elif model_type == "google":
-                        # TODO: Implement Google format conversion
+                        # For Google/Gemini, convert tool_calls to Google format
                         converted_tool_calls = []
                         for tool_call_dict in message["tool_calls"]:
                             tool_call_obj = ToolCall.from_entry(
@@ -376,9 +461,10 @@ def handle_tools_native(data: Dict[str, Any]) -> Dict[str, Any]:
                         f"[Input Handle] Converted tool message to Anthropic format: {converted_message}"
                     )
                 elif model_type == "google":
-                    # TODO: Implement Google tool result format conversion
+                    # For Google/Gemini, keep tool messages in OpenAI format
+                    # The upstream API expects OpenAI-style tool messages
                     logger.warning(
-                        "[Input Handle] Google tool result conversion not implemented yet"
+                        "[Input Handle] Keeping Google tool result in OpenAI format"
                     )
                 # For OpenAI, keep the original format
 

@@ -49,6 +49,8 @@ from ..types.function_call import (
     ToolParam,
     ToolUseBlock,
 )
+from ..types.function_call import FunctionCall as GeminiToolCall
+from ..types.function_call import FunctionDeclaration as GeminiTool
 from ..utils.models import API_FORMATS
 
 
@@ -120,8 +122,14 @@ class ToolCall(BaseModel):
                 arguments=arguments_str,
             )
         elif api_format == "google":
-            # TODO: Implement Google API format
-            raise NotImplementedError("Google API format is not supported yet.")
+            # Google/Gemini API format: {"id": None, "args": {...}, "name": "function_name"}
+
+            origin_tool_call = GeminiToolCall.model_validate(tool_call)
+            return cls(
+                id=origin_tool_call.id,  # Generate ID if None
+                name=origin_tool_call.name,
+                arguments=origin_tool_call.args,
+            )
         else:
             raise ValueError(f"Unsupported API format: {api_format}")
 
@@ -168,7 +176,22 @@ class ToolCall(BaseModel):
             )
 
         elif api_format == "google":
-            raise NotImplementedError("Google API format is not supported yet.")
+            # Convert to Google/Gemini format
+            try:
+                args_data = (
+                    json.loads(self.arguments)
+                    if isinstance(self.arguments, str)
+                    else self.arguments
+                )
+            except json.JSONDecodeError:
+                args_data = {}
+
+            # Google format: {"id": "call_id", "name": "function_name", "args": {...}}
+            tool_call = GeminiToolCall(
+                id=self.id,
+                name=self.name,
+                args=args_data,
+            )
 
         elif api_format == "general":
             return self
@@ -244,8 +267,13 @@ class Tool(BaseModel):
                 parameters=parameters,
             )
         elif api_format == "google":
-            # TODO: Implement Google tool format
-            raise NotImplementedError("Google tool format not implemented")
+            origin_tool = GeminiTool.model_validate(tool)
+
+            return Tool(
+                name=origin_tool.name,
+                description=origin_tool.description,
+                parameters=origin_tool.parameters,
+            )
         else:
             raise ValueError(f"Invalid API format: {api_format}")
 
@@ -281,8 +309,13 @@ class Tool(BaseModel):
                 input_schema=self.parameters,
             )
         elif api_format == "google":
-            # TODO: Implement Google tool format
-            raise NotImplementedError("Google tool format not implemented")
+            # Google/Gemini tool format: {"name": "...", "description": "...", "parameters": {...}}
+
+            tool = GeminiTool(
+                name=self.name,
+                description=self.description,
+                parameters=self.parameters,
+            )
 
         elif api_format == "general":
             tool = self

@@ -243,7 +243,13 @@ class ToolInterceptor:
         """
         Process Google native tool calling response format.
 
-        TODO: Implement Google-specific tool calling format processing.
+        Expected Google/Gemini format:
+        {
+            "content": "text response",
+            "tool_calls": [
+                {"id": None, "args": {...}, "name": "function_name"}
+            ]
+        }
 
         Args:
             response_data: Google format response data
@@ -251,11 +257,27 @@ class ToolInterceptor:
         Returns:
             Tuple of (list of ToolCall objects or None, text content)
         """
-        # Placeholder implementation - to be implemented later
-        logger.warning(
-            "Google native tool calling not implemented yet, falling back to OpenAI format"
-        )
-        raise NotImplementedError
+        content = response_data.get("content", "")
+        tool_calls_data = response_data.get("tool_calls", [])
+
+        logger.warning(f"[Output Handle] Google tool calls: {tool_calls_data}")
+        logger.warning(f"[Output Handle] Google text content: {content}")
+
+        # Convert Google tool calls to ToolCall objects
+        tool_calls = None
+        if tool_calls_data:
+            tool_calls = []
+            for i, google_tool_call in enumerate(tool_calls_data):
+                # Use ToolCall.from_entry to convert from Google format
+                # Generate ID if None
+                if google_tool_call.get("id") is None:
+                    google_tool_call["id"] = f"call_{i}"
+
+                tool_call = ToolCall.from_entry(google_tool_call, api_format="google")
+                tool_calls.append(tool_call)
+            logger.warning(f"[Output Handle] Converted ToolCall objects: {tool_calls}")
+
+        return tool_calls, content
 
 
 def chat_completion_to_response_tool_call(
