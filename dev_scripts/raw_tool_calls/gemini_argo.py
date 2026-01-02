@@ -143,46 +143,77 @@ except Exception as e:
     print("Raw response text: ", response.text)
 
 
-mock_tool_call = {
-    "role": "assistant",
-    "tool_calls": [
-        {
-            "id": None,
-            "type": "function",
-            "function": {
-                "name": "get_weather",
-                "arguments": '{"location": "Chicago, IL", "unit": "fahrenheit"}',
-            },
-        },
-        {
-            "id": None,
-            "type": "function",
-            "function": {
-                "name": "get_weather",
-                "arguments": '{"location": "Shanghai, China", "unit": "fahrenheit"}',
-            },
-        },
-    ],
-    "content": "",
-}
+# Get the actual tool calls from the first response
+try:
+    first_response = response.json()["response"]
+    actual_tool_calls = first_response.get("tool_calls", [])
 
-mock_tool_result = [
-    {
-        "role": "tool",
-        "tool_call_id": None,
-        "name": "get_weather",
-        "content": '{"temperature": 72, "unit": "fahrenheit", "description": "Sunny"}',
-    },
-    {
-        "role": "tool",
-        "tool_call_id": None,
-        "name": "get_weather",
-        "content": '{"temperature": 100, "unit": "fahrenheit", "description": "Sunny"}',
-    },
-]
+    if actual_tool_calls:
+        print(f"Processing {len(actual_tool_calls)} tool calls from first response")
 
-messages.append(mock_tool_call)
-messages.extend(mock_tool_result)
+        # Create assistant message with actual tool calls
+        assistant_message = {
+            "role": "assistant",
+            "content": first_response.get("content", ""),
+            "tool_calls": [],
+        }
+
+        # Convert to OpenAI format and create corresponding tool results
+        tool_results = []
+        for i, tc in enumerate(actual_tool_calls):
+            # Create OpenAI format tool call
+            tool_call_id = f"call_{i}"
+            openai_tool_call = {
+                "id": tool_call_id,
+                "type": "function",
+                "function": {
+                    "name": tc.get("name"),
+                    "arguments": json.dumps(tc.get("args", {})),
+                },
+            }
+            assistant_message["tool_calls"].append(openai_tool_call)
+
+            # Create corresponding tool result
+            if tc.get("name") == "get_weather":
+                location = tc.get("args", {}).get("location", "Unknown")
+                temp = (
+                    72 if "Chicago" in location else 25
+                )  # Different temps for different cities
+                tool_result = {
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "name": tc.get("name"),
+                    "content": json.dumps(
+                        {
+                            "temperature": temp,
+                            "unit": "fahrenheit"
+                            if "Chicago" in location
+                            else "celsius",
+                            "description": "Sunny",
+                        }
+                    ),
+                }
+                tool_results.append(tool_result)
+
+        messages.append(assistant_message)
+        messages.extend(tool_results)
+
+        print("Updated conversation:")
+        for i, msg in enumerate(messages):
+            print(
+                f"  Message {i + 1}: {msg.get('role')} - {msg.get('content', '')[:50]}..."
+            )
+            if msg.get("tool_calls"):
+                print(f"    Tool calls: {len(msg['tool_calls'])}")
+            if msg.get("role") == "tool":
+                print(f"    Tool: {msg.get('name')} -> {msg.get('content')[:50]}...")
+    else:
+        print("No tool calls found in first response, skipping second request")
+        exit()
+
+except Exception as e:
+    print(f"Error processing first response: {e}")
+    exit()
 
 data = {
     "user": "pding",
