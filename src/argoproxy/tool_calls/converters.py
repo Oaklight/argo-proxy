@@ -25,28 +25,28 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from ..types.function_call import (
+    ChatCompletionMessageToolCall,  # OpenAIToolCall,
+    ChatCompletionNamedToolChoiceParam,  # OpenAIToolChoiceFunction,
+    ChatCompletionToolChoiceOptionParam,  # OpenAIToolChoice,
     # openai types
     ChatCompletionToolParam,  # OpenAITool,
-    ChatCompletionToolChoiceOptionParam, # OpenAIToolChoice, 
-    ChatCompletionNamedToolChoiceParam,  # OpenAIToolChoiceFunction,
-    ChatCompletionMessageToolCall,  # OpenAIToolCall,
-    # anthropic types
-    ToolParam,  # AnthropicTool,
-    ToolChoiceParam,  # AnthropicToolChoice,
-    ToolChoiceAutoParam,  # AnthropicToolChoiceAuto,
     ToolChoiceAnyParam,  # AnthropicToolChoiceAny,
-    ToolChoiceToolParam,  # AnthropicToolChoiceTool,
+    ToolChoiceAutoParam,  # AnthropicToolChoiceAuto,
     ToolChoiceNoneParam,  # AnthropicToolChoiceNone,
-    ToolUseBlock,  # AnthropicToolCall,
+    ToolChoiceToolParam,  # AnthropicToolChoiceTool,
+    # anthropic types
     # claude types
-    ToolParam,  # ClaudeTool,
-    ToolChoiceParam,  # ClaudeToolChoice,
-    ToolUseBlock,  # ClaudeToolCall,
-    ToolParam as ClaudeTool,
+    ToolParam,  # AnthropicTool,  # ClaudeTool,
+)
+from ..types.function_call import (
     ToolChoiceParam as ClaudeToolChoice,
+)
+from ..types.function_call import (
+    ToolParam as ClaudeTool,
+)
+from ..types.function_call import (
     ToolUseBlock as ClaudeToolCall,
 )
-
 
 # ======================================================================
 # BASE CONVERTER INTERFACE
@@ -97,7 +97,10 @@ class OpenAIConverter(ToolConverter):
     def _read_tool_calls(
         self, tool_calls: List[Dict[str, Any]]
     ) -> List[ChatCompletionMessageToolCall]:
-        return [ChatCompletionMessageToolCall.model_validate(tool_call) for tool_call in tool_calls]
+        return [
+            ChatCompletionMessageToolCall.model_validate(tool_call)
+            for tool_call in tool_calls
+        ]
 
     def convert_tools(
         self,
@@ -141,7 +144,9 @@ class OpenAIConverter(ToolConverter):
             elif openai_tool_choice == "required":
                 return ToolChoiceAnyParam().model_dump()
             elif isinstance(openai_tool_choice, dict):
-                return ToolChoiceToolParam(name=openai_tool_choice["function"]["name"]).model_dump()
+                return ToolChoiceToolParam(
+                    name=openai_tool_choice["function"]["name"]
+                ).model_dump()
 
 
 class OpenAIToClaudeConverter(ToolConverter):
@@ -421,15 +426,26 @@ class OpenAIToGoogleConverter(ToolConverter):
 
         Returns:
             List of Google tool definitions as dictionaries
-
-        Note:
-            TODO: Implement Google/Gemini tool conversion
         """
-        raise NotImplementedError("Google/Gemini tool conversion not yet implemented")
+        google_tools = []
+
+        for tool in openai_tools:
+            if tool.get("type") == "function":
+                function = tool.get("function", {})
+
+                # Google/Gemini tool format: {"name": "...", "description": "...", "parameters": {...}}
+                google_tool = {
+                    "name": function.get("name", ""),
+                    "description": function.get("description", ""),
+                    "parameters": function.get("parameters", {}),
+                }
+                google_tools.append(google_tool)
+
+        return google_tools
 
     def convert_tool_choice(
         self, openai_tool_choice: Union[str, Dict[str, Any]]
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Optional[Union[str, Dict[str, Any]]]:
         """
         Convert OpenAI tool_choice format to Google tool_choice format.
 
@@ -437,14 +453,32 @@ class OpenAIToGoogleConverter(ToolConverter):
             openai_tool_choice: OpenAI tool choice specification
 
         Returns:
-            Google tool choice specification as dictionary
-
-        Note:
-            TODO: Implement Google/Gemini tool choice conversion
+            Google tool choice specification as string or dictionary
         """
-        raise NotImplementedError(
-            "Google/Gemini tool choice conversion not yet implemented"
-        )
+        if openai_tool_choice is None:
+            return None
+
+        # Handle string values
+        if isinstance(openai_tool_choice, str):
+            if openai_tool_choice == "none":
+                return "NONE"
+            elif openai_tool_choice == "auto":
+                return "AUTO"
+            elif openai_tool_choice == "required":
+                return "ANY"
+
+        # Handle dict values (specific function selection)
+        elif isinstance(openai_tool_choice, dict):
+            if openai_tool_choice.get("type") == "function":
+                function_name = openai_tool_choice.get("function", {}).get("name")
+                if function_name:
+                    return {
+                        "mode": "FUNCTION_CALLING",
+                        "allowed_function_names": [function_name],
+                    }
+
+        # Default fallback
+        return "AUTO"
 
     def convert_tool_calls(
         self, openai_tool_calls: List[Dict[str, Any]]
@@ -457,13 +491,33 @@ class OpenAIToGoogleConverter(ToolConverter):
 
         Returns:
             List of Google tool call elements as dictionaries
-
-        Note:
-            TODO: Implement Google/Gemini tool calls conversion
         """
-        raise NotImplementedError(
-            "Google/Gemini tool calls conversion not yet implemented"
-        )
+        google_tool_calls = []
+
+        for tool_call in openai_tool_calls:
+            if tool_call.get("type") == "function":
+                function = tool_call.get("function", {})
+
+                # Parse arguments from JSON string to object
+                arguments_str = function.get("arguments", "{}")
+                try:
+                    arguments_obj = (
+                        json.loads(arguments_str)
+                        if isinstance(arguments_str, str)
+                        else arguments_str
+                    )
+                except json.JSONDecodeError:
+                    arguments_obj = {}
+
+                # Google format: {"id": "call_id", "name": "function_name", "args": {...}}
+                google_tool_call = {
+                    "id": tool_call.get("id"),
+                    "name": function.get("name", ""),
+                    "args": arguments_obj,
+                }
+                google_tool_calls.append(google_tool_call)
+
+        return google_tool_calls
 
     def convert_tools_and_choice(
         self,

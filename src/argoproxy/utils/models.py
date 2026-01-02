@@ -82,8 +82,9 @@ def generate_id(
         return f"toolu_{suffix}"
 
     elif mode == "google":
-        # TODO: Implement Google-specific ID generation if needed
-        raise NotImplementedError("Google-specific ID generation not implemented")
+        # Google/Gemini uses simple alphanumeric IDs, similar to general format
+        # Generate 16-char base62 string for Google use
+        return "".join(secrets.choice(ALPHANUM) for _ in range(16))
 
     else:
         raise ValueError(f"Unknown mode: {mode!r}")
