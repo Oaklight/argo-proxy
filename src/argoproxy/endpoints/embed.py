@@ -45,8 +45,8 @@ def make_it_openai_embeddings_compat(
 
         # Construct the OpenAI-compatible response
         data = [
-            Embedding(embedding=embedding, index=0)
-            for embedding in custom_response_dict["embedding"]
+            Embedding(embedding=embedding, index=i)
+            for i, embedding in enumerate(custom_response_dict["embedding"])
         ]
         openai_response = CreateEmbeddingResponse(
             data=data,
