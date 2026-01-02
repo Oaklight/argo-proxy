@@ -39,6 +39,14 @@ dev = [
     "httpx>=0.28.1",
     "requests>=2.25.1",
 ]
+test = [
+    "openai>=1.79.0",
+    "python-dotenv>=1.0.0",
+    "numpy>=1.24.0",
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+]
+all = ["argo-proxy[dev,test]"]
 
 [project.urls]
 Documentation = "https://github.com/Oaklight/argo-openai-proxy#readme"
