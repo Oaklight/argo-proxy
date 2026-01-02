@@ -186,9 +186,40 @@ class OpenAIModel(BaseModel):
     created: int = int(datetime.now().timestamp())
     owned_by: str = "argo"
 
+    def __init__(self, **data):
+        super().__init__(**data)
+        # Set owned_by based on model family if not explicitly provided
+        if self.owned_by == "argo":
+            family = self._classify_model_family(self.internal_name)
+            if family != "unknown":
+                self.owned_by = family
+
+    def _classify_model_family(self, model_id: str) -> str:
+        """Classify a model by its family based on model ID patterns."""
+        # OpenAI models - check various patterns
+        if (
+            fnmatch.fnmatch(model_id, GPT_O_PATTERN)
+            or fnmatch.fnmatch(model_id, "ada*")
+            or fnmatch.fnmatch(model_id, "v3*")
+            or fnmatch.fnmatch(model_id, "*embedding*")
+        ):
+            return "openai"
+
+        # Anthropic models
+        if fnmatch.fnmatch(model_id, CLAUDE_PATTERN):
+            return "anthropic"
+
+        # Google models
+        if fnmatch.fnmatch(model_id, GEMINI_PATTERN):
+            return "google"
+
+        # Default to unknown
+        return "unknown"
+
 
 GPT_O_PATTERN = "gpto*"
 CLAUDE_PATTERN = "claude*"
+GEMINI_PATTERN = "gemini*"
 
 
 def produce_argo_model_list(upstream_models: List[Model]) -> Dict[str, str]:
@@ -672,23 +703,23 @@ class ModelRegistry:
 
     def _classify_model_by_family(self, model_id: str) -> str:
         """Classify a model by its family based on model ID patterns."""
-        model_id_lower = model_id.lower()
-
-        # OpenAI models
-        if any(pattern in model_id_lower for pattern in ["gpt", "o1", "o3", "o4"]):
+        # OpenAI models - check various patterns
+        if (
+            fnmatch.fnmatch(model_id, "gpt*")
+            or fnmatch.fnmatch(model_id, GPT_O_PATTERN)
+            or fnmatch.fnmatch(model_id, "ada*")
+            or fnmatch.fnmatch(model_id, "v3*")
+            or fnmatch.fnmatch(model_id, "*embedding*")
+        ):
             return "openai"
 
         # Anthropic models
-        if "claude" in model_id_lower:
+        if fnmatch.fnmatch(model_id, CLAUDE_PATTERN):
             return "anthropic"
 
         # Google models
-        if "gemini" in model_id_lower:
+        if fnmatch.fnmatch(model_id, GEMINI_PATTERN):
             return "google"
-
-        # Embedding models (mostly OpenAI)
-        if any(pattern in model_id_lower for pattern in ["ada", "embedding"]):
-            return "openai"
 
         # Default to unknown
         return "unknown"
@@ -704,6 +735,20 @@ class ModelRegistry:
         chat_family_counts = {"openai": 0, "anthropic": 0, "google": 0, "unknown": 0}
         embed_family_counts = {"openai": 0, "anthropic": 0, "google": 0, "unknown": 0}
 
+        # Count aliases by family
+        chat_family_alias_counts = {
+            "openai": 0,
+            "anthropic": 0,
+            "google": 0,
+            "unknown": 0,
+        }
+        embed_family_alias_counts = {
+            "openai": 0,
+            "anthropic": 0,
+            "google": 0,
+            "unknown": 0,
+        }
+
         for model_id in unique_models:
             family = self._classify_model_by_family(model_id)
             family_counts[family] += 1
@@ -712,6 +757,15 @@ class ModelRegistry:
                 chat_family_counts[family] += 1
             elif model_id in embed_models:
                 embed_family_counts[family] += 1
+
+        # Count aliases for each family
+        for alias, model_id in self.available_chat_models.items():
+            family = self._classify_model_by_family(model_id)
+            chat_family_alias_counts[family] += 1
+
+        for alias, model_id in self.available_embed_models.items():
+            family = self._classify_model_by_family(model_id)
+            embed_family_alias_counts[family] += 1
 
         return {
             "total_aliases": len(self.available_models),
@@ -723,6 +777,8 @@ class ModelRegistry:
             "family_counts": family_counts,
             "chat_family_counts": chat_family_counts,
             "embed_family_counts": embed_family_counts,
+            "chat_family_alias_counts": chat_family_alias_counts,
+            "embed_family_alias_counts": embed_family_alias_counts,
         }
 
 
