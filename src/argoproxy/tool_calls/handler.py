@@ -49,6 +49,8 @@ from ..types.function_call import (
     ToolParam,
     ToolUseBlock,
 )
+from ..types.function_call import FunctionCall as GeminiToolCall
+from ..types.function_call import FunctionDeclaration as GeminiTool
 from ..utils.models import API_FORMATS
 
 
@@ -120,8 +122,26 @@ class ToolCall(BaseModel):
                 arguments=arguments_str,
             )
         elif api_format == "google":
-            # TODO: Implement Google API format
-            raise NotImplementedError("Google API format is not supported yet.")
+            # Google/Gemini API format: {"id": None, "args": {...}, "name": "function_name"}
+            from ..utils.models import generate_id
+
+            origin_tool_call = GeminiToolCall.model_validate(tool_call)
+
+            # Convert args dict to JSON string
+            arguments_str = (
+                json.dumps(origin_tool_call.args)
+                if not isinstance(origin_tool_call.args, str)
+                else origin_tool_call.args
+            )
+
+            # Generate ID if None
+            tool_call_id = origin_tool_call.id or generate_id(mode="google")
+
+            return cls(
+                id=tool_call_id,
+                name=origin_tool_call.name,
+                arguments=arguments_str,
+            )
         else:
             raise ValueError(f"Unsupported API format: {api_format}")
 
@@ -168,7 +188,22 @@ class ToolCall(BaseModel):
             )
 
         elif api_format == "google":
-            raise NotImplementedError("Google API format is not supported yet.")
+            # Convert to Google/Gemini format
+            try:
+                args_data = (
+                    json.loads(self.arguments)
+                    if isinstance(self.arguments, str)
+                    else self.arguments
+                )
+            except json.JSONDecodeError:
+                args_data = {}
+
+            # Google format: {"id": "call_id", "name": "function_name", "args": {...}}
+            tool_call = GeminiToolCall(
+                id=self.id,
+                name=self.name,
+                args=args_data,
+            )
 
         elif api_format == "general":
             return self
@@ -244,8 +279,13 @@ class Tool(BaseModel):
                 parameters=parameters,
             )
         elif api_format == "google":
-            # TODO: Implement Google tool format
-            raise NotImplementedError("Google tool format not implemented")
+            origin_tool = GeminiTool.model_validate(tool)
+
+            return Tool(
+                name=origin_tool.name,
+                description=origin_tool.description,
+                parameters=origin_tool.parameters,
+            )
         else:
             raise ValueError(f"Invalid API format: {api_format}")
 
@@ -281,8 +321,13 @@ class Tool(BaseModel):
                 input_schema=self.parameters,
             )
         elif api_format == "google":
-            # TODO: Implement Google tool format
-            raise NotImplementedError("Google tool format not implemented")
+            # Google/Gemini tool format: {"name": "...", "description": "...", "parameters": {...}}
+
+            tool = GeminiTool(
+                name=self.name,
+                description=self.description,
+                parameters=self.parameters,
+            )
 
         elif api_format == "general":
             tool = self
@@ -368,7 +413,7 @@ class ToolChoice(BaseModel):
         elif api_format == "anthropic":
             return cls._handle_anthropic(data)
         elif api_format == "google":
-            raise NotImplementedError("Google API format is not supported yet.")
+            return cls._handle_google(data)
         else:
             raise ValueError(f"Unsupported API format: {api_format}")
 
@@ -429,6 +474,43 @@ class ToolChoice(BaseModel):
                 f"Anthropic tool choice must be a dictionary, got: {type(data)}"
             )
 
+    @classmethod
+    def _handle_google(cls, data: Union[str, Dict[str, Any]]) -> "ToolChoice":
+        """Handle Google/Gemini API format tool_choice"""
+        if isinstance(data, str):
+            # Google uses different string values, map them to our internal format
+            data_upper = data.upper()
+            if data_upper == "AUTO":
+                return cls(choice="optional")
+            elif data_upper == "ANY":
+                return cls(choice="any")
+            elif data_upper == "NONE":
+                return cls(choice="none")
+            else:
+                # Fallback to standard triage for OpenAI-style strings
+                return cls._str_triage(data)
+        elif isinstance(data, dict):
+            # Google format: {"mode": "AUTO"/"ANY"/"NONE"} or {"mode": "FUNCTION_CALLING", "allowed_function_names": ["name"]}
+            mode = data.get("mode", "").upper()
+            if mode == "AUTO":
+                return cls(choice="optional")
+            elif mode == "ANY":
+                return cls(choice="any")
+            elif mode == "NONE":
+                return cls(choice="none")
+            elif mode == "FUNCTION_CALLING":
+                # Specific function calling mode
+                allowed_functions = data.get("allowed_function_names", [])
+                if allowed_functions and len(allowed_functions) == 1:
+                    return cls(choice=NamedTool(name=allowed_functions[0]))
+                else:
+                    # Multiple functions allowed, treat as "any"
+                    return cls(choice="any")
+            else:
+                raise ValueError(f"Invalid Google tool choice mode: {mode}")
+        else:
+            raise ValueError(f"Invalid Google tool choice data type: {type(data)}")
+
     def to_tool_choice(
         self,
         api_format: Union[API_FORMATS, Literal["general"]] = "general",
@@ -453,7 +535,7 @@ class ToolChoice(BaseModel):
         elif api_format == "anthropic":
             return self._to_anthropic()
         elif api_format == "google":
-            raise NotImplementedError("Google API format not implemented yet")
+            return self._to_google()
         elif api_format == "general":
             return self
         else:
@@ -515,6 +597,26 @@ class ToolChoice(BaseModel):
                 raise ValueError(f"Invalid tool choice: {self.choice}")
         elif isinstance(self.choice, NamedTool):
             return ToolChoiceToolParam(name=self.choice.name)
+        else:
+            raise ValueError(f"Invalid tool choice type: {type(self.choice)}")
+
+    def _to_google(self) -> Union[str, Dict[str, Any]]:
+        """Convert to Google/Gemini API format"""
+        if isinstance(self.choice, str):
+            if self.choice == "optional":
+                return "AUTO"
+            elif self.choice == "any":
+                return "ANY"
+            elif self.choice == "none":
+                return "NONE"
+            else:
+                raise ValueError(f"Invalid tool choice: {self.choice}")
+        elif isinstance(self.choice, NamedTool):
+            # Google format for specific function
+            return {
+                "mode": "FUNCTION_CALLING",
+                "allowed_function_names": [self.choice.name],
+            }
         else:
             raise ValueError(f"Invalid tool choice type: {type(self.choice)}")
 
