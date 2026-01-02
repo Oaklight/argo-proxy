@@ -14,7 +14,10 @@ pip install argo-proxy # install the package
 argo-proxy # run the proxy
 ```
 
-Function calling is available for Chat Completions endpoint starting from `v2.7.5`. Try with `pip install "argo-proxy>=2.7.5"`
+Function calling is available for Chat Completions endpoint starting from `v2.7.5`.
+Try with `pip install "argo-proxy>=2.7.5"`
+
+**Now all models have native function calling in standard mode.** (Gemini native function calling support added in v2.8.0.)
 
 ## NOTICE OF USAGE
 
@@ -361,7 +364,7 @@ The tool calls (function calling) interface has been available since version v2.
 
 - **OpenAI models**: Full native function calling support
 - **Anthropic models**: Full native function calling support
-- **Gemini models**: Native function calling support in development
+- **Gemini models**: Full native function calling support (added in v2.8.0)
 - **OpenAI format**: All input and output remains in OpenAI format regardless of underlying model
 
 #### Availability

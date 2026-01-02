@@ -1,6 +1,6 @@
 # Getting Started with Tool Calls (Function Calling)
 
-Tool calls, also known as function calling, allow AI models to request the execution of external functions. This feature has been available since version v2.7.5.alpha1 and now includes **native function calling support** for OpenAI and Anthropic models, with Gemini support in development.
+Tool calls, also known as function calling, allow AI models to request the execution of external functions. This feature has been available since version v2.7.5.alpha1 and now includes **native function calling support** for OpenAI, Anthropic, and Gemini models (added in v2.8.0).
 
 ## What is Tool Calling?
 
@@ -149,7 +149,7 @@ Argo Proxy now supports **native function calling** for supported models:
 
 - **OpenAI models**: ✅ Full native function calling support
 - **Anthropic models**: ✅ Full native function calling support
-- **Gemini models**: 🚧 Native function calling support in development
+- **Gemini models**: ✅ Full native function calling support (added in v2.8.0)
 
 ### Key Benefits
 

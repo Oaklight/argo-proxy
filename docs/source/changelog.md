@@ -2,13 +2,93 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
-## v2.7.10 (2025-12-21)
+## v2.8.0 (2026-01-02)
+
+### Major Features
+
+- **Gemini Native Function Calling**: Added full native function calling support for Google Gemini models
+- **Model Statistics Enhancement**: Enhanced model registry with detailed family breakdown and alias counting
+- **Comprehensive Test Suite**: Added complete test coverage for all API endpoints
+
+### New Features
+
+- **Gemini Function Calling**:
+
+  - Native tool calling support for Google/Gemini models in chat completions
+  - Google-specific tool call format conversion and processing
+  - Parallel to sequential tool call conversion for Gemini API compatibility
+  - Tool call ID generation and argument serialization for Google format
+  - Enhanced tool choice handling with proper string/dict conversion
+
+- **Model Registry Enhancements**:
+
+  - Added `get_model_stats()` method for detailed model statistics
+  - Model family classification (OpenAI, Anthropic, Google, unknown)
+  - Comprehensive model registry display with family breakdown
+  - Chat and embedding model statistics with alias counts
+  - Tree-structured logging for better readability
+
+- **Testing Infrastructure**:
+  - Complete test suite for chat completions, embeddings, and function calling
+  - Tests for streaming, temperature control, conversation context
+  - Function calling tests for single and multiple tool scenarios
+  - Legacy completions endpoint testing with various parameters
+
+### Bug Fixes
+
+- **Embedding Index**: Fixed embedding index assignment to use sequential numbering instead of hardcoded 0
+
+### Improvements
+
+- **Tool Call Processing**: Enhanced tool call conversion between OpenAI and Google formats
+- **Development Scripts**: Added comprehensive Gemini function calling examples and test scripts
+- **Model Display**: Improved startup model registry display with family breakdown
+
+## v2.7.10 (2026-01-02)
+
+### Major Features
+
+- **Gemini Native Function Calling**: Added full native function calling support for Google Gemini models
+- **Model Statistics Enhancement**: Enhanced model registry with detailed family breakdown and alias counting
+- **Comprehensive Test Suite**: Added complete test coverage for all API endpoints
+
+### New Features
+
+- **Gemini Function Calling**:
+
+  - Native tool calling support for Google/Gemini models in chat completions
+  - Google-specific tool call format conversion and processing
+  - Parallel to sequential tool call conversion for Gemini API compatibility
+  - Tool call ID generation and argument serialization for Google format
+  - Enhanced tool choice handling with proper string/dict conversion
+
+- **Model Registry Enhancements**:
+
+  - Added `get_model_stats()` method for detailed model statistics
+  - Model family classification (OpenAI, Anthropic, Google, unknown)
+  - Comprehensive model registry display with family breakdown
+  - Chat and embedding model statistics with alias counts
+  - Tree-structured logging for better readability
+
+- **Testing Infrastructure**:
+  - Complete test suite for chat completions, embeddings, and function calling
+  - Tests for streaming, temperature control, conversation context
+  - Function calling tests for single and multiple tool scenarios
+  - Legacy completions endpoint testing with various parameters
 
 ### Bug Fixes
 
 - **Model Fetching**: Enhanced error handling in model fetching with detailed logging for HTTP, URL, JSON, and unknown errors
 - **API Compatibility**: Added support for both old and new API formats in Model class with backward compatibility
 - **Network Reliability**: Added request timeouts and improved error recovery with fallback to built-in model list
+- **Embedding Index**: Fixed embedding index assignment to use sequential numbering instead of hardcoded 0
+
+### Improvements
+
+- **Error Handling**: Improved error logging with detailed HTTP, URL, and JSON error messages
+- **API Format Detection**: Added automatic detection and logging of API format versions
+- **Tool Call Processing**: Enhanced tool call conversion between OpenAI and Google formats
+- **Development Scripts**: Added comprehensive Gemini function calling examples and test scripts
 
 ## v2.7.9 (2025-12-14)
 

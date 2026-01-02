@@ -76,7 +76,7 @@ Starting from recent versions, Argo Proxy supports **native function calling** f
 
 - **OpenAI models**: Full native function calling support
 - **Anthropic models**: Full native function calling support
-- **Gemini models**: Native function calling support is in development. The current implementation uses prompting-based function calling.
+- **Gemini models**: Full native function calling support (added in v2.8.0)
 
 ### Key Features
 
