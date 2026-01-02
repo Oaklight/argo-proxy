@@ -2,12 +2,12 @@
 Native OpenAI endpoint passthrough module.
 
 This module provides direct passthrough to the native OpenAI-compatible endpoint
-without any transformation or processing.
+with intelligent format conversion for different model types.
 """
 
 import json
 from http import HTTPStatus
-from typing import Union
+from typing import Any, Dict, Union
 
 import aiohttp
 from aiohttp import web
@@ -15,6 +15,7 @@ from loguru import logger
 
 from ..config import ArgoConfig
 from ..models import ModelRegistry
+from ..tool_calls.google_helpers import GeminiToolCallConverter
 from ..tool_calls.input_handle import handle_tools
 from ..utils.image_processing import process_chat_images
 from ..utils.misc import apply_username_passthrough, make_bar
@@ -109,7 +110,7 @@ async def proxy_native_openai_request(
         else:
             # Handle non-streaming response
             return await _handle_non_streaming_passthrough(
-                session, upstream_url, headers, data
+                session, upstream_url, headers, data, config
             )
 
     except ValueError as err:
@@ -142,18 +143,20 @@ async def _handle_non_streaming_passthrough(
     upstream_url: str,
     headers: dict,
     data: dict,
+    config: ArgoConfig,
 ) -> web.Response:
     """
-    Handle non-streaming passthrough request.
+    Handle non-streaming passthrough request with Gemini tool call conversion support.
 
     Args:
         session: The client session for making the request.
         upstream_url: The full upstream URL.
         headers: Request headers.
         data: The JSON payload.
+        config: Configuration object for verbose logging and other settings.
 
     Returns:
-        A web.Response with the upstream response.
+        A web.Response with the upstream response, potentially converted for Gemini models.
     """
     try:
         async with session.post(
@@ -168,6 +171,19 @@ async def _handle_non_streaming_passthrough(
                     text=response_text,
                     status=upstream_resp.status,
                     content_type=upstream_resp.content_type or "text/plain",
+                )
+
+            # Apply Gemini tool call conversion if needed
+            model_name = data.get("model", "")
+            converter = GeminiToolCallConverter(verbose=config.verbose)
+
+            if converter.is_gemini_model(model_name):
+                if config.verbose:
+                    logger.info(
+                        f"Applying Gemini tool call conversion for model: {model_name}"
+                    )
+                response_data = converter.convert_response_data(
+                    response_data, model_name
                 )
 
             return web.json_response(
@@ -259,10 +275,28 @@ async def _handle_streaming_passthrough(
             response.enable_chunked_encoding()
             await response.prepare(request)
 
-            # Stream the response chunks directly
+            # Stream the response chunks with enhanced error handling
+            chunk_count = 0
+            error_count = 0
+
             async for chunk in upstream_resp.content.iter_any():
                 if chunk:
-                    await response.write(chunk)
+                    chunk_count += 1
+                    try:
+                        await response.write(chunk)
+                    except Exception as e:
+                        error_count += 1
+                        logger.warning(
+                            f"Stream chunk {chunk_count} processing error: {e}"
+                        )
+
+                        # If too many errors, stop processing
+                        if error_count > 10:
+                            logger.error("Too many stream processing errors, stopping")
+                            break
+
+                        # Continue processing next chunk
+                        continue
 
             await response.write_eof()
             return response
