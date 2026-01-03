@@ -1,0 +1,129 @@
+site_name: Argo Proxy
+site_description: A proxy for different LLM models.
+repo_url: https://github.com/Oaklight/argo-proxy
+repo_name: Oaklight/argo-proxy
+
+# Documentation directory
+docs_dir: docs
+
+# Theme configuration
+theme:
+  name: material
+  palette:
+    # 支持自动切换（跟随系统）
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    # 明亮模式
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # 暗黑模式
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.indexes
+    - search.highlight
+    - search.share
+    - search.suggest
+    - content.code.copy
+  language: en
+
+# Extra configuration
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/Oaklight/argo-proxy
+
+# Navigation structure
+nav:
+  - Home: index.md
+  - Usage:
+    - usage/index.md
+    - Installation: usage/installation.md
+    - Running: usage/running.md
+    - Endpoints: usage/endpoints.md
+    - Models: usage/models.md
+    - "Native OpenAI Passthrough": usage/native-openai-passthrough.md
+    - Basics:
+      - usage/basics/index.md
+      - "CLI": usage/basics/cli.md
+      - "Configuration": usage/basics/configuration.md
+      - "Network": usage/basics/network.md
+      - "Timeout Examples": usage/basics/timeout_examples.md
+    - Advanced:
+      - usage/advanced/index.md
+      - "Streaming": usage/advanced/streaming.md
+      - "Vision": usage/advanced/vision.md
+      - Tools:
+        - usage/advanced/tools/index.md
+        - "Getting Started": usage/advanced/tools/getting-started.md
+        - "Advanced Usage": usage/advanced/tools/advanced-usage.md
+        - "OpenAI Parameters": usage/advanced/tools/openai-parameters.md
+        - "ToolRegistry": usage/advanced/tools/toolregistry.md
+  # - API:
+  #   - api/index.md
+  - Examples:
+    - examples/index.md
+  - Changelog: changelog.md
+
+# Extensions
+markdown_extensions:
+  - admonition
+  - codehilite:
+      guess_lang: true
+  - fenced_code
+  - footnotes
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.blocks.details
+  - pymdownx.blocks.tab
+  - pymdownx.progressbar
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+# Plugins
+plugins:
+  - search:
+      lang: en
+      separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+  - mkdocstrings:
+      handlers:
+        python:
+          paths:
+            - ../src
+          options:
+            docstring_style: google
+
+# Custom CSS and JS
+extra_javascript:
+  - https://polyfill.io/v3/polyfill.min.js?features=es6
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+
+# Copyright
+copyright: Copyright &copy; 2024 Argo Proxy
