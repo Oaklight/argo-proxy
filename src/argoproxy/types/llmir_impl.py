@@ -1094,11 +1094,11 @@ async def _send_llmir_non_streaming_request(
 
             # 转换为 OpenAI 格式
             prompt_tokens = await calculate_prompt_tokens_async(data, data["model"])
-            completion_tokens = (
-                await count_tokens_async(response_content, data["model"])
-                if response_content
-                else 0
-            )
+            # 确保 response_content 是字符串类型
+            if response_content and isinstance(response_content, str):
+                completion_tokens = await count_tokens_async(response_content, data["model"])
+            else:
+                completion_tokens = 0
             total_tokens = prompt_tokens + completion_tokens
 
             usage = CompletionUsage(
