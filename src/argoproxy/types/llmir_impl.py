@@ -97,8 +97,33 @@ class ArgoConverter(BaseConverter):
         return {"type": "text", "text": text_part["text"]}
 
     def _p_text_to_ir(self, provider_text: Any) -> TextPart:
-        """Provider Text Content → IR TextPart / Provider文本内容转换为IR文本部分"""
-        pass
+        """Provider Text Content → IR TextPart / Argo文本内容转换为IR文本部分
+
+        Argo 支持多种文本格式：
+        1. 简单字符串：直接文本内容
+        2. OpenAI 格式：{"type": "text", "text": "..."}
+        3. 其他格式的文本内容
+
+        Args:
+            provider_text: Argo格式的文本内容
+
+        Returns:
+            IR格式的TextPart
+        """
+        if isinstance(provider_text, str):
+            # 简单字符串格式
+            return TextPart(type="text", text=provider_text)
+        elif isinstance(provider_text, dict):
+            if provider_text.get("type") == "text" and "text" in provider_text:
+                # OpenAI 格式：{"type": "text", "text": "..."}
+                return TextPart(type="text", text=provider_text["text"])
+            else:
+                # 其他字典格式，尝试提取文本内容
+                text_content = provider_text.get("content", "") or str(provider_text)
+                return TextPart(type="text", text=text_content)
+        else:
+            # 其他类型，转换为字符串
+            return TextPart(type="text", text=str(provider_text))
 
     def _ir_image_to_p(self, image_part: ImagePart) -> Any:
         """IR ImagePart → Provider Image Content / IR图像部分转换为Argo图像内容
@@ -187,7 +212,7 @@ class ArgoConverter(BaseConverter):
 
     def _ir_file_to_p(self, file_part: FilePart) -> Any:
         """IR FilePart → Provider File Content / IR文件部分转换为Provider文件内容
-        
+
         注意：文件处理功能尚未实现，上游 LLMIR 转换器也未提供此功能
         """
         raise NotImplementedError(
@@ -197,7 +222,7 @@ class ArgoConverter(BaseConverter):
 
     def _p_file_to_ir(self, provider_file: Any) -> FilePart:
         """Provider File Content → IR FilePart / Provider文件内容转换为IR文件部分
-        
+
         注意：文件处理功能尚未实现，上游 LLMIR 转换器也未提供此功能
         """
         raise NotImplementedError(
