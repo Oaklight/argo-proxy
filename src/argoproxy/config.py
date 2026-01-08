@@ -50,6 +50,9 @@ class ArgoConfig:
     _native_openai_base_url: str = "https://apps-dev.inside.anl.gov/argoapi/v1/"
     _use_native_openai: bool = False
 
+    # LLMIR mode
+    _use_llmir: bool = False
+
     # CLI flags
     _real_stream: bool = True
     _tool_prompt: bool = False
@@ -110,6 +113,11 @@ class ArgoConfig:
         """Check if native OpenAI mode is enabled."""
         return self._use_native_openai
 
+    @property
+    def use_llmir(self):
+        """Check if LLMIR mode is enabled."""
+        return self._use_llmir
+
     @classmethod
     def from_dict(cls, config_dict: dict):
         """Create ArgoConfig instance from a dictionary."""
@@ -121,6 +129,7 @@ class ArgoConfig:
             "real_stream": "_real_stream",
             "native_openai_base_url": "_native_openai_base_url",
             "use_native_openai": "_use_native_openai",
+            "use_llmir": "_use_llmir",
         }
         valid_fields = {
             k: v for k, v in config_dict.items() if k in cls.__annotations__
@@ -487,6 +496,9 @@ def _apply_env_overrides(config_data: ArgoConfig) -> ArgoConfig:
     if env_use_native_openai := os.getenv("USE_NATIVE_OPENAI"):
         config_data._use_native_openai = str_to_bool(env_use_native_openai)
 
+    if env_use_llmir := os.getenv("USE_LLMIR"):
+        config_data._use_llmir = str_to_bool(env_use_llmir)
+
     return config_data
 
 
@@ -617,6 +629,11 @@ def validate_config(
             "   ⚠️  Tool call streaming behavior may differ from standard mode"
         )
         logger.warning("   ⚠️  Some argo-proxy features may be bypassed in native mode")
+    elif config_data.use_llmir:
+        logger.warning("🧠 LLMIR MODE: [ENABLED]")
+        logger.info("   └─ LLMIR standardized message processing active")
+        logger.warning("   ⚠️  Only non-streaming requests are supported in LLMIR mode")
+        logger.info("   ✨ Enhanced message format conversion and validation")
     else:
         logger.warning("🔧 STANDARD MODE: [ENABLED]")
         logger.info("   └─ Full argo-proxy processing active")

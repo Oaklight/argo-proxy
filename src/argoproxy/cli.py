@@ -103,6 +103,12 @@ def parsing_args() -> argparse.Namespace:
         default=False,
         help="Enable native OpenAI endpoint passthrough mode - directly forward requests to native OpenAI endpoint without transformation",
     )
+    parser.add_argument(
+        "--llmir",
+        action="store_true",
+        default=False,
+        help="Enable LLMIR mode - use LLMIR converters for standardized message processing (non-streaming only)",
+    )
 
     parser.add_argument(
         "--edit",
@@ -160,6 +166,8 @@ def set_config_envs(args: argparse.Namespace):
         os.environ["USERNAME_PASSTHROUGH"] = str(True)
     if args.native_openai:
         os.environ["USE_NATIVE_OPENAI"] = str(True)
+    if args.llmir:
+        os.environ["USE_LLMIR"] = str(True)
 
 
 def open_in_editor(config_path: Optional[str] = None):

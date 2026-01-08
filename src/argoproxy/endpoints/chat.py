@@ -629,6 +629,15 @@ async def proxy_request(
     """
     config: ArgoConfig = request.app["config"]
     model_registry: ModelRegistry = request.app["model_registry"]
+
+    # Check if LLMIR mode is enabled
+    if config.use_llmir:
+        from ..types.llmir_impl import process_chat_with_llmir
+
+        return await process_chat_with_llmir(
+            request, convert_to_openai=convert_to_openai
+        )
+
     try:
         # Retrieve the incoming JSON data from request if input_data is not provided
 
