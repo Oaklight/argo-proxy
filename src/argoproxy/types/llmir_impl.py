@@ -95,6 +95,9 @@ class ArgoConverter(BaseConverter):
             )
 
         # 确定模型家族
+        # 确保 model_name 是字符串类型
+        if not isinstance(model_name, str):
+            model_name = str(model_name) if model_name is not None else ""
 
         model_family = determine_model_family(model_name) if model_name else "openai"
         if model_family == "unknown":
@@ -166,6 +169,10 @@ class ArgoConverter(BaseConverter):
         model_name = ""
         if isinstance(provider_data, dict):
             model_name = provider_data.get("model", "")
+
+        # 确保 model_name 是字符串类型
+        if not isinstance(model_name, str):
+            model_name = str(model_name) if model_name is not None else ""
 
         from ..utils.models import determine_model_family
 
@@ -465,6 +472,10 @@ class ArgoConverter(BaseConverter):
 
         # 构建最终的URL
         if image_url:
+            # 确保 image_url 是字符串类型
+            if not isinstance(image_url, str):
+                image_url = str(image_url) if image_url is not None else ""
+
             # 检查是否是 HTTP/HTTPS URL（Argo 不支持）
             if is_http_url(image_url):
                 raise ValueError(
@@ -506,6 +517,10 @@ class ArgoConverter(BaseConverter):
         image_url_obj = provider_image.get("image_url", {})
         url = image_url_obj.get("url", "")
         detail = image_url_obj.get("detail", "auto")
+
+        # 确保 url 是字符串类型
+        if not isinstance(url, str):
+            url = str(url) if url is not None else ""
 
         # 检查是否是data URL（base64编码）
         if url.startswith("data:"):
@@ -943,6 +958,10 @@ async def process_chat_with_llmir(
     except Exception as err:
         error_message = f"An unexpected error occurred in LLMIR mode: {err}"
         logger.error(error_message)
+        # 添加详细的错误信息用于调试
+        import traceback
+
+        logger.error(f"Full traceback: {traceback.format_exc()}")
         return web.json_response(
             {"error": error_message},
             status=HTTPStatus.INTERNAL_SERVER_ERROR,
