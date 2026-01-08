@@ -186,12 +186,24 @@ class ArgoConverter(BaseConverter):
         return ImagePart(type="image", image_url=url, detail=detail)
 
     def _ir_file_to_p(self, file_part: FilePart) -> Any:
-        """IR FilePart → Provider File Content / IR文件部分转换为Provider文件内容"""
-        pass
+        """IR FilePart → Provider File Content / IR文件部分转换为Provider文件内容
+        
+        注意：文件处理功能尚未实现，上游 LLMIR 转换器也未提供此功能
+        """
+        raise NotImplementedError(
+            "File handling is not yet implemented. "
+            "The upstream LLMIR converters do not provide file conversion functionality."
+        )
 
     def _p_file_to_ir(self, provider_file: Any) -> FilePart:
-        """Provider File Content → IR FilePart / Provider文件内容转换为IR文件部分"""
-        pass
+        """Provider File Content → IR FilePart / Provider文件内容转换为IR文件部分
+        
+        注意：文件处理功能尚未实现，上游 LLMIR 转换器也未提供此功能
+        """
+        raise NotImplementedError(
+            "File handling is not yet implemented. "
+            "The upstream LLMIR converters do not provide file conversion functionality."
+        )
 
     def _ir_tool_call_to_p(self, tool_call_part: ToolCallPart) -> Any:
         """IR ToolCallPart → Provider Tool Call / IR工具调用部分转换为Provider工具调用
