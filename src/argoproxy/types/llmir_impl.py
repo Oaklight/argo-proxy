@@ -165,20 +165,30 @@ class ArgoConverter(BaseConverter):
         Returns:
             IR格式的数据（消息列表或完整响应） / IR format data (message list or full response)
         """
+        logger.info(
+            f"[LLMIR DEBUG] from_provider called with data type: {type(provider_data)}"
+        )
+
         # 确定模型家族
         model_name = ""
         if isinstance(provider_data, dict):
             model_name = provider_data.get("model", "")
+            logger.info(
+                f"[LLMIR DEBUG] Extracted model_name: {model_name} (type: {type(model_name)})"
+            )
 
         # 确保 model_name 是字符串类型
         if not isinstance(model_name, str):
+            logger.info(f"[LLMIR DEBUG] Converting model_name to string: {model_name}")
             model_name = str(model_name) if model_name is not None else ""
 
         from ..utils.models import determine_model_family
 
+        logger.info(f"[LLMIR DEBUG] Determining model family for: '{model_name}'")
         model_family = determine_model_family(model_name) if model_name else "openai"
         if model_family == "unknown":
             model_family = "openai"  # 默认使用 OpenAI 格式
+        logger.info(f"[LLMIR DEBUG] Determined model_family: {model_family}")
 
         # 如果不是 OpenAI 格式，先转换为 OpenAI 格式
         if model_family != "openai":
@@ -189,30 +199,63 @@ class ArgoConverter(BaseConverter):
             openai_data = provider_data
 
         # 使用统一的 OpenAI 格式抽象方法进行转换
+        logger.info(f"[LLMIR DEBUG] Processing openai_data type: {type(openai_data)}")
         if isinstance(openai_data, dict):
             if "messages" in openai_data:
+                logger.info(
+                    f"[LLMIR DEBUG] Processing {len(openai_data['messages'])} messages"
+                )
                 # 这是一个完整的请求/响应
                 ir_messages = []
-                for message in openai_data["messages"]:
-                    ir_message = self._p_message_to_ir(message)
-                    ir_messages.append(ir_message)
+                for i, message in enumerate(openai_data["messages"]):
+                    logger.info(
+                        f"[LLMIR DEBUG] Processing message {i}: {type(message)}"
+                    )
+                    try:
+                        ir_message = self._p_message_to_ir(message)
+                        ir_messages.append(ir_message)
+                        logger.info(f"[LLMIR DEBUG] Message {i} converted successfully")
+                    except Exception as e:
+                        logger.error(f"[LLMIR DEBUG] Error converting message {i}: {e}")
+                        raise
 
                 # 构建 IR 请求
                 ir_data = {"messages": ir_messages}
 
                 # 处理工具相关字段
                 if "tools" in openai_data:
+                    logger.info(
+                        f"[LLMIR DEBUG] Processing {len(openai_data['tools'])} tools"
+                    )
                     ir_tools = []
-                    for tool in openai_data["tools"]:
-                        ir_tool = self._p_tool_to_ir(tool)
-                        ir_tools.append(ir_tool)
+                    for i, tool in enumerate(openai_data["tools"]):
+                        logger.info(f"[LLMIR DEBUG] Processing tool {i}: {type(tool)}")
+                        try:
+                            ir_tool = self._p_tool_to_ir(tool)
+                            ir_tools.append(ir_tool)
+                            logger.info(
+                                f"[LLMIR DEBUG] Tool {i} converted successfully"
+                            )
+                        except Exception as e:
+                            logger.error(
+                                f"[LLMIR DEBUG] Error converting tool {i}: {e}"
+                            )
+                            raise
                     ir_data["tools"] = ir_tools
 
                 if "tool_choice" in openai_data:
-                    ir_tool_choice = self._p_tool_choice_to_ir(
-                        openai_data["tool_choice"]
+                    logger.info(
+                        f"[LLMIR DEBUG] Processing tool_choice: {openai_data['tool_choice']}"
                     )
-                    ir_data["tool_choice"] = ir_tool_choice
+                    try:
+                        ir_tool_choice = self._p_tool_choice_to_ir(
+                            openai_data["tool_choice"]
+                        )
+                        ir_data["tool_choice"] = ir_tool_choice
+                        logger.info("[LLMIR DEBUG] tool_choice converted successfully")
+                    except Exception as e:
+                        logger.error(f"[LLMIR DEBUG] Error converting tool_choice: {e}")
+                        raise
 
                 # 复制其他字段
                 for field in [
@@ -909,11 +952,35 @@ async def process_chat_with_llmir(
         # 创建 ArgoConverter 实例
         converter = ArgoConverter()
 
-        # 将请求数据转换为 IR 格式（自动处理模型家族检测）
-        ir_request = converter.from_provider(data)
+        try:
+            logger.info("[LLMIR DEBUG] Starting from_provider conversion")
+            logger.info(f"[LLMIR DEBUG] Input data type: {type(data)}")
+            logger.info(
+                f"[LLMIR DEBUG] Input data keys: {list(data.keys()) if isinstance(data, dict) else 'N/A'}"
+            )
 
-        # 将 IR 格式转换回 Argo 格式（应用标准化处理和模型家族转换）
-        argo_data, warnings = converter.to_provider(ir_request)
+            # 将请求数据转换为 IR 格式（自动处理模型家族检测）
+            ir_request = converter.from_provider(data)
+
+            logger.info("[LLMIR DEBUG] from_provider conversion completed")
+            logger.info(f"[LLMIR DEBUG] IR request type: {type(ir_request)}")
+            logger.info(
+                f"[LLMIR DEBUG] IR request keys: {list(ir_request.keys()) if isinstance(ir_request, dict) else 'N/A'}"
+            )
+
+            logger.info("[LLMIR DEBUG] Starting to_provider conversion")
+            # 将 IR 格式转换回 Argo 格式（应用标准化处理和模型家族转换）
+            argo_data, warnings = converter.to_provider(ir_request)
+
+            logger.info("[LLMIR DEBUG] to_provider conversion completed")
+
+        except Exception as e:
+            logger.error(f"[LLMIR DEBUG] Error during conversion: {e}")
+            logger.error(f"[LLMIR DEBUG] Error type: {type(e)}")
+            import traceback
+
+            logger.error(f"[LLMIR DEBUG] Full traceback: {traceback.format_exc()}")
+            raise
 
         # 记录警告信息
         for warning in warnings:
