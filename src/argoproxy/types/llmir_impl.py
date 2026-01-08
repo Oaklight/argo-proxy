@@ -1073,9 +1073,37 @@ async def _send_llmir_non_streaming_request(
                     status=502,
                 )
 
-            # 处理响应格式
-            response_content = response_data.get("response")
-            if response_content is None:
+            # 直接透传模式
+            if not convert_to_openai:
+                return web.json_response(
+                    response_data,
+                    status=upstream_resp.status,
+                    content_type="application/json",
+                )
+
+            # 转换为 OpenAI 格式
+            # 从 response_data 中提取响应内容
+            # Argo 的响应格式可能是：
+            # 1. {"response": "text content"}  - 纯文本响应
+            # 2. {"response": {"content": "...", "tool_calls": [...]}}  - 带 tool calls 的响应
+            response_field = response_data.get("response")
+            
+            # 解析响应内容
+            if isinstance(response_field, dict):
+                # 响应是字典格式，可能包含 content 和 tool_calls
+                response_content = response_field.get("content")
+                tool_calls = response_field.get("tool_calls")
+            elif isinstance(response_field, str):
+                # 响应是纯文本
+                response_content = response_field
+                tool_calls = None
+            else:
+                # 响应为 None 或其他类型
+                response_content = None
+                tool_calls = None
+            
+            # 检查是否有有效的响应（content 或 tool_calls）
+            if response_content is None and not tool_calls:
                 return web.json_response(
                     {
                         "object": "error",
@@ -1085,14 +1113,7 @@ async def _send_llmir_non_streaming_request(
                     status=502,
                 )
 
-            if not convert_to_openai:  # 直接透传
-                return web.json_response(
-                    response_data,
-                    status=upstream_resp.status,
-                    content_type="application/json",
-                )
-
-            # 转换为 OpenAI 格式
+            # 计算 tokens
             prompt_tokens = await calculate_prompt_tokens_async(data, data["model"])
             # 确保 response_content 是字符串类型
             if response_content and isinstance(response_content, str):
@@ -1107,7 +1128,11 @@ async def _send_llmir_non_streaming_request(
                 total_tokens=total_tokens,
             )
 
+            # 确定 finish_reason
+            finish_reason = "tool_calls" if tool_calls else "stop"
+
             # 构建 OpenAI 兼容响应
+            # 注意：当有 tool_calls 时，content 可以为 None（符合 OpenAI 规范）
             openai_response = ChatCompletion(
                 id=str(uuid.uuid4().hex),
                 created=int(time.time()),
@@ -1117,9 +1142,9 @@ async def _send_llmir_non_streaming_request(
                         index=0,
                         message=ChatCompletionMessage(
                             content=response_content,
-                            tool_calls=None,  # TODO: 处理工具调用
+                            tool_calls=tool_calls,
                         ),
-                        finish_reason="stop",
+                        finish_reason=finish_reason,
                     )
                 ],
                 usage=usage,
