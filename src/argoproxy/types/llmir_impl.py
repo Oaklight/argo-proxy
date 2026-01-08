@@ -31,9 +31,9 @@ class ArgoConverter(BaseConverter):
         super().__init__()
 
         # 预先实例化LLMIR转换器，避免每次调用时重复实例化
-        from llmir.converters.openai_chat import OpenAIChatConverter
         from llmir.converters.anthropic import AnthropicConverter
         from llmir.converters.google import GoogleConverter
+        from llmir.converters.openai_chat import OpenAIChatConverter
 
         self._openai_converter = OpenAIChatConverter()
         self._anthropic_converter = AnthropicConverter()
@@ -202,12 +202,45 @@ class ArgoConverter(BaseConverter):
         pass
 
     def _ir_tool_result_to_p(self, tool_result_part: ToolResultPart) -> Any:
-        """IR ToolResultPart → Provider Tool Result / IR工具结果部分转换为Provider工具结果"""
-        pass
+        """IR ToolResultPart → Provider Tool Result / IR工具结果部分转换为Argo工具结果
+
+        统一使用 OpenAI 格式的工具结果，所有模型家族都支持：
+        {"role": "tool", "tool_call_id": "...", "content": "..."}
+
+        Args:
+            tool_result_part: IR格式的工具结果部分
+
+        Returns:
+            Argo格式的工具结果消息（OpenAI 格式）
+        """
+        tool_call_id = tool_result_part.get("tool_call_id", "")
+        content = tool_result_part.get("content", "")
+
+        return {"role": "tool", "tool_call_id": tool_call_id, "content": content}
 
     def _p_tool_result_to_ir(self, provider_tool_result: Any) -> ToolResultPart:
-        """Provider Tool Result → IR ToolResultPart / Provider工具结果转换为IR工具结果部分"""
-        pass
+        """Provider Tool Result → IR ToolResultPart / Argo工具结果转换为IR工具结果部分
+
+        统一使用 OpenAI 格式的工具结果：
+        {"role": "tool", "tool_call_id": "...", "content": "..."}
+
+        Args:
+            provider_tool_result: Argo格式的工具结果消息（OpenAI 格式）
+
+        Returns:
+            IR格式的ToolResultPart
+        """
+        if not isinstance(provider_tool_result, dict):
+            raise ValueError("Provider tool result must be a dictionary")
+
+        if provider_tool_result.get("role") != "tool":
+            raise ValueError("Tool result must have role 'tool'")
+
+        return ToolResultPart(
+            type="tool_result",
+            tool_call_id=provider_tool_result.get("tool_call_id", ""),
+            content=provider_tool_result.get("content", ""),
+        )
 
     def _ir_tool_to_p(self, tool: ToolDefinition) -> Any:
         """IR ToolDefinition → Provider Tool Definition / IR工具定义转换为Provider工具定义
