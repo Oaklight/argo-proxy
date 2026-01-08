@@ -1,0 +1,213 @@
+"""
+LLMIR - Base Converter
+
+定义转换器的基础接口（抽象基类，分层模板）
+Defines the basic interface for converters (abstract base class, layered template)
+"""
+
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
+
+from llmir.converters.base import BaseConverter
+from llmir.types.ir import (
+    FilePart,
+    ImagePart,
+    IRInput,
+    TextPart,
+    ToolCallPart,
+    ToolChoice,
+    ToolDefinition,
+    ToolResultPart,
+)
+from llmir.types.ir_request import IRRequest
+
+
+class ArgoConverter(BaseConverter):
+    """转换器基类，定义统一的分层转换接口
+    Base class for converters, defines a unified layered conversion interface
+    """
+
+    def to_provider(
+        self,
+        ir_input: Union[IRInput, IRRequest],
+        tools: Optional[Iterable[ToolDefinition]] = None,
+        tool_choice: Optional[ToolChoice] = None,
+    ) -> Tuple[Dict[str, Any], List[str]]:
+        """将IR格式转换为provider特定格式
+        Convert IR format to provider-specific format
+
+        Args:
+            ir_input: IR格式的输入或完整请求 / IR format input or full request
+            tools: 工具定义列表（如果ir_input不是IRRequest） / Tool definition list (if ir_input is not IRRequest)
+            tool_choice: 工具选择配置（如果ir_input不是IRRequest） / Tool choice configuration (if ir_input is not IRRequest)
+
+        Returns:
+            Tuple[转换后的数据, 警告信息列表] / Tuple[converted data, warning list]
+        """
+        pass
+
+    def from_provider(self, provider_data: Any) -> Union[IRInput, Dict[str, Any]]:
+        """将provider特定格式转换为IR格式
+        Convert provider-specific format to IR format
+
+        Args:
+            provider_data: provider特定格式的数据 / Provider-specific format data
+
+        Returns:
+            IR格式的数据（消息列表或完整响应） / IR format data (message list or full response)
+        """
+        pass
+
+    # ==================== 分层抽象方法 Layered abstract methods ====================
+
+    def _ir_message_to_p(self, message: Dict[str, Any], ir_input: IRInput) -> Any:
+        """IR Message → Provider Message / IR消息转换为Provider消息"""
+        pass
+
+    def _ir_content_part_to_p(
+        self, content_part: Dict[str, Any], ir_input: IRInput
+    ) -> Any:
+        """IR ContentPart → Provider Content/Part / IR内容部分转换为Provider内容/Part"""
+        pass
+
+    def _p_message_to_ir(self, provider_message: Any) -> Dict[str, Any]:
+        """Provider Message → IR Message / Provider消息转换为IR消息"""
+        pass
+
+    def _p_content_part_to_ir(self, provider_part: Any) -> List[Dict[str, Any]]:
+        """Provider Content/Part → IR ContentPart(s) / Provider内容/Part转换为IR内容部分"""
+        pass
+
+    # ==================== 共性内容类型转换接口 Common content type conversion interfaces ====================
+
+    def _ir_text_to_p(self, text_part: TextPart) -> Any:
+        """IR TextPart → Provider Text Content / IR文本部分转换为Provider文本内容"""
+        return {"type": "text", "text": text_part["text"]}
+
+    def _p_text_to_ir(self, provider_text: Any) -> TextPart:
+        """Provider Text Content → IR TextPart / Provider文本内容转换为IR文本部分"""
+        pass
+
+    def _ir_image_to_p(self, image_part: ImagePart) -> Any:
+        """IR ImagePart → Provider Image Content / IR图像部分转换为Argo图像内容
+
+        Argo使用OpenAI兼容的图像格式：
+        {"type": "image_url", "image_url": {"url": "...", "detail": "..."}}
+
+        注意：Argo API 只接受 base64 编码的图像（data URL）。
+        如果 image_url 是 HTTP/HTTPS URL，调用者应该先使用
+        utils.image_processing.process_chat_images() 将其转换为 base64。
+
+        Args:
+            image_part: IR格式的图像部分，可以包含：
+                - image_url: data URL（data:image/png;base64,...）
+                - image_data: base64编码的图像数据
+                - detail: 图像细节级别（auto/low/high）
+
+        Returns:
+            Argo格式的图像内容字典
+        """
+        from ..utils.image_processing import is_http_url
+
+        # 获取图像URL或数据
+        image_url = image_part.get("image_url")
+        image_data = image_part.get("image_data")
+        detail = image_part.get("detail", "auto")
+
+        # 构建最终的URL
+        if image_url:
+            # 检查是否是 HTTP/HTTPS URL（Argo 不支持）
+            if is_http_url(image_url):
+                raise ValueError(
+                    f"Argo API does not support HTTP/HTTPS image URLs. "
+                    f"Please use utils.image_processing.process_chat_images() "
+                    f"to convert the URL to base64 first. URL: {image_url[:100]}..."
+                )
+            # 使用提供的 data URL
+            final_url = image_url
+        elif image_data:
+            # 将base64数据转换为data URL
+            media_type = image_data.get("media_type", "image/jpeg")
+            data = image_data.get("data", "")
+            final_url = f"data:{media_type};base64,{data}"
+        else:
+            raise ValueError("ImagePart must have either image_url or image_data")
+
+        # 返回Argo/OpenAI兼容格式
+        return {"type": "image_url", "image_url": {"url": final_url, "detail": detail}}
+
+    def _p_image_to_ir(self, provider_image: Any) -> ImagePart:
+        """Provider Image Content → IR ImagePart / Argo图像内容转换为IR图像部分
+
+        Argo使用OpenAI兼容格式，需要解析：
+        {"type": "image_url", "image_url": {"url": "...", "detail": "..."}}
+
+        Args:
+            provider_image: Argo格式的图像内容字典
+
+        Returns:
+            IR格式的ImagePart
+        """
+        import re
+
+        if not isinstance(provider_image, dict):
+            raise ValueError("Provider image must be a dictionary")
+
+        # 提取image_url对象
+        image_url_obj = provider_image.get("image_url", {})
+        url = image_url_obj.get("url", "")
+        detail = image_url_obj.get("detail", "auto")
+
+        # 检查是否是data URL（base64编码）
+        if url.startswith("data:"):
+            # 解析data URL: data:image/png;base64,iVBORw0KG...
+            match = re.match(r"data:([^;]+);base64,(.+)", url)
+            if match:
+                media_type, data = match.groups()
+                return ImagePart(
+                    type="image",
+                    image_data={"data": data, "media_type": media_type},
+                    detail=detail,
+                )
+
+        # 否则是普通URL（HTTP/HTTPS）
+        return ImagePart(type="image", image_url=url, detail=detail)
+
+    def _ir_file_to_p(self, file_part: FilePart) -> Any:
+        """IR FilePart → Provider File Content / IR文件部分转换为Provider文件内容"""
+        pass
+
+    def _p_file_to_ir(self, provider_file: Any) -> FilePart:
+        """Provider File Content → IR FilePart / Provider文件内容转换为IR文件部分"""
+        pass
+
+    def _ir_tool_call_to_p(self, tool_call_part: ToolCallPart) -> Any:
+        """IR ToolCallPart → Provider Tool Call / IR工具调用部分转换为Provider工具调用"""
+        pass
+
+    def _p_tool_call_to_ir(self, provider_tool_call: Any) -> ToolCallPart:
+        """Provider Tool Call → IR ToolCallPart / Provider工具调用转换为IR工具调用部分"""
+        pass
+
+    def _ir_tool_result_to_p(self, tool_result_part: ToolResultPart) -> Any:
+        """IR ToolResultPart → Provider Tool Result / IR工具结果部分转换为Provider工具结果"""
+        pass
+
+    def _p_tool_result_to_ir(self, provider_tool_result: Any) -> ToolResultPart:
+        """Provider Tool Result → IR ToolResultPart / Provider工具结果转换为IR工具结果部分"""
+        pass
+
+    def _ir_tool_to_p(self, tool: ToolDefinition) -> Any:
+        """IR ToolDefinition → Provider Tool Definition / IR工具定义转换为Provider工具定义"""
+        pass
+
+    def _p_tool_to_ir(self, provider_tool: Any) -> ToolDefinition:
+        """Provider Tool Definition → IR ToolDefinition / Provider工具定义转换为IR工具定义"""
+        pass
+
+    def _ir_tool_choice_to_p(self, tool_choice: ToolChoice) -> Any:
+        """IR ToolChoice → Provider Tool Choice Config / IR工具选择转换为Provider工具选择配置"""
+        pass
+
+    def _p_tool_choice_to_ir(self, provider_tool_choice: Any) -> ToolChoice:
+        """Provider Tool Choice Config → IR ToolChoice / Provider工具选择配置转换为IR工具选择"""
+        pass
