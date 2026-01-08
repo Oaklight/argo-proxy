@@ -837,6 +837,42 @@ class ArgoConverter(BaseConverter):
             # 默认使用 OpenAI 格式
             return self._openai_converter._p_tool_call_to_ir(provider_tool_call)
 
+    # ==================== 响应解析方法 Response parsing methods ====================
+
+    def parse_argo_response(
+        self, response_data: Dict[str, Any]
+    ) -> Tuple[Optional[str], Optional[List[Any]]]:
+        """解析 Argo 上游响应，提取 content 和 tool_calls
+        Parse Argo upstream response to extract content and tool_calls
+
+        Argo 的响应格式可能是：
+        1. {"response": "text content"}  - 纯文本响应
+        2. {"response": {"content": "...", "tool_calls": [...]}}  - 带 tool calls 的响应
+
+        Args:
+            response_data: Argo 上游返回的响应数据
+
+        Returns:
+            Tuple[content, tool_calls]: 提取的内容和工具调用列表
+        """
+        response_field = response_data.get("response")
+
+        # 解析响应内容
+        if isinstance(response_field, dict):
+            # 响应是字典格式，可能包含 content 和 tool_calls
+            response_content = response_field.get("content")
+            tool_calls = response_field.get("tool_calls")
+        elif isinstance(response_field, str):
+            # 响应是纯文本
+            response_content = response_field
+            tool_calls = None
+        else:
+            # 响应为 None 或其他类型
+            response_content = None
+            tool_calls = None
+
+        return response_content, tool_calls
+
     # ==================== 格式转换辅助方法 Format conversion helper methods ====================
 
     def _convert_openai_to_target_format(
@@ -1082,26 +1118,10 @@ async def _send_llmir_non_streaming_request(
                 )
 
             # 转换为 OpenAI 格式
-            # 从 response_data 中提取响应内容
-            # Argo 的响应格式可能是：
-            # 1. {"response": "text content"}  - 纯文本响应
-            # 2. {"response": {"content": "...", "tool_calls": [...]}}  - 带 tool calls 的响应
-            response_field = response_data.get("response")
-            
-            # 解析响应内容
-            if isinstance(response_field, dict):
-                # 响应是字典格式，可能包含 content 和 tool_calls
-                response_content = response_field.get("content")
-                tool_calls = response_field.get("tool_calls")
-            elif isinstance(response_field, str):
-                # 响应是纯文本
-                response_content = response_field
-                tool_calls = None
-            else:
-                # 响应为 None 或其他类型
-                response_content = None
-                tool_calls = None
-            
+            # 使用 ArgoConverter 解析响应
+            converter = ArgoConverter()
+            response_content, tool_calls = converter.parse_argo_response(response_data)
+
             # 检查是否有有效的响应（content 或 tool_calls）
             if response_content is None and not tool_calls:
                 return web.json_response(
@@ -1117,7 +1137,9 @@ async def _send_llmir_non_streaming_request(
             prompt_tokens = await calculate_prompt_tokens_async(data, data["model"])
             # 确保 response_content 是字符串类型
             if response_content and isinstance(response_content, str):
-                completion_tokens = await count_tokens_async(response_content, data["model"])
+                completion_tokens = await count_tokens_async(
+                    response_content, data["model"]
+                )
             else:
                 completion_tokens = 0
             total_tokens = prompt_tokens + completion_tokens
