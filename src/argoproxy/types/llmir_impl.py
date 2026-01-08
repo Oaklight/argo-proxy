@@ -64,14 +64,16 @@ class ArgoConverter(BaseConverter):
         ir_input: Union[IRInput, IRRequest],
         tools: Optional[Iterable[ToolDefinition]] = None,
         tool_choice: Optional[ToolChoice] = None,
+        **kwargs,
     ) -> Tuple[Dict[str, Any], List[str]]:
-        """将IR格式转换为provider特定格式
-        Convert IR format to provider-specific format
+        """将IR格式转换为Argo Gateway API特定格式
+        Convert IR format to Argo Gateway API specific format
 
         Args:
             ir_input: IR格式的输入或完整请求 / IR format input or full request
             tools: 工具定义列表（如果ir_input不是IRRequest） / Tool definition list (if ir_input is not IRRequest)
             tool_choice: 工具选择配置（如果ir_input不是IRRequest） / Tool choice configuration (if ir_input is not IRRequest)
+            **kwargs: 额外的参数 / Additional parameters
 
         Returns:
             Tuple[转换后的数据, 警告信息列表] / Tuple[converted data, warning list]
@@ -103,26 +105,30 @@ class ArgoConverter(BaseConverter):
         if model_family == "unknown":
             model_family = "openai"  # 默认使用 OpenAI 格式
 
-        # 转换消息列表（统一使用 OpenAI 格式的抽象方法）
-        openai_messages = []
+        # 转换消息列表（使用 IR 作为中间格式的抽象方法）
+        argo_messages = []
         for message in messages:
-            openai_message = self._ir_message_to_p(message, messages)
-            openai_messages.append(openai_message)
+            argo_message = self._ir_message_to_p(message, messages, **kwargs)
+            argo_messages.append(argo_message)
 
-        # 构建 OpenAI 格式的数据
-        openai_data = {"messages": openai_messages}
+        # 构建 Argo Gateway API 格式的数据
+        argo_data = {"messages": argo_messages}
 
-        # 添加工具相关字段（如果存在，统一使用 OpenAI 格式）
+        # 添加工具相关字段（如果存在，使用 IR 作为中间格式）
         if request_tools:
-            openai_tools = []
+            argo_tools = []
             for tool in request_tools:
-                openai_tool = self._ir_tool_to_p(tool)
-                openai_tools.append(openai_tool)
-            openai_data["tools"] = openai_tools
+                tool_kwargs = {**kwargs, "model_family": model_family}
+                argo_tool = self._ir_tool_to_p(tool, **tool_kwargs)
+                argo_tools.append(argo_tool)
+            argo_data["tools"] = argo_tools
 
         if request_tool_choice:
-            openai_tool_choice = self._ir_tool_choice_to_p(request_tool_choice)
-            openai_data["tool_choice"] = openai_tool_choice
+            choice_kwargs = {**kwargs, "model_family": model_family}
+            argo_tool_choice = self._ir_tool_choice_to_p(
+                request_tool_choice, **choice_kwargs
+            )
+            argo_data["tool_choice"] = argo_tool_choice
 
         # 复制其他字段
         if isinstance(ir_input, dict):
@@ -142,25 +148,21 @@ class ArgoConverter(BaseConverter):
                 "n",
             ]:
                 if field in ir_input:
-                    openai_data[field] = ir_input[field]
+                    argo_data[field] = ir_input[field]
 
-        # 如果目标模型家族不是 OpenAI，则进行格式转换
-        if model_family == "openai":
-            final_data = openai_data
-        else:
-            # 使用对应的 LLMIR 转换器将 OpenAI 格式转换为目标格式
-            final_data = self._convert_openai_to_target_format(
-                openai_data, model_family
-            )
+        # 直接返回 Argo Gateway API 格式的数据，不需要额外转换
+        # IR 已经作为中间格式处理了不同模型家族的差异
+        return argo_data, warnings
 
-        return final_data, warnings
-
-    def from_provider(self, provider_data: Any) -> Union[IRInput, Dict[str, Any]]:
-        """将provider特定格式转换为IR格式
-        Convert provider-specific format to IR format
+    def from_provider(
+        self, provider_data: Any, **kwargs
+    ) -> Union[IRInput, Dict[str, Any]]:
+        """将Argo Gateway API特定格式转换为IR格式
+        Convert Argo Gateway API specific format to IR format
 
         Args:
-            provider_data: provider特定格式的数据 / Provider-specific format data
+            provider_data: Argo Gateway API特定格式的数据 / Argo Gateway API specific format data
+            **kwargs: 额外的参数 / Additional parameters
 
         Returns:
             IR格式的数据（消息列表或完整响应） / IR format data (message list or full response)
@@ -182,37 +184,30 @@ class ArgoConverter(BaseConverter):
             logger.info(f"[LLMIR DEBUG] Converting model_name to string: {model_name}")
             model_name = str(model_name) if model_name is not None else ""
 
-        from ..utils.models import determine_model_family
-
         logger.info(f"[LLMIR DEBUG] Determining model family for: '{model_name}'")
         model_family = determine_model_family(model_name) if model_name else "openai"
         if model_family == "unknown":
             model_family = "openai"  # 默认使用 OpenAI 格式
         logger.info(f"[LLMIR DEBUG] Determined model_family: {model_family}")
 
-        # 如果不是 OpenAI 格式，先转换为 OpenAI 格式
-        if model_family != "openai":
-            openai_data = self._convert_target_to_openai_format(
-                provider_data, model_family
-            )
-        else:
-            openai_data = provider_data
+        # 直接使用 provider_data，因为 IR 已经作为中间格式处理了不同模型家族的差异
+        argo_data = provider_data
 
-        # 使用统一的 OpenAI 格式抽象方法进行转换
-        logger.info(f"[LLMIR DEBUG] Processing openai_data type: {type(openai_data)}")
-        if isinstance(openai_data, dict):
-            if "messages" in openai_data:
+        # 使用 IR 作为中间格式的抽象方法进行转换
+        logger.info(f"[LLMIR DEBUG] Processing argo_data type: {type(argo_data)}")
+        if isinstance(argo_data, dict):
+            if "messages" in argo_data:
                 logger.info(
-                    f"[LLMIR DEBUG] Processing {len(openai_data['messages'])} messages"
+                    f"[LLMIR DEBUG] Processing {len(argo_data['messages'])} messages"
                 )
                 # 这是一个完整的请求/响应
                 ir_messages = []
-                for i, message in enumerate(openai_data["messages"]):
+                for i, message in enumerate(argo_data["messages"]):
                     logger.info(
                         f"[LLMIR DEBUG] Processing message {i}: {type(message)}"
                     )
                     try:
-                        ir_message = self._p_message_to_ir(message)
+                        ir_message = self._p_message_to_ir(message, **kwargs)
                         ir_messages.append(ir_message)
                         logger.info(f"[LLMIR DEBUG] Message {i} converted successfully")
                     except Exception as e:
@@ -223,15 +218,16 @@ class ArgoConverter(BaseConverter):
                 ir_data = {"messages": ir_messages}
 
                 # 处理工具相关字段
-                if "tools" in openai_data:
+                if "tools" in argo_data:
                     logger.info(
-                        f"[LLMIR DEBUG] Processing {len(openai_data['tools'])} tools"
+                        f"[LLMIR DEBUG] Processing {len(argo_data['tools'])} tools"
                     )
                     ir_tools = []
-                    for i, tool in enumerate(openai_data["tools"]):
+                    for i, tool in enumerate(argo_data["tools"]):
                         logger.info(f"[LLMIR DEBUG] Processing tool {i}: {type(tool)}")
                         try:
-                            ir_tool = self._p_tool_to_ir(tool)
+                            tool_kwargs = {**kwargs, "model_family": model_family}
+                            ir_tool = self._p_tool_to_ir(tool, **tool_kwargs)
                             ir_tools.append(ir_tool)
                             logger.info(
                                 f"[LLMIR DEBUG] Tool {i} converted successfully"
@@ -243,13 +239,14 @@ class ArgoConverter(BaseConverter):
                             raise
                     ir_data["tools"] = ir_tools
 
-                if "tool_choice" in openai_data:
+                if "tool_choice" in argo_data:
                     logger.info(
-                        f"[LLMIR DEBUG] Processing tool_choice: {openai_data['tool_choice']}"
+                        f"[LLMIR DEBUG] Processing tool_choice: {argo_data['tool_choice']}"
                     )
                     try:
+                        choice_kwargs = {**kwargs, "model_family": model_family}
                         ir_tool_choice = self._p_tool_choice_to_ir(
-                            openai_data["tool_choice"]
+                            argo_data["tool_choice"], **choice_kwargs
                         )
                         ir_data["tool_choice"] = ir_tool_choice
                         logger.info("[LLMIR DEBUG] tool_choice converted successfully")
@@ -273,36 +270,39 @@ class ArgoConverter(BaseConverter):
                     "response_format",
                     "n",
                 ]:
-                    if field in openai_data:
-                        ir_data[field] = openai_data[field]
+                    if field in argo_data:
+                        ir_data[field] = argo_data[field]
 
                 return ir_data
             else:
                 # 这可能是一个单独的消息
-                return self._p_message_to_ir(openai_data)
-        elif isinstance(openai_data, list):
+                return self._p_message_to_ir(argo_data, **kwargs)
+        elif isinstance(argo_data, list):
             # 这是一个消息列表
             ir_messages = []
-            for message in openai_data:
-                ir_message = self._p_message_to_ir(message)
+            for message in argo_data:
+                ir_message = self._p_message_to_ir(message, **kwargs)
                 ir_messages.append(ir_message)
             return ir_messages
         else:
-            raise ValueError(f"Unsupported provider data format: {type(openai_data)}")
+            raise ValueError(f"Unsupported provider data format: {type(argo_data)}")
 
     # ==================== 分层抽象方法 Layered abstract methods ====================
 
-    def _ir_message_to_p(self, message: Dict[str, Any], ir_input: IRInput) -> Any:
-        """IR Message → Provider Message / IR消息转换为Argo消息
+    def _ir_message_to_p(
+        self, message: Dict[str, Any], ir_input: IRInput, **kwargs
+    ) -> Any:
+        """IR Message → Argo Gateway API Message / IR消息转换为Argo Gateway API消息
 
-        将 IR 格式的消息转换为 Argo 兼容的消息格式
+        将 IR 格式的消息转换为 Argo Gateway API 兼容的消息格式
 
         Args:
             message: IR格式的消息
             ir_input: 完整的IR输入（用于上下文）
+            **kwargs: 额外的参数 / Additional parameters
 
         Returns:
-            Argo格式的消息
+            Argo Gateway API格式的消息
         """
         argo_message = {"role": message.get("role", "user")}
 
@@ -315,7 +315,7 @@ class ArgoConverter(BaseConverter):
             # 内容部分列表
             argo_content = []
             for part in content:
-                argo_part = self._ir_content_part_to_p(part, ir_input)
+                argo_part = self._ir_content_part_to_p(part, ir_input, **kwargs)
                 if argo_part:
                     argo_content.append(argo_part)
 
@@ -332,8 +332,22 @@ class ArgoConverter(BaseConverter):
         if "tool_calls" in message:
             tool_calls = []
             for tool_call in message["tool_calls"]:
-                # 使用统一的 OpenAI 格式抽象方法
-                argo_tool_call = self._ir_tool_call_to_p(tool_call)
+                # 使用 IR 作为中间格式的抽象方法
+                # 从 ir_input 中获取 model_family 信息
+                model_name = ""
+                if isinstance(ir_input, dict) and "model" in ir_input:
+                    model_name = ir_input["model"]
+                elif hasattr(ir_input, "model"):
+                    model_name = getattr(ir_input, "model", "")
+
+                model_family = (
+                    determine_model_family(model_name) if model_name else "openai"
+                )
+                if model_family == "unknown":
+                    model_family = "openai"
+
+                tool_call_kwargs = {**kwargs, "model_family": model_family}
+                argo_tool_call = self._ir_tool_call_to_p(tool_call, **tool_call_kwargs)
                 tool_calls.append(argo_tool_call)
             argo_message["tool_calls"] = tool_calls
 
@@ -345,29 +359,44 @@ class ArgoConverter(BaseConverter):
         return argo_message
 
     def _ir_content_part_to_p(
-        self, content_part: Dict[str, Any], ir_input: IRInput
+        self, content_part: Dict[str, Any], ir_input: IRInput, **kwargs
     ) -> Any:
-        """IR ContentPart → Provider Content/Part / IR内容部分转换为Argo内容部分
+        """IR ContentPart → Argo Gateway API Content/Part / IR内容部分转换为Argo Gateway API内容部分
 
         Args:
             content_part: IR格式的内容部分
             ir_input: 完整的IR输入（用于上下文）
+            **kwargs: 额外的参数 / Additional parameters
 
         Returns:
-            Argo格式的内容部分
+            Argo Gateway API格式的内容部分
         """
         part_type = content_part.get("type")
 
         if part_type == "text":
-            return self._ir_text_to_p(content_part)
+            return self._ir_text_to_p(content_part, **kwargs)
         elif part_type == "image":
-            return self._ir_image_to_p(content_part)
+            return self._ir_image_to_p(content_part, **kwargs)
         elif part_type == "file":
-            return self._ir_file_to_p(content_part)
+            return self._ir_file_to_p(content_part, **kwargs)
         elif part_type == "tool_call":
-            return self._ir_tool_call_to_p(content_part)
+            # 从 ir_input 中获取 model_family 信息
+            model_name = ""
+            if isinstance(ir_input, dict) and "model" in ir_input:
+                model_name = ir_input["model"]
+            elif hasattr(ir_input, "model"):
+                model_name = getattr(ir_input, "model", "")
+
+            model_family = (
+                determine_model_family(model_name) if model_name else "openai"
+            )
+            if model_family == "unknown":
+                model_family = "openai"
+
+            tool_call_kwargs = {**kwargs, "model_family": model_family}
+            return self._ir_tool_call_to_p(content_part, **tool_call_kwargs)
         elif part_type == "tool_result":
-            return self._ir_tool_result_to_p(content_part)
+            return self._ir_tool_result_to_p(content_part, **kwargs)
         else:
             # 未知类型，尝试作为文本处理
             return {
@@ -375,11 +404,12 @@ class ArgoConverter(BaseConverter):
                 "text": str(content_part.get("content", content_part)),
             }
 
-    def _p_message_to_ir(self, provider_message: Any) -> Dict[str, Any]:
-        """Provider Message → IR Message / Argo消息转换为IR消息
+    def _p_message_to_ir(self, provider_message: Any, **kwargs) -> Dict[str, Any]:
+        """Argo Gateway API Message → IR Message / Argo Gateway API消息转换为IR消息
 
         Args:
-            provider_message: Argo格式的消息
+            provider_message: Argo Gateway API格式的消息
+            **kwargs: 额外的参数 / Additional parameters
 
         Returns:
             IR格式的消息
@@ -393,17 +423,17 @@ class ArgoConverter(BaseConverter):
         content = provider_message.get("content")
         if isinstance(content, str):
             # 简单字符串内容
-            ir_message["content"] = [self._p_text_to_ir(content)]
+            ir_message["content"] = [self._p_text_to_ir(content, **kwargs)]
         elif isinstance(content, list):
             # 内容部分列表
             ir_content = []
             for part in content:
-                ir_parts = self._p_content_part_to_ir(part)
+                ir_parts = self._p_content_part_to_ir(part, **kwargs)
                 ir_content.extend(ir_parts)
             ir_message["content"] = ir_content
         elif content is not None:
             # 其他格式，转换为文本
-            ir_message["content"] = [self._p_text_to_ir(str(content))]
+            ir_message["content"] = [self._p_text_to_ir(str(content), **kwargs)]
         else:
             ir_message["content"] = []
 
@@ -411,7 +441,10 @@ class ArgoConverter(BaseConverter):
         if "tool_calls" in provider_message:
             tool_calls = []
             for tool_call in provider_message["tool_calls"]:
-                ir_tool_call = self._p_tool_call_to_ir(tool_call)
+                # 从 kwargs 中获取 model_family，如果没有则默认为 openai
+                model_family = kwargs.get("model_family", "openai")
+                tool_call_kwargs = {**kwargs, "model_family": model_family}
+                ir_tool_call = self._p_tool_call_to_ir(tool_call, **tool_call_kwargs)
                 tool_calls.append(ir_tool_call)
             ir_message["tool_calls"] = tool_calls
 
@@ -422,52 +455,59 @@ class ArgoConverter(BaseConverter):
 
         return ir_message
 
-    def _p_content_part_to_ir(self, provider_part: Any) -> List[Dict[str, Any]]:
-        """Provider Content/Part → IR ContentPart(s) / Argo内容部分转换为IR内容部分
+    def _p_content_part_to_ir(
+        self, provider_part: Any, **kwargs
+    ) -> List[Dict[str, Any]]:
+        """Argo Gateway API Content/Part → IR ContentPart(s) / Argo Gateway API内容部分转换为IR内容部分
 
         Args:
-            provider_part: Argo格式的内容部分
+            provider_part: Argo Gateway API格式的内容部分
+            **kwargs: 额外的参数 / Additional parameters
 
         Returns:
             IR格式的内容部分列表
         """
         if isinstance(provider_part, str):
             # 简单字符串
-            return [self._p_text_to_ir(provider_part)]
+            return [self._p_text_to_ir(provider_part, **kwargs)]
         elif isinstance(provider_part, dict):
             part_type = provider_part.get("type")
 
             if part_type == "text":
-                return [self._p_text_to_ir(provider_part)]
+                return [self._p_text_to_ir(provider_part, **kwargs)]
             elif part_type == "image_url":
-                return [self._p_image_to_ir(provider_part)]
+                return [self._p_image_to_ir(provider_part, **kwargs)]
             elif part_type == "tool_call":
-                return [self._p_tool_call_to_ir(provider_part)]
+                # 从 kwargs 中获取 model_family，如果没有则默认为 openai
+                model_family = kwargs.get("model_family", "openai")
+                tool_call_kwargs = {**kwargs, "model_family": model_family}
+                return [self._p_tool_call_to_ir(provider_part, **tool_call_kwargs)]
             elif part_type == "tool_result":
-                return [self._p_tool_result_to_ir(provider_part)]
+                return [self._p_tool_result_to_ir(provider_part, **kwargs)]
             else:
                 # 未知类型，尝试作为文本处理
-                return [self._p_text_to_ir(str(provider_part))]
+                return [self._p_text_to_ir(str(provider_part), **kwargs)]
         else:
             # 其他类型，转换为文本
-            return [self._p_text_to_ir(str(provider_part))]
+            return [self._p_text_to_ir(str(provider_part), **kwargs)]
 
     # ==================== 共性内容类型转换接口 Common content type conversion interfaces ====================
 
-    def _ir_text_to_p(self, text_part: TextPart) -> Any:
-        """IR TextPart → Provider Text Content / IR文本部分转换为Provider文本内容"""
+    def _ir_text_to_p(self, text_part: TextPart, **kwargs) -> Any:
+        """IR TextPart → Argo Gateway API Text Content / IR文本部分转换为Argo Gateway API文本内容"""
         return {"type": "text", "text": text_part["text"]}
 
-    def _p_text_to_ir(self, provider_text: Any) -> TextPart:
-        """Provider Text Content → IR TextPart / Argo文本内容转换为IR文本部分
+    def _p_text_to_ir(self, provider_text: Any, **kwargs) -> TextPart:
+        """Argo Gateway API Text Content → IR TextPart / Argo Gateway API文本内容转换为IR文本部分
 
-        Argo 支持多种文本格式：
+        Argo Gateway API 支持多种文本格式：
         1. 简单字符串：直接文本内容
         2. OpenAI 格式：{"type": "text", "text": "..."}
         3. 其他格式的文本内容
 
         Args:
-            provider_text: Argo格式的文本内容
+            provider_text: Argo Gateway API格式的文本内容
+            **kwargs: 额外的参数 / Additional parameters
 
         Returns:
             IR格式的TextPart
@@ -487,13 +527,13 @@ class ArgoConverter(BaseConverter):
             # 其他类型，转换为字符串
             return TextPart(type="text", text=str(provider_text))
 
-    def _ir_image_to_p(self, image_part: ImagePart) -> Any:
-        """IR ImagePart → Provider Image Content / IR图像部分转换为Argo图像内容
+    def _ir_image_to_p(self, image_part: ImagePart, **kwargs) -> Any:
+        """IR ImagePart → Argo Gateway API Image Content / IR图像部分转换为Argo Gateway API图像内容
 
-        Argo使用OpenAI兼容的图像格式：
+        Argo Gateway API使用OpenAI兼容的图像格式：
         {"type": "image_url", "image_url": {"url": "...", "detail": "..."}}
 
-        注意：Argo API 只接受 base64 编码的图像（data URL）。
+        注意：Argo Gateway API 只接受 base64 编码的图像（data URL）。
         如果 image_url 是 HTTP/HTTPS URL，调用者应该先使用
         utils.image_processing.process_chat_images() 将其转换为 base64。
 
@@ -502,9 +542,10 @@ class ArgoConverter(BaseConverter):
                 - image_url: data URL（data:image/png;base64,...）
                 - image_data: base64编码的图像数据
                 - detail: 图像细节级别（auto/low/high）
+            **kwargs: 额外的参数 / Additional parameters
 
         Returns:
-            Argo格式的图像内容字典
+            Argo Gateway API格式的图像内容字典
         """
         from ..utils.image_processing import is_http_url
 
@@ -519,10 +560,10 @@ class ArgoConverter(BaseConverter):
             if not isinstance(image_url, str):
                 image_url = str(image_url) if image_url is not None else ""
 
-            # 检查是否是 HTTP/HTTPS URL（Argo 不支持）
+            # 检查是否是 HTTP/HTTPS URL（Argo Gateway API 不支持）
             if is_http_url(image_url):
                 raise ValueError(
-                    f"Argo API does not support HTTP/HTTPS image URLs. "
+                    f"Argo Gateway API does not support HTTP/HTTPS image URLs. "
                     f"Please use utils.image_processing.process_chat_images() "
                     f"to convert the URL to base64 first. URL: {image_url[:100]}..."
                 )
@@ -536,17 +577,18 @@ class ArgoConverter(BaseConverter):
         else:
             raise ValueError("ImagePart must have either image_url or image_data")
 
-        # 返回Argo/OpenAI兼容格式
+        # 返回Argo Gateway API/OpenAI兼容格式
         return {"type": "image_url", "image_url": {"url": final_url, "detail": detail}}
 
-    def _p_image_to_ir(self, provider_image: Any) -> ImagePart:
-        """Provider Image Content → IR ImagePart / Argo图像内容转换为IR图像部分
+    def _p_image_to_ir(self, provider_image: Any, **kwargs) -> ImagePart:
+        """Argo Gateway API Image Content → IR ImagePart / Argo Gateway API图像内容转换为IR图像部分
 
-        Argo使用OpenAI兼容格式，需要解析：
+        Argo Gateway API使用OpenAI兼容格式，需要解析：
         {"type": "image_url", "image_url": {"url": "...", "detail": "..."}}
 
         Args:
-            provider_image: Argo格式的图像内容字典
+            provider_image: Argo Gateway API格式的图像内容字典
+            **kwargs: 额外的参数 / Additional parameters
 
         Returns:
             IR格式的ImagePart
@@ -580,8 +622,8 @@ class ArgoConverter(BaseConverter):
         # 否则是普通URL（HTTP/HTTPS）
         return ImagePart(type="image", image_url=url, detail=detail)
 
-    def _ir_file_to_p(self, file_part: FilePart) -> Any:
-        """IR FilePart → Provider File Content / IR文件部分转换为Provider文件内容
+    def _ir_file_to_p(self, file_part: FilePart, **kwargs) -> Any:
+        """IR FilePart → Argo Gateway API File Content / IR文件部分转换为Argo Gateway API文件内容
 
         注意：文件处理功能尚未实现，上游 LLMIR 转换器也未提供此功能
         """
@@ -590,8 +632,8 @@ class ArgoConverter(BaseConverter):
             "The upstream LLMIR converters do not provide file conversion functionality."
         )
 
-    def _p_file_to_ir(self, provider_file: Any) -> FilePart:
-        """Provider File Content → IR FilePart / Provider文件内容转换为IR文件部分
+    def _p_file_to_ir(self, provider_file: Any, **kwargs) -> FilePart:
+        """Argo Gateway API File Content → IR FilePart / Argo Gateway API文件内容转换为IR文件部分
 
         注意：文件处理功能尚未实现，上游 LLMIR 转换器也未提供此功能
         """
@@ -600,45 +642,69 @@ class ArgoConverter(BaseConverter):
             "The upstream LLMIR converters do not provide file conversion functionality."
         )
 
-    def _ir_tool_call_to_p(self, tool_call_part: ToolCallPart) -> Any:
-        """IR ToolCallPart → Provider Tool Call / IR工具调用部分转换为OpenAI工具调用
+    def _ir_tool_call_to_p(self, tool_call_part: ToolCallPart, **kwargs) -> Any:
+        """IR ToolCallPart → Argo Gateway API Tool Call / IR工具调用部分转换为Argo Gateway API工具调用
 
-        统一使用 OpenAI 格式，在 to_provider 层面处理不同模型家族的转换
+        使用 IR 作为中间格式，根据 model_family 选择合适的转换器
         """
-        return self._openai_converter._ir_tool_call_to_p(tool_call_part)
+        model_family = kwargs.get("model_family", "openai")
+        if model_family == "anthropic":
+            return self._anthropic_converter._ir_tool_call_to_p(
+                tool_call_part, **kwargs
+            )
+        elif model_family == "google":
+            return self._google_converter._ir_tool_call_to_p(tool_call_part, **kwargs)
+        else:
+            return self._openai_converter._ir_tool_call_to_p(tool_call_part, **kwargs)
 
-    def _p_tool_call_to_ir(self, provider_tool_call: Any) -> ToolCallPart:
-        """Provider Tool Call → IR ToolCallPart / OpenAI工具调用转换为IR工具调用部分
+    def _p_tool_call_to_ir(self, provider_tool_call: Any, **kwargs) -> ToolCallPart:
+        """Argo Gateway API Tool Call → IR ToolCallPart / Argo Gateway API工具调用转换为IR工具调用部分
 
-        统一使用 OpenAI 格式，在 from_provider 层面处理不同模型家族的转换
+        使用 IR 作为中间格式，根据 model_family 选择合适的转换器
         """
-        return self._openai_converter._p_tool_call_to_ir(provider_tool_call)
+        model_family = kwargs.get("model_family", "openai")
+        if model_family == "anthropic":
+            return self._anthropic_converter._p_tool_call_to_ir(
+                provider_tool_call, **kwargs
+            )
+        elif model_family == "google":
+            return self._google_converter._p_tool_call_to_ir(
+                provider_tool_call, **kwargs
+            )
+        else:
+            return self._openai_converter._p_tool_call_to_ir(
+                provider_tool_call, **kwargs
+            )
 
-    def _ir_tool_result_to_p(self, tool_result_part: ToolResultPart) -> Any:
-        """IR ToolResultPart → Provider Tool Result / IR工具结果部分转换为Argo工具结果
+    def _ir_tool_result_to_p(self, tool_result_part: ToolResultPart, **kwargs) -> Any:
+        """IR ToolResultPart → Argo Gateway API Tool Result / IR工具结果部分转换为Argo Gateway API工具结果
 
-        统一使用 OpenAI 格式的工具结果，所有模型家族都支持：
+        使用 IR 作为中间格式的工具结果，所有模型家族都支持：
         {"role": "tool", "tool_call_id": "...", "content": "..."}
 
         Args:
             tool_result_part: IR格式的工具结果部分
+            **kwargs: 额外的参数 / Additional parameters
 
         Returns:
-            Argo格式的工具结果消息（OpenAI 格式）
+            Argo Gateway API格式的工具结果消息
         """
         tool_call_id = tool_result_part.get("tool_call_id", "")
         content = tool_result_part.get("content", "")
 
         return {"role": "tool", "tool_call_id": tool_call_id, "content": content}
 
-    def _p_tool_result_to_ir(self, provider_tool_result: Any) -> ToolResultPart:
-        """Provider Tool Result → IR ToolResultPart / Argo工具结果转换为IR工具结果部分
+    def _p_tool_result_to_ir(
+        self, provider_tool_result: Any, **kwargs
+    ) -> ToolResultPart:
+        """Argo Gateway API Tool Result → IR ToolResultPart / Argo Gateway API工具结果转换为IR工具结果部分
 
-        统一使用 OpenAI 格式的工具结果：
+        使用 IR 作为中间格式的工具结果：
         {"role": "tool", "tool_call_id": "...", "content": "..."}
 
         Args:
-            provider_tool_result: Argo格式的工具结果消息（OpenAI 格式）
+            provider_tool_result: Argo Gateway API格式的工具结果消息
+            **kwargs: 额外的参数 / Additional parameters
 
         Returns:
             IR格式的ToolResultPart
@@ -655,33 +721,63 @@ class ArgoConverter(BaseConverter):
             content=provider_tool_result.get("content", ""),
         )
 
-    def _ir_tool_to_p(self, tool: ToolDefinition) -> Any:
-        """IR ToolDefinition → Provider Tool Definition / IR工具定义转换为OpenAI工具定义
+    def _ir_tool_to_p(self, tool: ToolDefinition, **kwargs) -> Any:
+        """IR ToolDefinition → Argo Gateway API Tool Definition / IR工具定义转换为Argo Gateway API工具定义
 
-        统一使用 OpenAI 格式，在 to_provider 层面处理不同模型家族的转换
+        使用 IR 作为中间格式，根据 model_family 选择合适的转换器
         """
-        return self._openai_converter._ir_tool_to_p(tool)
+        model_family = kwargs.get("model_family", "openai")
+        if model_family == "anthropic":
+            return self._anthropic_converter._ir_tool_to_p(tool, **kwargs)
+        elif model_family == "google":
+            return self._google_converter._ir_tool_to_p(tool, **kwargs)
+        else:
+            return self._openai_converter._ir_tool_to_p(tool, **kwargs)
 
-    def _p_tool_to_ir(self, provider_tool: Any) -> ToolDefinition:
-        """Provider Tool Definition → IR ToolDefinition / OpenAI工具定义转换为IR工具定义
+    def _p_tool_to_ir(self, provider_tool: Any, **kwargs) -> ToolDefinition:
+        """Argo Gateway API Tool Definition → IR ToolDefinition / Argo Gateway API工具定义转换为IR工具定义
 
-        统一使用 OpenAI 格式，在 from_provider 层面处理不同模型家族的转换
+        使用 IR 作为中间格式，根据 model_family 选择合适的转换器
         """
-        return self._openai_converter._p_tool_to_ir(provider_tool)
+        model_family = kwargs.get("model_family", "openai")
+        if model_family == "anthropic":
+            return self._anthropic_converter._p_tool_to_ir(provider_tool, **kwargs)
+        elif model_family == "google":
+            return self._google_converter._p_tool_to_ir(provider_tool, **kwargs)
+        else:
+            return self._openai_converter._p_tool_to_ir(provider_tool, **kwargs)
 
-    def _ir_tool_choice_to_p(self, tool_choice: ToolChoice) -> Any:
-        """IR ToolChoice → Provider Tool Choice Config / IR工具选择转换为OpenAI工具选择配置
+    def _ir_tool_choice_to_p(self, tool_choice: ToolChoice, **kwargs) -> Any:
+        """IR ToolChoice → Argo Gateway API Tool Choice Config / IR工具选择转换为Argo Gateway API工具选择配置
 
-        统一使用 OpenAI 格式，在 to_provider 层面处理不同模型家族的转换
+        使用 IR 作为中间格式，根据 model_family 选择合适的转换器
         """
-        return self._openai_converter._ir_tool_choice_to_p(tool_choice)
+        model_family = kwargs.get("model_family", "openai")
+        if model_family == "anthropic":
+            return self._anthropic_converter._ir_tool_choice_to_p(tool_choice, **kwargs)
+        elif model_family == "google":
+            return self._google_converter._ir_tool_choice_to_p(tool_choice, **kwargs)
+        else:
+            return self._openai_converter._ir_tool_choice_to_p(tool_choice, **kwargs)
 
-    def _p_tool_choice_to_ir(self, provider_tool_choice: Any) -> ToolChoice:
-        """Provider Tool Choice Config → IR ToolChoice / OpenAI工具选择配置转换为IR工具选择
+    def _p_tool_choice_to_ir(self, provider_tool_choice: Any, **kwargs) -> ToolChoice:
+        """Argo Gateway API Tool Choice Config → IR ToolChoice / Argo Gateway API工具选择配置转换为IR工具选择
 
-        统一使用 OpenAI 格式，在 from_provider 层面处理不同模型家族的转换
+        使用 IR 作为中间格式，根据 model_family 选择合适的转换器
         """
-        return self._openai_converter._p_tool_choice_to_ir(provider_tool_choice)
+        model_family = kwargs.get("model_family", "openai")
+        if model_family == "anthropic":
+            return self._anthropic_converter._p_tool_choice_to_ir(
+                provider_tool_choice, **kwargs
+            )
+        elif model_family == "google":
+            return self._google_converter._p_tool_choice_to_ir(
+                provider_tool_choice, **kwargs
+            )
+        else:
+            return self._openai_converter._p_tool_choice_to_ir(
+                provider_tool_choice, **kwargs
+            )
 
     # ==================== 响应解析方法 Response parsing methods ====================
 
@@ -718,61 +814,6 @@ class ArgoConverter(BaseConverter):
             tool_calls = None
 
         return response_content, tool_calls
-
-    # ==================== 格式转换辅助方法 Format conversion helper methods ====================
-
-    def _convert_openai_to_target_format(
-        self, openai_data: Dict[str, Any], model_family: str
-    ) -> Dict[str, Any]:
-        """将 OpenAI 格式转换为目标模型家族格式
-        Convert OpenAI format to target model family format
-
-        Args:
-            openai_data: OpenAI 格式的数据
-            model_family: 目标模型家族 ("anthropic", "google")
-
-        Returns:
-            目标格式的数据
-        """
-        if model_family == "anthropic":
-            # 使用 Anthropic 转换器的 from_provider 方法
-            # 注意：这里需要将 OpenAI 格式先转换为 IR，再转换为 Anthropic 格式
-            ir_data = self._openai_converter.from_provider(openai_data)
-            return self._anthropic_converter.to_provider(ir_data)[
-                0
-            ]  # 只取数据，忽略警告
-        elif model_family == "google":
-            # 使用 Google 转换器
-            ir_data = self._openai_converter.from_provider(openai_data)
-            return self._google_converter.to_provider(ir_data)[0]  # 只取数据，忽略警告
-        else:
-            # 未知格式，返回原始 OpenAI 格式
-            return openai_data
-
-    def _convert_target_to_openai_format(
-        self, target_data: Any, model_family: str
-    ) -> Dict[str, Any]:
-        """将目标模型家族格式转换为 OpenAI 格式
-        Convert target model family format to OpenAI format
-
-        Args:
-            target_data: 目标格式的数据
-            model_family: 源模型家族 ("anthropic", "google")
-
-        Returns:
-            OpenAI 格式的数据
-        """
-        if model_family == "anthropic":
-            # 使用 Anthropic 转换器的 from_provider 方法
-            ir_data = self._anthropic_converter.from_provider(target_data)
-            return self._openai_converter.to_provider(ir_data)[0]  # 只取数据，忽略警告
-        elif model_family == "google":
-            # 使用 Google 转换器
-            ir_data = self._google_converter.from_provider(target_data)
-            return self._openai_converter.to_provider(ir_data)[0]  # 只取数据，忽略警告
-        else:
-            # 未知格式，假设已经是 OpenAI 格式
-            return target_data
 
 
 # ==================== LLMIR-based Chat Processing Functions ====================
@@ -963,7 +1004,6 @@ async def _send_llmir_non_streaming_request(
                     content_type="application/json",
                 )
 
-            # 转换为 OpenAI 格式
             # 使用 ArgoConverter 解析响应
             converter = ArgoConverter()
             response_content, tool_calls = converter.parse_argo_response(response_data)
