@@ -194,12 +194,24 @@ class ArgoConverter(BaseConverter):
         pass
 
     def _ir_tool_call_to_p(self, tool_call_part: ToolCallPart) -> Any:
-        """IR ToolCallPart → Provider Tool Call / IR工具调用部分转换为Provider工具调用"""
-        pass
+        """IR ToolCallPart → Provider Tool Call / IR工具调用部分转换为Provider工具调用
+
+        注意：此方法需要 model_family 参数，请使用 ir_tool_call_to_argo() 方法
+        """
+        raise NotImplementedError(
+            "Use ir_tool_call_to_argo(tool_call_part, model_family) instead. "
+            "This method requires model_family parameter to determine the correct format."
+        )
 
     def _p_tool_call_to_ir(self, provider_tool_call: Any) -> ToolCallPart:
-        """Provider Tool Call → IR ToolCallPart / Provider工具调用转换为IR工具调用部分"""
-        pass
+        """Provider Tool Call → IR ToolCallPart / Provider工具调用转换为IR工具调用部分
+
+        注意：此方法需要 model_family 参数，请使用 argo_tool_call_to_ir() 方法
+        """
+        raise NotImplementedError(
+            "Use argo_tool_call_to_ir(provider_tool_call, model_family) instead. "
+            "This method requires model_family parameter to determine the correct format."
+        )
 
     def _ir_tool_result_to_p(self, tool_result_part: ToolResultPart) -> Any:
         """IR ToolResultPart → Provider Tool Result / IR工具结果部分转换为Argo工具结果
@@ -382,3 +394,56 @@ class ArgoConverter(BaseConverter):
         else:
             # 默认使用 OpenAI 格式
             return self._openai_converter._p_tool_choice_to_ir(provider_tool_choice)
+
+    # ==================== Argo 特定的工具调用转换方法 Argo-specific tool call conversion methods ====================
+
+    def ir_tool_call_to_argo(
+        self, tool_call_part: ToolCallPart, model_family: str = "openai"
+    ) -> Any:
+        """IR ToolCallPart → Argo Tool Call / IR工具调用部分转换为Argo工具调用
+
+        使用 LLMIR 的现有转换器进行格式转换：
+        - OpenAI 模型：使用 OpenAIChatConverter
+        - Anthropic 模型：使用 AnthropicConverter
+        - Google 模型：使用 GoogleConverter
+
+        Args:
+            tool_call_part: IR格式的工具调用部分
+            model_family: 模型家族 ("openai", "anthropic", "google")
+
+        Returns:
+            Argo格式的工具调用
+        """
+        if model_family == "openai":
+            return self._openai_converter._ir_tool_call_to_p(tool_call_part)
+        elif model_family == "anthropic":
+            return self._anthropic_converter._ir_tool_call_to_p(tool_call_part)
+        elif model_family == "google":
+            return self._google_converter._ir_tool_call_to_p(tool_call_part)
+        else:
+            # 默认使用 OpenAI 格式
+            return self._openai_converter._ir_tool_call_to_p(tool_call_part)
+
+    def argo_tool_call_to_ir(
+        self, provider_tool_call: Any, model_family: str = "openai"
+    ) -> ToolCallPart:
+        """Argo Tool Call → IR ToolCallPart / Argo工具调用转换为IR工具调用部分
+
+        使用 LLMIR 的现有转换器进行格式转换
+
+        Args:
+            provider_tool_call: Argo格式的工具调用
+            model_family: 模型家族 ("openai", "anthropic", "google")
+
+        Returns:
+            IR格式的ToolCallPart
+        """
+        if model_family == "openai":
+            return self._openai_converter._p_tool_call_to_ir(provider_tool_call)
+        elif model_family == "anthropic":
+            return self._anthropic_converter._p_tool_call_to_ir(provider_tool_call)
+        elif model_family == "google":
+            return self._google_converter._p_tool_call_to_ir(provider_tool_call)
+        else:
+            # 默认使用 OpenAI 格式
+            return self._openai_converter._p_tool_call_to_ir(provider_tool_call)
