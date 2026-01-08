@@ -26,6 +26,19 @@ class ArgoConverter(BaseConverter):
     Base class for converters, defines a unified layered conversion interface
     """
 
+    def __init__(self):
+        """初始化ArgoConverter，预先实例化LLMIR转换器组件"""
+        super().__init__()
+
+        # 预先实例化LLMIR转换器，避免每次调用时重复实例化
+        from llmir.converters.openai_chat import OpenAIChatConverter
+        from llmir.converters.anthropic import AnthropicConverter
+        from llmir.converters.google import GoogleConverter
+
+        self._openai_converter = OpenAIChatConverter()
+        self._anthropic_converter = AnthropicConverter()
+        self._google_converter = GoogleConverter()
+
     def to_provider(
         self,
         ir_input: Union[IRInput, IRRequest],
@@ -197,17 +210,142 @@ class ArgoConverter(BaseConverter):
         pass
 
     def _ir_tool_to_p(self, tool: ToolDefinition) -> Any:
-        """IR ToolDefinition → Provider Tool Definition / IR工具定义转换为Provider工具定义"""
-        pass
+        """IR ToolDefinition → Provider Tool Definition / IR工具定义转换为Provider工具定义
+
+        注意：此方法需要 model_family 参数，请使用 ir_tool_to_argo() 方法
+        """
+        raise NotImplementedError(
+            "Use ir_tool_to_argo(tool, model_family) instead. "
+            "This method requires model_family parameter to determine the correct format."
+        )
 
     def _p_tool_to_ir(self, provider_tool: Any) -> ToolDefinition:
-        """Provider Tool Definition → IR ToolDefinition / Provider工具定义转换为IR工具定义"""
-        pass
+        """Provider Tool Definition → IR ToolDefinition / Provider工具定义转换为IR工具定义
+
+        注意：此方法需要 model_family 参数，请使用 argo_tool_to_ir() 方法
+        """
+        raise NotImplementedError(
+            "Use argo_tool_to_ir(provider_tool, model_family) instead. "
+            "This method requires model_family parameter to determine the correct format."
+        )
+
+    # ==================== Argo 特定的工具转换方法 Argo-specific tool conversion methods ====================
+
+    def ir_tool_to_argo(
+        self, tool: ToolDefinition, model_family: str = "openai"
+    ) -> Any:
+        """IR ToolDefinition → Argo Tool Definition / IR工具定义转换为Argo工具定义
+
+        使用 LLMIR 的现有转换器进行格式转换：
+        - OpenAI 模型：使用 OpenAIChatConverter
+        - Anthropic 模型：使用 AnthropicConverter
+        - Google 模型：使用 GoogleConverter
+
+        Args:
+            tool: IR格式的工具定义
+            model_family: 模型家族 ("openai", "anthropic", "google")
+
+        Returns:
+            Argo格式的工具定义字典
+        """
+        if model_family == "openai":
+            return self._openai_converter._ir_tool_to_p(tool)
+        elif model_family == "anthropic":
+            return self._anthropic_converter._ir_tool_to_p(tool)
+        elif model_family == "google":
+            return self._google_converter._ir_tool_to_p(tool)
+        else:
+            # 默认使用 OpenAI 格式
+            return self._openai_converter._ir_tool_to_p(tool)
+
+    def argo_tool_to_ir(
+        self, provider_tool: Any, model_family: str = "openai"
+    ) -> ToolDefinition:
+        """Argo Tool Definition → IR ToolDefinition / Argo工具定义转换为IR工具定义
+
+        使用 LLMIR 的现有转换器进行格式转换
+
+        Args:
+            provider_tool: Argo格式的工具定义字典
+            model_family: 模型家族 ("openai", "anthropic", "google")
+
+        Returns:
+            IR格式的ToolDefinition
+        """
+        if model_family == "openai":
+            return self._openai_converter._p_tool_to_ir(provider_tool)
+        elif model_family == "anthropic":
+            return self._anthropic_converter._p_tool_to_ir(provider_tool)
+        elif model_family == "google":
+            return self._google_converter._p_tool_to_ir(provider_tool)
+        else:
+            # 默认使用 OpenAI 格式
+            return self._openai_converter._p_tool_to_ir(provider_tool)
 
     def _ir_tool_choice_to_p(self, tool_choice: ToolChoice) -> Any:
-        """IR ToolChoice → Provider Tool Choice Config / IR工具选择转换为Provider工具选择配置"""
-        pass
+        """IR ToolChoice → Provider Tool Choice Config / IR工具选择转换为Provider工具选择配置
+
+        注意：此方法需要 model_family 参数，请使用 ir_tool_choice_to_argo() 方法
+        """
+        raise NotImplementedError(
+            "Use ir_tool_choice_to_argo(tool_choice, model_family) instead. "
+            "This method requires model_family parameter to determine the correct format."
+        )
 
     def _p_tool_choice_to_ir(self, provider_tool_choice: Any) -> ToolChoice:
-        """Provider Tool Choice Config → IR ToolChoice / Provider工具选择配置转换为IR工具选择"""
-        pass
+        """Provider Tool Choice Config → IR ToolChoice / Provider工具选择配置转换为IR工具选择
+
+        注意：此方法需要 model_family 参数，请使用 argo_tool_choice_to_ir() 方法
+        """
+        raise NotImplementedError(
+            "Use argo_tool_choice_to_ir(provider_tool_choice, model_family) instead. "
+            "This method requires model_family parameter to determine the correct format."
+        )
+
+    def ir_tool_choice_to_argo(
+        self, tool_choice: ToolChoice, model_family: str = "openai"
+    ) -> Any:
+        """IR ToolChoice → Argo Tool Choice Config / IR工具选择转换为Argo工具选择配置
+
+        使用 LLMIR 的现有转换器进行格式转换
+
+        Args:
+            tool_choice: IR格式的工具选择配置
+            model_family: 模型家族 ("openai", "anthropic", "google")
+
+        Returns:
+            Argo格式的工具选择配置
+        """
+        if model_family == "openai":
+            return self._openai_converter._ir_tool_choice_to_p(tool_choice)
+        elif model_family == "anthropic":
+            return self._anthropic_converter._ir_tool_choice_to_p(tool_choice)
+        elif model_family == "google":
+            return self._google_converter._ir_tool_choice_to_p(tool_choice)
+        else:
+            # 默认使用 OpenAI 格式
+            return self._openai_converter._ir_tool_choice_to_p(tool_choice)
+
+    def argo_tool_choice_to_ir(
+        self, provider_tool_choice: Any, model_family: str = "openai"
+    ) -> ToolChoice:
+        """Argo Tool Choice Config → IR ToolChoice / Argo工具选择配置转换为IR工具选择
+
+        使用 LLMIR 的现有转换器进行格式转换
+
+        Args:
+            provider_tool_choice: Argo格式的工具选择配置
+            model_family: 模型家族 ("openai", "anthropic", "google")
+
+        Returns:
+            IR格式的ToolChoice
+        """
+        if model_family == "openai":
+            return self._openai_converter._p_tool_choice_to_ir(provider_tool_choice)
+        elif model_family == "anthropic":
+            return self._anthropic_converter._p_tool_choice_to_ir(provider_tool_choice)
+        elif model_family == "google":
+            return self._google_converter._p_tool_choice_to_ir(provider_tool_choice)
+        else:
+            # 默认使用 OpenAI 格式
+            return self._openai_converter._p_tool_choice_to_ir(provider_tool_choice)
