@@ -632,7 +632,7 @@ async def proxy_request(
 
     # Check if LLMIR mode is enabled
     if config.use_llmir:
-        from ..types.llmir_impl import process_chat_with_llmir
+        from ..llmir import process_chat_with_llmir
 
         return await process_chat_with_llmir(
             request, convert_to_openai=convert_to_openai
