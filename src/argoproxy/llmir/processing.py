@@ -102,6 +102,10 @@ async def process_chat_with_llmir(
             # 将 IR 格式转换回 Argo 格式（应用标准化处理和模型家族转换）
             argo_data, warnings = converter.to_provider(ir_request)
 
+            # 手动添加 user 字段，因为 OpenAIChatConverter 可能不会保留它
+            if "user" in data:
+                argo_data["user"] = data["user"]
+
             logger.info("[LLMIR DEBUG] to_provider conversion completed")
 
         except Exception as e:
