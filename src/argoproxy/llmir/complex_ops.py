@@ -9,6 +9,8 @@ Argo 复杂转换操作
 - 响应级转换 (IRResponse ↔ Argo response)
 """
 
+import time
+import uuid
 from typing import Any, Dict, List, Tuple
 
 from llmir.converters.base import BaseComplexOps
@@ -374,21 +376,30 @@ class ArgoComplexOps(BaseComplexOps):
             pass
 
         # 构建完整的 IRResponse
+
+        # 确定 finish_reason
+        has_tool_calls = (
+            "tool_calls" in ir_response_message and ir_response_message["tool_calls"]
+        )
+        finish_reason_value = "tool_calls" if has_tool_calls else "stop"
+
         ir_response: IRResponse = {
+            "id": provider_response.get("id", str(uuid.uuid4().hex)),
+            "object": "response",
+            "created": provider_response.get("created", int(time.time())),
+            "model": provider_response.get("model", "unknown"),
             "choices": [
                 {
                     "index": 0,
                     "message": ir_response_message,
-                    "finish_reason": "stop",  # 默认值，可能需要根据实际情况调整
+                    "finish_reason": {"reason": finish_reason_value},
                 }
-            ]
+            ],
         }
 
-        # 复制其他字段（如果存在）
-        for field in ["id", "object", "created", "model", "usage"]:
-            if field in provider_response:
-                ir_response[field] = provider_response[field]
-
+        # 复制可选字段（如果存在）
+        if "usage" in provider_response:
+            ir_response["usage"] = provider_response["usage"]
         return ir_response
 
     @staticmethod

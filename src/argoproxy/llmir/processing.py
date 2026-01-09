@@ -9,10 +9,11 @@ import json
 import time
 import uuid
 from http import HTTPStatus
-from typing import Dict, Any, Union
+from typing import Any, Dict, Union
 
 import aiohttp
 from aiohttp import web
+from llmir import OpenAIChatConverter
 from loguru import logger
 
 from ..config import ArgoConfig
@@ -79,6 +80,7 @@ async def process_chat_with_llmir(
 
         # 创建 ArgoConverter 实例
         converter = ArgoConverter()
+        openai_converter = OpenAIChatConverter()
 
         try:
             logger.info("[LLMIR DEBUG] Starting from_provider conversion")
@@ -88,7 +90,7 @@ async def process_chat_with_llmir(
             )
 
             # 将请求数据转换为 IR 格式（自动处理模型家族检测）
-            ir_request = converter.from_provider(data)
+            ir_request = openai_converter.from_provider(data)
 
             logger.info("[LLMIR DEBUG] from_provider conversion completed")
             logger.info(f"[LLMIR DEBUG] IR request type: {type(ir_request)}")
@@ -209,8 +211,8 @@ async def _send_llmir_non_streaming_request(
                     content_type="application/json",
                 )
 
-            # 使用 ArgoConverter 解析响应
-            converter = ArgoConverter()
+            # 使用 ArgoConverter 将 Argo 响应转换为 IR 格式
+            argo_converter = ArgoConverter()
 
             # 确定模型家族
             model_name = data.get("model", "")
@@ -222,31 +224,13 @@ async def _send_llmir_non_streaming_request(
             if model_family == "unknown":
                 model_family = "openai"
 
-            ir_response_message = converter.parse_argo_response(
+            # Argo Response → IR Response
+            ir_response = argo_converter.from_provider(
                 response_data, model_family=model_family
             )
 
-            # 提取响应内容和工具调用
-            response_content = None
-            tool_calls = None
-
-            # 从 IR 响应消息中提取内容
-            content_parts = ir_response_message.get("content", [])
-            if content_parts:
-                # 合并所有文本部分
-                text_parts = [
-                    part.get("text", "")
-                    for part in content_parts
-                    if part.get("type") == "text"
-                ]
-                response_content = " ".join(text_parts) if text_parts else None
-
-            # 提取工具调用
-            if "tool_calls" in ir_response_message:
-                tool_calls = ir_response_message["tool_calls"]
-
-            # 检查是否有有效的响应（content 或 tool_calls）
-            if response_content is None and not tool_calls:
+            # 检查是否有有效的响应
+            if not ir_response.get("choices"):
                 return web.json_response(
                     {
                         "object": "error",
@@ -256,55 +240,50 @@ async def _send_llmir_non_streaming_request(
                     status=502,
                 )
 
+            # 提取第一个 choice 的消息用于 token 计算
+            first_choice = ir_response["choices"][0]
+            ir_message = first_choice.get("message", {})
+
+            # 提取文本内容用于 token 计算
+            content_parts = ir_message.get("content", [])
+            text_parts = [
+                part.get("text", "")
+                for part in content_parts
+                if part.get("type") == "text"
+            ]
+            response_content = " ".join(text_parts) if text_parts else ""
+
             # 计算 tokens
             prompt_tokens = await calculate_prompt_tokens_async(data, data["model"])
-            # 确保 response_content 是字符串类型
-            if response_content and isinstance(response_content, str):
-                completion_tokens = await count_tokens_async(
-                    response_content, data["model"]
-                )
-            else:
-                completion_tokens = 0
+            completion_tokens = (
+                await count_tokens_async(response_content, data["model"])
+                if response_content
+                else 0
+            )
             total_tokens = prompt_tokens + completion_tokens
 
-            usage = CompletionUsage(
+            # 使用 OpenAIChatConverter 将 IR Response 转换为 OpenAI 格式
+            openai_converter = OpenAIChatConverter()
+            openai_response_data, _ = openai_converter.to_provider(ir_response)
+
+            # 创建 CompletionUsage 对象并添加 usage 信息到响应中
+            openai_response_data["usage"] = CompletionUsage(
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
                 total_tokens=total_tokens,
             )
 
-            # 确定 finish_reason
-            finish_reason = "tool_calls" if tool_calls else "stop"
+            # 确保有 id, object, created, model 字段
+            if "id" not in openai_response_data:
+                openai_response_data["id"] = str(uuid.uuid4().hex)
+            if "object" not in openai_response_data:
+                openai_response_data["object"] = "chat.completion"
+            if "created" not in openai_response_data:
+                openai_response_data["created"] = int(time.time())
+            if "model" not in openai_response_data:
+                openai_response_data["model"] = data.get("model", "unknown")
 
-            # 使用 llmir 的 OpenAIChatConverter 构建 OpenAI 兼容响应
-            from llmir.converters.openai_chat import OpenAIChatConverter
-
-            openai_converter = OpenAIChatConverter()
-
-            # 使用 OpenAIChatConverter 将 IR 格式转换为 OpenAI 格式
-            openai_response_data, _ = openai_converter.to_provider(
-                [ir_response_message]
-            )
-
-            # 构建完整的 OpenAI 响应格式
-            openai_response = {
-                "id": str(uuid.uuid4().hex),
-                "object": "chat.completion",
-                "created": int(time.time()),
-                "model": data.get("model", "unknown"),
-                "choices": [
-                    {
-                        "index": 0,
-                        "message": openai_response_data["messages"][0],
-                        "finish_reason": finish_reason,
-                    }
-                ],
-                "usage": {
-                    "prompt_tokens": usage.prompt_tokens,
-                    "completion_tokens": usage.completion_tokens,
-                    "total_tokens": usage.total_tokens,
-                },
-            }
+            openai_response = openai_response_data
 
             return web.json_response(
                 openai_response,
