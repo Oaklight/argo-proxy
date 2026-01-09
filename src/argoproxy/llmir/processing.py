@@ -267,11 +267,12 @@ async def _send_llmir_non_streaming_request(
             openai_response_data, _ = openai_converter.to_provider(ir_response)
 
             # 创建 CompletionUsage 对象并添加 usage 信息到响应中
-            openai_response_data["usage"] = CompletionUsage(
+            usage = CompletionUsage(
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
                 total_tokens=total_tokens,
             )
+            openai_response_data["usage"] = usage.model_dump()
 
             # 确保有 id, object, created, model 字段
             if "id" not in openai_response_data:
