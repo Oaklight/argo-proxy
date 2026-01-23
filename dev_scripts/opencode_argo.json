@@ -1,0 +1,209 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "argo": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Argo",
+      "options": {
+        "baseURL": "http://127.0.0.1:50906/v1",
+        "apiKey": "ngetty"
+      },
+      "models": {
+        "argo:gpt-4-32k": {
+          "name": "gpt4large"
+        },
+        "argo:gpt-4-turbo": {
+          "name": "gpt4turbo"
+        },
+        "argo:gpt-4o": {
+          "name": "gpt4o"
+        },
+        "argo:gpt-o1-preview": {
+          "name": "gpto1preview"
+        },
+        "argo:o1-preview": {
+          "name": "gpto1preview"
+        },
+        "argo:gpt-4o-latest": {
+          "name": "gpt4olatest"
+        },
+        "argo:gpt-o1-mini": {
+          "name": "gpto1mini",
+          "limit": {
+            "context": 10000,
+            "output": 5000
+          }
+        },
+        "argo:o1-mini": {
+          "name": "gpto1mini"
+        },
+        "argo:gpt-o3-mini": {
+          "name": "gpto3mini"
+        },
+        "argo:o3-mini": {
+          "name": "gpto3mini"
+        },
+        "argo:gpt-o1": {
+          "name": "gpto1"
+        },
+        "argo:o1": {
+          "name": "gpto1"
+        },
+        "argo:gpt-o3": {
+          "name": "gpto3"
+        },
+        "argo:o3": {
+          "name": "gpto3"
+        },
+        "argo:gpt-o4-mini": {
+          "name": "gpto4mini"
+        },
+        "argo:o4-mini": {
+          "name": "gpto4mini"
+        },
+        "argo:gpt-4.1": {
+          "name": "gpt41"
+        },
+        "argo:gpt-4.1-mini": {
+          "name": "gpt41mini"
+        },
+        "argo:gpt-4.1-nano": {
+          "name": "gpt41nano"
+        },
+        "argo:gpt-5": {
+          "name": "gpt5"
+        },
+        "argo:gpt-5-mini": {
+          "name": "gpt5mini"
+        },
+        "argo:gpt-5-nano": {
+          "name": "gpt5nano"
+        },
+        "argo:gpt-5.1": {
+          "name": "gpt51",
+          "limit": {
+            "context": 10000,
+            "output": 5000
+          }
+        },
+        "argo:gpt-5.2": {
+          "name": "gpt52"
+        },
+        "argo:gemini-2.5-pro": {
+          "name": "gemini25pro"
+        },
+        "argo:gemini-2.5-flash": {
+          "name": "gemini25flash"
+        },
+        "argo:claude-4.5-opus": {
+          "name": "claudeopus45",
+          "limit": {
+            "context": 200000,
+            "output": 20999
+          },
+        },
+        "argo:claude-opus-4.5": {
+          "name": "claudeopus45",
+          "limit": {
+            "context": 200000,
+            "output": 20999
+          },
+        },
+        "argo:claude-4.1-opus": {
+          "name": "claudeopus41"
+        },
+        "argo:claude-opus-4.1": {
+          "name": "claudeopus41"
+        },
+        "argo:claude-4-opus": {
+          "name": "claudeopus4"
+        },
+        "argo:claude-opus-4": {
+          "name": "claudeopus4",
+          "limit": {
+            "context": 200000,
+            "output": 20999
+          },
+        },
+        "argo:claude-4.5-haiku": {
+          "name": "claudehaiku45",
+          "family": "anthropic",
+          "limit": {
+            "context": 200000,
+            "output": 20999
+          },
+        },
+        "argo:claude-haiku-4.5": {
+          "name": "claudehaiku45",
+          "limit": {
+            "context": 200000,
+            "output": 20999
+          },
+        },
+        "argo:claude-4.5-sonnet": {
+          "name": "claudesonnet45_thinking",
+          "limit": {
+            "context": 200000,
+            "output": 20999
+          },
+          "options": {
+            "thinking": {
+              "type": "enabled",
+              "budgetTokens": 16000,
+            },
+          },
+        },
+        "argo:claude-sonnet-4.5": {
+          "name": "claudesonnet45",
+          "family": "anthropic",
+          //"modalities": ["text"],
+          "limit": {
+            "context": 200000,
+            "output": 20999
+          },
+        },
+        "argo:claude-4-sonnet": {
+          "name": "claudesonnet4",
+          "family": "anthropic"
+        },
+        "argo:claude-sonnet-4": {
+          "name": "claudesonnet4",
+          "family": "anthropic"
+        },
+        "argo:claude-3.7-sonnet": {
+          "name": "claudesonnet37",
+          "family": "anthropic"
+        },
+        "argo:claude-sonnet-3.7": {
+          "name": "claudesonnet37",
+          "family": "anthropic"
+        },
+        "argo:claude-3.5-sonnet-v2": {
+          "name": "claudesonnet35v2",
+          "family": "anthropic"
+        },
+        "argo:claude-sonnet-3.5-v2": {
+          "name": "claudesonnet35v2",
+          "family": "anthropic"
+        },
+        "argo:claude-3.5-haiku": {
+          "name": "claudehaiku35",
+          "family": "anthropic"
+        },
+        "argo:claude-haiku-3.5": {
+          "name": "claudehaiku35",
+          "family": "anthropic"
+        },
+        "argo:text-embedding-ada-002": {
+          "name": "ada002"
+        },
+        "argo:text-embedding-3-small": {
+          "name": "v3small"
+        },
+        "argo:text-embedding-3-large": {
+          "name": "v3large"
+        }
+      }
+    }
+  }
+}
