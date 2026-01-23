@@ -18,7 +18,7 @@ else
     # -N: do not execute a remote command
     # -L: port forwarding
     # -J: jump host
-    ssh -f -N -L $PORT:localhost:$PORT -J $USER@$JUMP_HOST $USER@$REMOTE_HOST
+    ssh -f -N -L $PORT:127.0.0.1:$PORT -J $USER@$JUMP_HOST $USER@$REMOTE_HOST
     
     if [ $? -eq 0 ]; then
         echo "Tunnel established successfully!"
