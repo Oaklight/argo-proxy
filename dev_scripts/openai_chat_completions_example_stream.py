@@ -1,13 +1,14 @@
+import os
+
 import httpx
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Configuration
-BASE_URL = "https://api.siliconflow.cn"  # Update if your server is running on a different host/port
-MODEL = "Qwen/Qwen2-1.5B-Instruct"
-API_KEY = "sk-your-siliconflow-api-key"
-
-BASE_URL = "http://localhost:44498"  # Update if your server is running on a different host/port
-MODEL = "argo:gpt-4o"
-API_KEY = "sk-your-openai-api-key"
+BASE_URL = os.getenv("BASE_URL", "https://api.openai.com")
+MODEL = os.getenv("MODEL", "gpt-4o")
+API_KEY = os.getenv("API_KEY", "sk-your-openai-api-key")
 
 CHAT_ENDPOINT = f"{BASE_URL}/v1/chat/completions"
 
@@ -32,6 +33,9 @@ payload = {
     ],
     "user": "test_user",  # This will be overridden by the proxy_request function
     "stream": True,
+    "stream_options": {
+        "include_usage": True,
+    },
     "max_tokens": 5,
 }
 headers = {
