@@ -9,10 +9,11 @@ from loguru import logger
 
 from ..config import ArgoConfig
 from ..models import ModelRegistry
-from ..types import Completion, CompletionChoice, CompletionUsage
+from ..types import Completion, CompletionChoice
 from ..types.completions import FINISH_REASONS
 from ..utils.misc import apply_username_passthrough, make_bar
 from ..utils.tokens import count_tokens, count_tokens_async
+from ..utils.usage import create_usage
 from .chat import (
     prepare_chat_request_data,
     send_non_streaming_request,
@@ -50,11 +51,8 @@ def transform_completions_compat(
         # Calculate token counts (simplified example, actual tokenization may differ)
         if not is_streaming:
             completion_tokens: int = count_tokens(content, model_name)
-            total_tokens: int = prompt_tokens + completion_tokens
-            usage = CompletionUsage(
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                total_tokens=total_tokens,
+            usage = create_usage(
+                prompt_tokens, completion_tokens, api_type="completion"
             )
 
         openai_response = Completion(
@@ -109,11 +107,8 @@ async def transform_completions_compat_async(
         # Calculate token counts asynchronously
         if not is_streaming:
             completion_tokens: int = await count_tokens_async(content, model_name)
-            total_tokens: int = prompt_tokens + completion_tokens
-            usage = CompletionUsage(
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                total_tokens=total_tokens,
+            usage = create_usage(
+                prompt_tokens, completion_tokens, api_type="completion"
             )
 
         openai_response = Completion(

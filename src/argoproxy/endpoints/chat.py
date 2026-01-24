@@ -22,7 +22,6 @@ from ..types import (
     ChatCompletionChunk,
     ChatCompletionMessage,
     ChoiceDelta,
-    CompletionUsage,
     NonStreamChoice,
     StreamChoice,
 )
@@ -39,6 +38,11 @@ from ..utils.models import determine_model_family
 from ..utils.tokens import (
     calculate_prompt_tokens_async,
     count_tokens_async,
+)
+from ..utils.usage import (
+    calculate_completion_tokens_async,
+    create_usage,
+    generate_usage_chunk,
 )
 from ..utils.transports import pseudo_chunk_generator, send_off_sse
 
@@ -109,33 +113,11 @@ async def transform_chat_completions_non_streaming_async(
     """
     try:
         # Calculate token usage asynchronously
-        completion_tokens = (
-            await count_tokens_async(content, model_name) if content else 0
+        completion_tokens = await calculate_completion_tokens_async(
+            content, tool_calls, model_name, api_format="chat_completion"
         )
-        if tool_calls:
-            # Convert ToolCall objects to serializable format for token counting
-            if (
-                tool_calls
-                and len(tool_calls) > 0
-                and hasattr(tool_calls[0], "serialize")
-            ):
-                # tool_calls is a list of ToolCall objects
-                serializable_tool_calls = [
-                    tc.serialize("openai-chatcompletion") for tc in tool_calls
-                ]
-            else:
-                # tool_calls is already a list of dicts
-                serializable_tool_calls = tool_calls
-            tool_tokens = await count_tokens_async(
-                json.dumps(serializable_tool_calls), model_name
-            )
-            completion_tokens += tool_tokens
-        total_tokens = prompt_tokens + completion_tokens
-
-        usage = CompletionUsage(
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            total_tokens=total_tokens,
+        usage = create_usage(
+            prompt_tokens, completion_tokens, api_type="chat_completion"
         )
 
         # Handle tool calls
@@ -441,20 +423,13 @@ async def _handle_pseudo_stream(
         completion_tokens = await count_tokens_async(
             total_response_content, data["model"]
         )
-        total_tokens = prompt_tokens + completion_tokens
-
-        usage_chunk = {
-            "id": str(uuid.uuid4().hex),
-            "object": "chat.completion.chunk",
-            "created": created_timestamp,
-            "model": data["model"],
-            "choices": [],
-            "usage": {
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": completion_tokens,
-                "total_tokens": total_tokens,
-            },
-        }
+        usage_chunk = generate_usage_chunk(
+            prompt_tokens,
+            completion_tokens,
+            api_type="chat_completion",
+            model=data["model"],
+            created_timestamp=created_timestamp,
+        )
         await send_off_sse(response, usage_chunk)
     else:
         # For non-OpenAI conversion, we need to handle the response_content appropriately
