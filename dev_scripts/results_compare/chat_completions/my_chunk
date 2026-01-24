@@ -1,9 +1,25 @@
-$ python chat_completions_example_stream.py 
 Running Chat Test with Messages
 Status Code:  200
-Headers:  Headers({'content-type': 'text/event-stream', 'transfer-encoding': 'chunked', 'connection': 'keep-alive'})
+Headers:  Headers({'content-type': 'text/event-stream', 'date': 'Sat, 24 Jan 2026 14:11:56 GMT', 'connection': 'keep-alive', 'strict-transport-security': 'max-age=31536000; includeSubDomains', 'vary': 'Accept-Encoding', 'transfer-encoding': 'chunked', 'server': 'Python/3.10 aiohttp/3.12.13'})
 Streaming Response: 
-data: {"id": "adeeddef-d75d-4150-b01e-b27cc0afa158", "object": "chat.completion.chunk", "created": 1741773051, "model": "gpt4o", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": "Quantum mechanics is a fascinating"}}], "system_fingerprint": ""}
+data: {"id": "94f482fa25d146e7b892e9d103baa9eb", "created": 1769263915, "model": "gpt41nano", "service_tier": null, "system_fingerprint": null, "usage": null, "choices": [{"finish_reason": null, "index": 0, "delta": {"content": "Certainly! One", "refusal": null, "role": "assistant", "tool_calls": null}}], "object": "chat.completion.chunk"}
 
-data: [DONE]
+data: {"id": "94f482fa25d146e7b892e9d103baa9eb", "created": 1769263915, "model": "gpt41nano", "service_tier": null, "system_fingerprint": null, "usage": null, "choices": [{"finish_reason": null, "index": 0, "delta": {"content": " fascinating aspect of quantum mechanics is the phenomenon of **quantum entanglement**. This occurs when two or more particles become linked", "refusal": null, "role": null, "tool_calls": null}}], "object": "chat.completion.chunk"}
 
+data: {"id": "94f482fa25d146e7b892e9d103baa9eb", "created": 1769263915, "model": "gpt41nano", "service_tier": null, "system_fingerprint": null, "usage": null, "choices": [{"finish_reason": null, "index": 0, "delta": {"content": " such that the state of one", "refusal": null, "role": null, "tool_calls": null}}], "object": "chat.completion.chunk"}
+
+data: {"id": "94f482fa25d146e7b892e9d103baa9eb", "created": 1769263915, "model": "gpt41nano", "service_tier": null, "system_fingerprint": null, "usage": null, "choices": [{"finish_reason": null, "index": 0, "delta": {"content": " particle instantly influences the state of the other, no matter how far apart they are. Einstein famously referred to this", "refusal": null, "role": null, "tool_calls": null}}], "object": "chat.completion.chunk"}
+
+data: {"id": "94f482fa25d146e7b892e9d103baa9eb", "created": 1769263915, "model": "gpt41nano", "service_tier": null, "system_fingerprint": null, "usage": null, "choices": [{"finish_reason": null, "index": 0, "delta": {"content": " as \"spooky action at a distance.\" \n\nWhat makes entanglement particularly intriguing is that it defies", "refusal": null, "role": null, "tool_calls": null}}], "object": "chat.completion.chunk"}
+
+data: {"id": "94f482fa25d146e7b892e9d103baa9eb", "created": 1769263915, "model": "gpt41nano", "service_tier": null, "system_fingerprint": null, "usage": null, "choices": [{"finish_reason": null, "index": 0, "delta": {"content": " our classical intuition about how objects should", "refusal": null, "role": null, "tool_calls": null}}], "object": "chat.completion.chunk"}
+
+data: {"id": "94f482fa25d146e7b892e9d103baa9eb", "created": 1769263915, "model": "gpt41nano", "service_tier": null, "system_fingerprint": null, "usage": null, "choices": [{"finish_reason": null, "index": 0, "delta": {"content": " behave and has been experimentally confirmed multiple times. This property under", "refusal": null, "role": null, "tool_calls": null}}], "object": "chat.completion.chunk"}
+
+data: {"id": "94f482fa25d146e7b892e9d103baa9eb", "created": 1769263915, "model": "gpt41nano", "service_tier": null, "system_fingerprint": null, "usage": null, "choices": [{"finish_reason": null, "index": 0, "delta": {"content": "pins emerging technologies like quantum computing and quantum cryptography", "refusal": null, "role": null, "tool_calls": null}}], "object": "chat.completion.chunk"}
+
+data: {"id": "94f482fa25d146e7b892e9d103baa9eb", "created": 1769263915, "model": "gpt41nano", "service_tier": null, "system_fingerprint": null, "usage": null, "choices": [{"finish_reason": null, "index": 0, "delta": {"content": ", promising", "refusal": null, "role": null, "tool_calls": null}}], "object": "chat.completion.chunk"}
+
+data: {"id": "94f482fa25d146e7b892e9d103baa9eb", "created": 1769263915, "model": "gpt41nano", "service_tier": null, "system_fingerprint": null, "usage": null, "choices": [{"finish_reason": null, "index": 0, "delta": {"content": " revolutionary advances in secure communication and computational power.", "refusal": null, "role": null, "tool_calls": null}}], "object": "chat.completion.chunk"}
+
+data: {"id": "94f482fa25d146e7b892e9d103baa9eb", "object": "chat.completion.chunk", "created": 1769263915, "model": "gpt41nano", "choices": [], "usage": {"completion_tokens": 119, "prompt_tokens": 8, "total_tokens": 127}}
