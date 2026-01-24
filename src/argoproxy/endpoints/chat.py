@@ -408,8 +408,10 @@ async def _handle_pseudo_stream(
                     )
                 await send_off_sse(response, cast(Dict[str, Any], chunk_json))
         total_processed = 0
+        total_response_content = ""
         async for chunk_text in pseudo_chunk_generator(cleaned_text):
             total_processed += len(chunk_text)
+            total_response_content += chunk_text
             finish_reason = None
             if total_processed >= len(cleaned_text):
                 finish_reason = "tool_calls" if tool_calls else "stop"
@@ -434,6 +436,26 @@ async def _handle_pseudo_stream(
                     tool_calls=None,
                 )
             await send_off_sse(response, cast(Dict[str, Any], chunk_json))
+
+        # Count completion tokens and send usage
+        completion_tokens = await count_tokens_async(
+            total_response_content, data["model"]
+        )
+        total_tokens = prompt_tokens + completion_tokens
+
+        usage_chunk = {
+            "id": str(uuid.uuid4().hex),
+            "object": "chat.completion.chunk",
+            "created": created_timestamp,
+            "model": data["model"],
+            "choices": [],
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+            },
+        }
+        await send_off_sse(response, usage_chunk)
     else:
         # For non-OpenAI conversion, we need to handle the response_content appropriately
         if isinstance(response_content, dict):
