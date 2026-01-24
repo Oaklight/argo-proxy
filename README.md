@@ -1,7 +1,7 @@
-# argo-openai-proxy
+# argo-proxy
 
-![PyPI - Version](https://img.shields.io/pypi/v/argo-proxy)
-![GitHub Release](https://img.shields.io/github/v/release/Oaklight/argo-proxy)
+[![PyPI version](https://badge.fury.io/py/argo-proxy.svg?icon=si%3Apython)](https://badge.fury.io/py/argo-proxy)
+[![GitHub version](https://badge.fury.io/gh/oaklight%2Fargo-proxy.svg?icon=si%3Agithub)](https://badge.fury.io/gh/oaklight%2Fargo-proxy)
 
 This project is a proxy application that forwards requests to an ARGO API and optionally converts the responses to be compatible with OpenAI's API format. It can be used in conjunction with [autossh-tunnel-dockerized](https://github.com/Oaklight/autossh-tunnel-dockerized) or other secure connection tools.
 
@@ -256,12 +256,10 @@ options:
 The following options help manage the configuration file:
 
 - `--edit, -e`: Open the configuration file in the system's default editor for editing.
-
   - If no config file is specified, it will search in default locations (~/.config/argoproxy/, ~/.argoproxy/, or current directory)
   - Tries common editors like nano, vi, vim (unix-like systems) or notepad (Windows)
 
 - `--validate, -vv`: Validate the configuration file and exit without starting the server.
-
   - Useful for checking config syntax and connectivity before deployment
 
 - `--show, -s`: Show the current configuration during launch.
