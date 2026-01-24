@@ -7,7 +7,10 @@ The Argo Proxy command-line interface provides comprehensive options for configu
 ```bash
 argo-proxy [-h] [--host HOST] [--port PORT] [--verbose | --quiet]
            [--real-stream | --pseudo-stream] [--tool-prompting]
+           [--provider-tool-format] [--username-passthrough]
+           [--native-openai] [--enable-leaked-tool-fix]
            [--edit] [--validate] [--show] [--version]
+           [--collect-leaked-logs]
            [config]
 ```
 
@@ -136,6 +139,58 @@ argo-proxy --tool-prompting
 ```
 
 - **Behavior**: Uses prompting-based approach instead of native tool calls
+- **Default**: Native tool calls are used when this flag is not set
+
+#### `--provider-tool-format` **(Experimental)**
+
+Enable provider-specific tool format.
+
+```bash
+argo-proxy --provider-tool-format
+```
+
+- **Behavior**: Preserves provider-specific tool call formats (e.g., Anthropic, Google)
+- **Default**: All tool calls are converted to OpenAI format when this flag is not set
+- **Use case**: When you need to handle tool calls in their native provider format
+
+#### `--enable-leaked-tool-fix` **(Experimental)**
+
+Enable AST-based leaked tool call detection and fixing (experimental).
+
+```bash
+argo-proxy --enable-leaked-tool-fix
+```
+
+- **Behavior**: Automatically detects and fixes leaked tool calls in Claude responses using AST parsing
+- **Logging**: Leaked tool calls are **always logged** regardless of this flag setting
+- **Default**: When disabled, leaked tool calls are logged but not automatically fixed
+- **Experimental**: This is an experimental feature for handling edge cases in Claude's tool call responses
+- **Related**: Use with `--collect-leaked-logs` to gather all logged cases for debugging
+
+### Advanced Configuration
+
+#### `--username-passthrough`
+
+Enable username passthrough mode.
+
+```bash
+argo-proxy --username-passthrough
+```
+
+- **Behavior**: Uses API key from request headers as the user field
+- **Use case**: When you want to allow different users making requests through the proxy
+
+#### `--native-openai`
+
+Enable native OpenAI endpoint passthrough mode.
+
+```bash
+argo-proxy --native-openai
+```
+
+- **Behavior**: Directly forwards requests to native OpenAI endpoints without transformation
+- **Use case**: When you want to use Argo's native OpenAI-compatible endpoints
+- **Note**: See [Native OpenAI Passthrough](../native-openai-passthrough.md) for more details
 
 ### Configuration Management
 
@@ -177,6 +232,22 @@ argo-proxy -s
 - **Display**: Shows fully resolved configuration including defaults
 - **Combination**: Can be used with `--validate` to display without starting server
 
+### Debugging and Diagnostics
+
+#### `--collect-leaked-logs`
+
+Collect all leaked tool call logs into a tar.gz archive for analysis.
+
+```bash
+argo-proxy --collect-leaked-logs
+```
+
+- **Behavior**: Creates a timestamped tar.gz archive containing all leaked tool call logs
+- **Location**: Archive is created in the current working directory
+- **Purpose**: Helps maintainers analyze and fix edge cases in tool call handling
+- **No server start**: Only collects logs, doesn't start the proxy server
+- **Note**: Leaked tool calls are **always logged** regardless of the `--enable-leaked-tool-fix` flag
+
 ## Usage Examples
 
 ### Basic Usage
@@ -202,4 +273,39 @@ argo-proxy --pseudo-stream --tool-prompting --verbose
 
 # Validate configuration without starting server
 argo-proxy --validate --show
+```
+
+### Advanced Usage
+
+```bash
+# Enable native OpenAI passthrough mode
+argo-proxy --native-openai
+
+# Use provider-specific tool formats
+argo-proxy --provider-tool-format
+
+# Enable username passthrough for user tracking
+argo-proxy --username-passthrough
+
+# Enable experimental leaked tool call fixing
+argo-proxy --enable-leaked-tool-fix
+
+# Collect leaked tool call logs for debugging
+argo-proxy --collect-leaked-logs
+
+# Combine advanced options
+argo-proxy --native-openai --username-passthrough --verbose
+```
+
+### Debugging Tool Call Issues
+
+```bash
+# Run with leaked tool call logging (default behavior)
+argo-proxy
+
+# Run with automatic leaked tool call fixing (experimental)
+argo-proxy --enable-leaked-tool-fix
+
+# After running, collect logs for analysis
+argo-proxy --collect-leaked-logs
 ```
