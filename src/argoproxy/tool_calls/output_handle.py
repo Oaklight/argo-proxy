@@ -1,3 +1,4 @@
+import ast
 import json
 import re
 from typing import (
@@ -223,8 +224,33 @@ class ToolInterceptor:
         logger.warning(f"[Output Handle] Claude tool calls: {claude_tool_calls}")
         logger.warning(f"[Output Handle] Claude text content: {text_content}")
 
-        # Convert Claude tool calls to ToolCall objects
         tool_calls = None
+        # Check for leaked tool calls in text content
+        if not claude_tool_calls and "{'id': 'toolu_" in text_content:
+            try:
+                # Robustly find balanced dictionary
+                start_idx = text_content.find("{'id': 'toolu_")
+                balance = 0
+                end_idx = -1
+                for i, char in enumerate(text_content[start_idx:], start=start_idx):
+                    if char == "{":
+                        balance += 1
+                    elif char == "}":
+                        balance -= 1
+                    if balance == 0:
+                        end_idx = i + 1
+                        break
+
+                if end_idx != -1:
+                    leaked_str = text_content[start_idx:end_idx]
+                    logger.warning(f"Found leaked tool string: {leaked_str}")
+                    leaked_dict = ast.literal_eval(leaked_str)
+                    claude_tool_calls = [leaked_dict]
+                    # Remove from text
+                    text_content = text_content[:start_idx] + text_content[end_idx:]
+            except Exception as e:
+                logger.warning(f"Failed to parse leaked tool: {e}")
+
         if claude_tool_calls:
             tool_calls = []
             for claude_tool_call in claude_tool_calls:
