@@ -2,6 +2,85 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v2.8.1 (2026-01-24)
+
+### Features
+
+- **Leaked Tool Call Detection and Collection**: Added comprehensive leaked tool call debugging features
+  - Added `--enable-leaked-tool-fix` CLI flag to enable AST-based leaked tool call detection and automatic fixing
+  - Added `--collect-leaked-logs` CLI flag to collect all leaked tool call logs into timestamped tar.gz archive
+  - Implemented automatic log directory management with compression when exceeding 50MB threshold
+  - Enhanced ToolInterceptor to support request data logging and conditional leaked tool fixing
+  - Added comprehensive logging and user guidance for sharing collected logs with maintainers
+
+- **Streaming Completions Support**: Added full streaming support for legacy completions endpoint
+  - Implemented pseudo-streaming and real streaming handlers for completions endpoint
+  - Added usage chunk generation for completions API type
+  - Integrated token counting for accurate usage reporting in streaming mode
+  - Refactored transform functions to support both sync and async OpenAI compatibility
+
+- **Streaming Usage Stats** (@Neil Getty): Implemented streaming usage statistics for pseudo stream responses in chat completions endpoint
+  - Accumulate total response content during pseudo chunk generation
+  - Calculate completion tokens using `count_tokens_async` function
+  - Send usage statistics chunk at end of stream with prompt/completion/total tokens
+  - Maintain compatibility with existing streaming infrastructure using SSE
+
+### Bug Fixes
+
+- **Consistent Chunk IDs**: Ensured consistent chunk IDs across streaming responses
+  - Added chunk_id parameter to transform_chat_completions_streaming_async function
+  - Generated shared ID for all chunks in a stream to maintain consistency
+  - Passed shared chunk_id to all streaming chunks including tool calls and usage
+  - Ensured only first chunk gets role: assistant by tracking is_first_chunk state
+
+- **Role Field Handling**: Fixed None value handling for role field in chat completion types
+  - Made role field optional to prevent validation errors when None is provided
+  - Maintained default value of "assistant" for backward compatibility
+
+- **First Chunk Handling**: Improved first chunk handling in streaming responses
+  - Added is_first_chunk parameter to include assistant role in initial delta
+  - Fixed tool calls handling in streaming transformation
+  - Collected total response content for accurate token counting
+
+- **Claude Tool Calls** (@Neil Getty): Fixed tool calls handling in pseudo stream responses
+  - Set `finish_reason` to "tool_calls" when tool calls are present
+  - Added robust parsing for leaked tool calls in Claude text content using `ast.literal_eval`
+  - Implemented balanced dictionary detection to extract tool calls from text
+  - Clean up text content by removing leaked tool call strings
+
+### Refactor
+
+- **Usage Counting**: Unified usage calculation logic across all endpoints
+  - Extracted usage calculation logic into shared `calculate_completion_tokens_async` function
+  - Created unified `create_usage` factory function for different API types
+  - Implemented `generate_usage_chunk` for streaming responses
+  - Removed duplicate token counting code from chat, completions, embed, and responses endpoints
+  - Standardized usage object creation across all API formats (chat_completion, completion, response, embedding)
+
+- **Development Scripts**: Migrated OpenAI example scripts to use environment variables
+  - Updated scripts to load environment variables from .env files
+  - Improved configuration management and flexibility
+
+### Enhancements
+
+- **Tool Call Examples**: Enhanced OpenAI chat completions example with tool call support
+  - Added TOOL_CALL environment variable to switch between regular chat and tool call modes
+  - Implemented tool call payload with get_stock_price function example
+  - Maintained backward compatibility with existing message-based chat functionality
+
+- **Test Results**: Added OpenAI function call streaming test results for comparison
+  - Created new test result files for OpenAI function call chunk streaming
+  - Enabled comparison between OpenAI and local streaming implementations
+
+### Maintenance
+
+- **Documentation Cleanup**: Removed legacy Sphinx and ReadTheDocs documentation system
+  - Completely removed the legacy documentation system built with Sphinx and configured for ReadTheDocs
+  - Deleted entire `docs/` directory including Sphinx configuration, source files, and build scripts
+  - Simplified build process and overall maintenance
+
+- **Project Documentation**: Updated project name and badge formatting in README
+
 ## v2.8.0 (2026-01-02)
 
 ### Major Features
