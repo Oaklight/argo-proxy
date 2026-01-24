@@ -25,7 +25,6 @@ from ..types import (
     ResponseOutputText,
     ResponseTextDeltaEvent,
     ResponseTextDoneEvent,
-    ResponseUsage,
 )
 from ..utils.misc import apply_username_passthrough, make_bar
 from ..utils.tokens import (
@@ -33,6 +32,7 @@ from ..utils.tokens import (
     count_tokens,
     count_tokens_async,
 )
+from ..utils.usage import calculate_completion_tokens_async, create_usage
 from ..utils.transports import send_off_sse
 from .chat import (
     prepare_chat_request_data,
@@ -76,29 +76,25 @@ def transform_non_streaming_response(
         A dictionary representing the OpenAI-compatible JSON response.
     """
     try:
+        # Note: using sync count_tokens here as the original function was sync.
+        # However, our unified calculate_completion_tokens_async is async.
+        # Since transform_non_streaming_response is sync, we'll keep it as is or
+        # just use the async version in the async counterpart.
         completion_tokens = count_tokens(content, model_name)
         if tool_calls:
-            # Convert ToolCall objects to serializable format for token counting
             if (
                 tool_calls
                 and len(tool_calls) > 0
                 and hasattr(tool_calls[0], "serialize")
             ):
-                # tool_calls is a list of ToolCall objects
                 serializable_tool_calls = [
                     tc.serialize("openai-response") for tc in tool_calls
                 ]
             else:
-                # tool_calls is already a list of dicts
                 serializable_tool_calls = tool_calls
             tool_tokens = count_tokens(json.dumps(serializable_tool_calls), model_name)
             completion_tokens += tool_tokens
-        total_tokens = prompt_tokens + completion_tokens
-        usage = ResponseUsage(
-            input_tokens=prompt_tokens,
-            output_tokens=completion_tokens,
-            total_tokens=total_tokens,
-        )
+        usage = create_usage(prompt_tokens, completion_tokens, api_type="response")
 
         output = []
         if tool_calls:
@@ -156,31 +152,10 @@ async def transform_non_streaming_response_async(
         A dictionary representing the OpenAI-compatible JSON response.
     """
     try:
-        completion_tokens = await count_tokens_async(content, model_name)
-        if tool_calls:
-            # Convert ToolCall objects to serializable format for token counting
-            if (
-                tool_calls
-                and len(tool_calls) > 0
-                and hasattr(tool_calls[0], "serialize")
-            ):
-                # tool_calls is a list of ToolCall objects
-                serializable_tool_calls = [
-                    tc.serialize("openai-response") for tc in tool_calls
-                ]
-            else:
-                # tool_calls is already a list of dicts
-                serializable_tool_calls = tool_calls
-            tool_tokens = await count_tokens_async(
-                json.dumps(serializable_tool_calls), model_name
-            )
-            completion_tokens += tool_tokens
-        total_tokens = prompt_tokens + completion_tokens
-        usage = ResponseUsage(
-            input_tokens=prompt_tokens,
-            output_tokens=completion_tokens,
-            total_tokens=total_tokens,
+        completion_tokens = await calculate_completion_tokens_async(
+            content, tool_calls, model_name, api_format="response"
         )
+        usage = create_usage(prompt_tokens, completion_tokens, api_type="response")
 
         output = []
         if tool_calls:
@@ -561,10 +536,8 @@ async def send_streaming_request(
         onset_response.output.append(output_msg)
         onset_response.status = "completed"
         output_tokens = await count_tokens_async(cumulated_response, data["model"])
-        onset_response.usage = ResponseUsage(
-            input_tokens=prompt_tokens,
-            output_tokens=output_tokens,
-            total_tokens=prompt_tokens + output_tokens,
+        onset_response.usage = create_usage(
+            prompt_tokens, output_tokens, api_type="response"
         )
         completed_event = ResponseCompletedEvent(
             response=onset_response,

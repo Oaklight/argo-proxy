@@ -8,9 +8,10 @@ from loguru import logger
 
 from ..config import ArgoConfig
 from ..models import ModelRegistry
-from ..types import CreateEmbeddingResponse, Embedding, Usage
+from ..types import CreateEmbeddingResponse, Embedding
 from ..utils.misc import make_bar
 from ..utils.tokens import count_tokens
+from ..utils.usage import create_usage
 
 DEFAULT_MODEL = "argo:text-embedding-3-small"
 
@@ -51,10 +52,7 @@ def make_it_openai_embeddings_compat(
         openai_response = CreateEmbeddingResponse(
             data=data,
             model=model_name,
-            usage=Usage(
-                prompt_tokens=prompt_tokens,
-                total_tokens=prompt_tokens,
-            ),
+            usage=create_usage(prompt_tokens, 0, api_type="embedding"),
         )
         return openai_response.model_dump()
 
@@ -134,7 +132,7 @@ async def proxy_request(
 
         # Use the shared HTTP session from app context for connection pooling
         session = request.app["http_session"]
-        
+
         async with session.post(
             config.argo_embedding_url, headers=headers, json=data
         ) as resp:
