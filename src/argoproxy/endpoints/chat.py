@@ -58,6 +58,7 @@ async def transform_chat_completions_streaming_async(
     tool_calls: Optional[Dict[str, Any]] = None,
     tc_index: int = 0,
     is_first_chunk: bool = False,
+    chunk_id: Optional[str] = None,
     **kwargs,
 ) -> Dict[str, Any]:
     """
@@ -71,6 +72,7 @@ async def transform_chat_completions_streaming_async(
         tool_calls: The tool calls data.
         tc_index: The tool call index.
         is_first_chunk: Whether this is the first chunk (should include role).
+        chunk_id: Optional ID for the chunk. If not provided, generates a new one.
     """
     try:
         # Handle tool calls for streaming
@@ -93,7 +95,7 @@ async def transform_chat_completions_streaming_async(
         )
 
         openai_response = ChatCompletionChunk(
-            id=str(uuid.uuid4().hex),
+            id=chunk_id if chunk_id is not None else str(uuid.uuid4().hex),
             created=create_timestamp,
             model=model_name,
             choices=[
@@ -370,11 +372,15 @@ async def _handle_pseudo_stream(
         response_content = await upstream_resp.text()
         logger.warning(f"Upstream response is not JSON in pseudo_stream mode: {e}")
     if convert_to_openai:
+        # Generate a shared ID for all chunks in this stream
+        shared_id = str(uuid.uuid4().hex)
         cs = ToolInterceptor()
         # Process response content with the updated ToolInterceptor
         tool_calls, cleaned_text = cs.process(
             response_content, determine_model_family(data["model"])
         )
+        is_first_chunk = True
+
         if tool_calls:
             for i, tc_dict in enumerate(tool_calls):
                 if asyncio.iscoroutinefunction(openai_compat_fn):
@@ -387,6 +393,8 @@ async def _handle_pseudo_stream(
                         finish_reason="tool_calls",
                         tool_calls=tc_dict,
                         tc_index=i,
+                        is_first_chunk=is_first_chunk,
+                        chunk_id=shared_id,
                     )
                 else:
                     chunk_json = openai_compat_fn(
@@ -398,8 +406,12 @@ async def _handle_pseudo_stream(
                         finish_reason="tool_calls",
                         tool_calls=tc_dict,
                         tc_index=i,
+                        is_first_chunk=is_first_chunk,
+                        chunk_id=shared_id,
                     )
                 await send_off_sse(response, cast(Dict[str, Any], chunk_json))
+                is_first_chunk = False  # Only the first chunk gets role: assistant
+
         total_processed = 0
         total_response_content = ""
         async for chunk_text in pseudo_chunk_generator(cleaned_text):
@@ -417,6 +429,8 @@ async def _handle_pseudo_stream(
                     is_streaming=True,
                     finish_reason=finish_reason,
                     tool_calls=None,
+                    is_first_chunk=is_first_chunk,
+                    chunk_id=shared_id,
                 )
             else:
                 chunk_json = openai_compat_fn(
@@ -427,8 +441,11 @@ async def _handle_pseudo_stream(
                     is_streaming=True,
                     finish_reason=finish_reason,
                     tool_calls=None,
+                    is_first_chunk=is_first_chunk,
+                    chunk_id=shared_id,
                 )
             await send_off_sse(response, cast(Dict[str, Any], chunk_json))
+            is_first_chunk = False  # Only the first chunk gets role: assistant
 
         # Count completion tokens and send usage
         completion_tokens = await count_tokens_async(
@@ -440,6 +457,7 @@ async def _handle_pseudo_stream(
             api_type="chat_completion",
             model=data["model"],
             created_timestamp=created_timestamp,
+            chunk_id=shared_id,
         )
         await send_off_sse(response, usage_chunk)
     else:
@@ -480,9 +498,13 @@ async def _handle_real_stream(
         openai_compat_fn: Function for conversion to OpenAI-compatible format.
     """
     if convert_to_openai:
+        # Generate a shared ID for all chunks in this stream
+        shared_id = str(uuid.uuid4().hex)
         # Collect all chunks for usage calculation
         total_response_content = ""
         chunk_iterator = upstream_resp.content.iter_any()
+        is_first_chunk = True
+
         async for chunk_bytes in chunk_iterator:
             if chunk_bytes:
                 chunk_text = chunk_bytes.decode()
@@ -496,6 +518,8 @@ async def _handle_real_stream(
                         is_streaming=True,
                         finish_reason=None,
                         tool_calls=None,
+                        is_first_chunk=is_first_chunk,
+                        chunk_id=shared_id,
                     )
                 else:
                     chunk_json = openai_compat_fn(
@@ -506,8 +530,11 @@ async def _handle_real_stream(
                         is_streaming=True,
                         finish_reason=None,
                         tool_calls=None,
+                        is_first_chunk=is_first_chunk,
+                        chunk_id=shared_id,
                     )
                 await send_off_sse(response, cast(Dict[str, Any], chunk_json))
+                is_first_chunk = False  # Only the first chunk gets role: assistant
 
         # Count completion tokens and send usage
         completion_tokens = await count_tokens_async(
@@ -519,6 +546,7 @@ async def _handle_real_stream(
             api_type="chat_completion",
             model=data["model"],
             created_timestamp=created_timestamp,
+            chunk_id=shared_id,
         )
         await send_off_sse(response, usage_chunk)
     else:
