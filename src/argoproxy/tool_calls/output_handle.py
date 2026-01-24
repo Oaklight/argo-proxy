@@ -1,6 +1,9 @@
 import ast
+import gzip
 import json
 import re
+from datetime import datetime
+from pathlib import Path
 from typing import (
     Any,
     Dict,
@@ -15,6 +18,7 @@ from typing import (
 from loguru import logger
 from pydantic import ValidationError
 
+from ..config import load_config
 from ..types.function_call import (
     ChatCompletionMessageToolCall,
     ChoiceDeltaToolCall,
@@ -24,6 +28,132 @@ from ..types.function_call import (
 )
 from ..utils.models import generate_id
 from .handler import ToolCall
+
+
+def _get_leaked_tool_log_dir() -> Path:
+    """Get the directory for storing leaked tool call logs.
+
+    Returns the path relative to the config file location.
+    """
+    config_data, config_path = load_config(verbose=False)
+
+    if config_path:
+        # Use config file's directory
+        log_dir = config_path.parent / "leaked_tool_calls"
+    else:
+        # Fallback to current directory
+        log_dir = Path.cwd() / "leaked_tool_calls"
+
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir
+
+
+def _get_log_dir_size(log_dir: Path) -> int:
+    """Calculate total size of all files in the log directory.
+
+    Args:
+        log_dir: Path to the log directory
+
+    Returns:
+        Total size in bytes
+    """
+    total_size = 0
+    for file_path in log_dir.glob("*"):
+        if file_path.is_file():
+            total_size += file_path.stat().st_size
+    return total_size
+
+
+def _compress_log_files(log_dir: Path) -> None:
+    """Compress all uncompressed JSON log files in the directory.
+
+    Args:
+        log_dir: Path to the log directory
+    """
+    try:
+        json_files = list(log_dir.glob("leaked_tool_*.json"))
+        if not json_files:
+            return
+
+        logger.warning(f"Compressing {len(json_files)} log files in {log_dir}")
+
+        for json_file in json_files:
+            try:
+                gz_file = json_file.with_suffix(".json.gz")
+
+                # Read and compress
+                with open(json_file, "rb") as f_in:
+                    with gzip.open(gz_file, "wb", compresslevel=9) as f_out:
+                        f_out.write(f_in.read())
+
+                # Remove original file
+                json_file.unlink()
+
+            except Exception as e:
+                logger.error(f"Failed to compress {json_file}: {e}")
+
+        logger.warning(f"Compression complete. Compressed {len(json_files)} files.")
+
+    except Exception as e:
+        logger.error(f"Failed to compress log files: {e}")
+
+
+def _log_leaked_tool_case(
+    text_content: str,
+    leaked_str: str,
+    request_data: Optional[Dict[str, Any]] = None,
+    response_data: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Log a leaked tool call case for analysis.
+
+    Args:
+        text_content: The full text content where the leak was found
+        leaked_str: The extracted leaked tool call string
+        request_data: Optional original request data
+        response_data: Optional full response data
+    """
+    try:
+        log_dir = _get_leaked_tool_log_dir()
+
+        # Check if compression is needed (50MB threshold)
+        # Rationale: With Claude's 200K context, a single request can be 1-2MB
+        # 50MB allows collecting 12-25 large requests or 50-100 normal requests
+        # before compression, providing sufficient samples for analysis
+        dir_size = _get_log_dir_size(log_dir)
+        if dir_size > 50 * 1024 * 1024:  # 50MB in bytes
+            logger.warning(
+                f"Log directory size ({dir_size / 1024 / 1024:.2f}MB) exceeds 50MB, compressing logs..."
+            )
+            _compress_log_files(log_dir)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        log_file = log_dir / f"leaked_tool_{timestamp}.json"
+
+        log_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "leaked_tool_string": leaked_str,
+            "full_text_content": text_content,
+            "context_before": text_content[: text_content.find(leaked_str)]
+            if leaked_str in text_content
+            else "",
+            "context_after": text_content[
+                text_content.find(leaked_str) + len(leaked_str) :
+            ]
+            if leaked_str in text_content
+            else "",
+        }
+
+        if request_data:
+            log_entry["request"] = request_data
+        if response_data:
+            log_entry["response"] = response_data
+
+        with open(log_file, "w", encoding="utf-8") as f:
+            json.dump(log_entry, f, indent=2, ensure_ascii=False)
+
+        logger.warning(f"Logged leaked tool call case to: {log_file}")
+    except Exception as e:
+        logger.error(f"Failed to log leaked tool call case: {e}")
 
 
 class ToolInterceptor:
@@ -42,6 +172,7 @@ class ToolInterceptor:
         self,
         response_content: Union[str, Dict[str, Any]],
         model_family: Literal["openai", "anthropic", "google"] = "openai",
+        request_data: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Optional[List[ToolCall]], str]:
         """
         Process response content and extract tool calls.
@@ -49,6 +180,7 @@ class ToolInterceptor:
         Args:
             response_content: Either a string (legacy format) or dict (native format)
             model_family: Model family to determine the processing strategy
+            request_data: Optional request data for logging purposes
 
         Returns:
             Tuple of (list of tool calls or None, text content)
@@ -58,7 +190,7 @@ class ToolInterceptor:
             return self._process_prompt_based(response_content)
         elif isinstance(response_content, dict):
             # Native tool calling format
-            return self._process_native(response_content, model_family)
+            return self._process_native(response_content, model_family, request_data)
         else:
             logger.warning(
                 f"Unexpected response content type: {type(response_content)}"
@@ -117,13 +249,15 @@ class ToolInterceptor:
         self,
         response_data: Dict[str, Any],
         model_family: Literal["openai", "anthropic", "google"] = "openai",
+        request_data: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Optional[List[ToolCall]], str]:
         """
         Process native tool calling responses from different model providers.
 
         Args:
             response_data: Response data containing content and tool_calls
-            model: Model name to determine the processing strategy
+            model_family: Model family to determine the processing strategy
+            request_data: Optional request data for logging purposes
 
         Returns:
             Tuple of (list of tool calls or None, text content)
@@ -139,7 +273,7 @@ class ToolInterceptor:
             logger.warning(
                 "[Output Handle] Using [Anthropic] native tool calling format"
             )
-            return self._process_anthropic_native(response_data)
+            return self._process_anthropic_native(response_data, request_data)
         elif model_family == "google":
             logger.warning("[Output Handle] Using [Google] native tool calling format")
             return self._process_google_native(response_data)
@@ -186,7 +320,9 @@ class ToolInterceptor:
         return tool_calls, content
 
     def _process_anthropic_native(
-        self, response_data: Dict[str, Any]
+        self,
+        response_data: Dict[str, Any],
+        request_data: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Optional[List[ToolCall]], str]:
         """
         Process Anthropic native tool calling response format.
@@ -208,6 +344,7 @@ class ToolInterceptor:
 
         Args:
             response_data: Anthropic format response data
+            request_data: Optional request data for logging purposes
 
         Returns:
             Tuple of (list of ToolCall objects or None, text content)
@@ -223,6 +360,10 @@ class ToolInterceptor:
 
         logger.warning(f"[Output Handle] Claude tool calls: {claude_tool_calls}")
         logger.warning(f"[Output Handle] Claude text content: {text_content}")
+
+        # Check if leaked tool fix is enabled
+        config_data, _ = load_config(verbose=False)
+        enable_fix = config_data.enable_leaked_tool_fix if config_data else False
 
         tool_calls = None
         # Check for leaked tool calls in text content
@@ -243,13 +384,30 @@ class ToolInterceptor:
 
                 if end_idx != -1:
                     leaked_str = text_content[start_idx:end_idx]
-                    logger.warning(f"Found leaked tool string: {leaked_str}")
-                    leaked_dict = ast.literal_eval(leaked_str)
-                    claude_tool_calls = [leaked_dict]
-                    # Remove from text
-                    text_content = text_content[:start_idx] + text_content[end_idx:]
+
+                    # Always log the leaked tool call case for analysis
+                    _log_leaked_tool_case(
+                        text_content=text_content,
+                        leaked_str=leaked_str,
+                        request_data=request_data,
+                        response_data=response_data,
+                    )
+
+                    if enable_fix:
+                        # Use simple fix approach when enabled
+                        logger.warning(
+                            f"[LEAKED TOOL FIX ENABLED] Found leaked tool string: {leaked_str}"
+                        )
+                        leaked_dict = ast.literal_eval(leaked_str)
+                        claude_tool_calls = [leaked_dict]
+                        # Remove from text
+                        text_content = text_content[:start_idx] + text_content[end_idx:]
+                    else:
+                        logger.warning(
+                            f"[LEAKED TOOL FIX DISABLED] Found potential leaked tool call, logged for analysis: {leaked_str[:100]}..."
+                        )
             except Exception as e:
-                logger.warning(f"Failed to parse leaked tool: {e}")
+                logger.warning(f"Failed to process potential leaked tool: {e}")
 
         if claude_tool_calls:
             tool_calls = []
