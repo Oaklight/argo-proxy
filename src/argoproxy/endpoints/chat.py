@@ -300,7 +300,9 @@ async def send_non_streaming_request(
 
             # Process response content with the updated ToolInterceptor
             tool_calls, clean_text = cs.process(
-                response_content, determine_model_family(data["model"])
+                response_content,
+                determine_model_family(data["model"]),
+                request_data=data,
             )
             finish_reason = "tool_calls" if tool_calls else "stop"
 
@@ -377,7 +379,7 @@ async def _handle_pseudo_stream(
         cs = ToolInterceptor()
         # Process response content with the updated ToolInterceptor
         tool_calls, cleaned_text = cs.process(
-            response_content, determine_model_family(data["model"])
+            response_content, determine_model_family(data["model"]), request_data=data
         )
         is_first_chunk = True
 

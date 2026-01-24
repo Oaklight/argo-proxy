@@ -54,6 +54,7 @@ class ArgoConfig:
     _real_stream: bool = True
     _tool_prompt: bool = False
     _provider_tool_format: bool = False
+    _enable_leaked_tool_fix: bool = False
 
     # Image processing settings
     enable_payload_control: bool = False  # Enable automatic payload size control
@@ -109,6 +110,11 @@ class ArgoConfig:
     def use_native_openai(self):
         """Check if native OpenAI mode is enabled."""
         return self._use_native_openai
+
+    @property
+    def enable_leaked_tool_fix(self):
+        """Check if leaked tool call fix is enabled."""
+        return self._enable_leaked_tool_fix
 
     @classmethod
     def from_dict(cls, config_dict: dict):
@@ -218,7 +224,7 @@ class ArgoConfig:
                 await validate_api_async(
                     url, self.user, payload, timeout=timeout, attempts=attempts
                 )
-            except Exception as e:
+            except Exception:
                 failed_urls.append(url)
 
         async def _main():
@@ -486,6 +492,9 @@ def _apply_env_overrides(config_data: ArgoConfig) -> ArgoConfig:
 
     if env_use_native_openai := os.getenv("USE_NATIVE_OPENAI"):
         config_data._use_native_openai = str_to_bool(env_use_native_openai)
+
+    if env_enable_leaked_tool_fix := os.getenv("ENABLE_LEAKED_TOOL_FIX"):
+        config_data._enable_leaked_tool_fix = str_to_bool(env_enable_leaked_tool_fix)
 
     return config_data
 

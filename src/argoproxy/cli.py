@@ -103,6 +103,12 @@ def parsing_args() -> argparse.Namespace:
         default=False,
         help="Enable native OpenAI endpoint passthrough mode - directly forward requests to native OpenAI endpoint without transformation",
     )
+    parser.add_argument(
+        "--enable-leaked-tool-fix",
+        action="store_true",
+        default=False,
+        help="Enable AST-based leaked tool call detection and fixing (experimental). When disabled, leaked tool calls will be logged for analysis.",
+    )
 
     parser.add_argument(
         "--edit",
@@ -129,6 +135,11 @@ def parsing_args() -> argparse.Namespace:
         action="version",
         version=f"%(prog)s {version_check()}",
         help="Show the version and check for updates",
+    )
+    parser.add_argument(
+        "--collect-leaked-logs",
+        action="store_true",
+        help="Collect all leaked tool call logs into a tar.gz archive for analysis",
     )
 
     args = parser.parse_args()
@@ -160,6 +171,8 @@ def set_config_envs(args: argparse.Namespace):
         os.environ["USERNAME_PASSTHROUGH"] = str(True)
     if args.native_openai:
         os.environ["USE_NATIVE_OPENAI"] = str(True)
+    if args.enable_leaked_tool_fix:
+        os.environ["ENABLE_LEAKED_TOOL_FIX"] = str(True)
 
 
 def open_in_editor(config_path: Optional[str] = None):
@@ -235,11 +248,88 @@ def display_startup_banner():
     logger.info("=" * 80)
 
 
+def collect_leaked_logs(config_path: Optional[str] = None):
+    """Collect all leaked tool call logs into a tar.gz archive."""
+    import tarfile
+    from datetime import datetime
+    from pathlib import Path
+    
+    from .config import load_config
+    
+    # Get log directory
+    config_data, actual_config_path = load_config(config_path, verbose=False)
+    
+    if actual_config_path:
+        log_dir = actual_config_path.parent / "leaked_tool_calls"
+    else:
+        log_dir = Path.cwd() / "leaked_tool_calls"
+    
+    if not log_dir.exists():
+        logger.error(f"Log directory not found: {log_dir}")
+        logger.info("No leaked tool call logs to collect.")
+        return
+    
+    # Find all log files (both .json and .json.gz)
+    json_files = list(log_dir.glob("leaked_tool_*.json"))
+    gz_files = list(log_dir.glob("leaked_tool_*.json.gz"))
+    
+    if not json_files and not gz_files:
+        logger.info(f"No leaked tool call logs found in {log_dir}")
+        return
+    
+    # Create archive filename with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    archive_name = f"leaked_tool_logs_{timestamp}.tar.gz"
+    archive_path = Path.cwd() / archive_name
+    
+    logger.info(f"Collecting {len(json_files)} JSON and {len(gz_files)} compressed logs...")
+    logger.info(f"Creating archive: {archive_path}")
+    
+    try:
+        with tarfile.open(archive_path, "w:gz") as tar:
+            # Add all JSON files (will be compressed by tar.gz)
+            for json_file in json_files:
+                tar.add(json_file, arcname=json_file.name)
+            
+            # Add all .json.gz files (already compressed, but tar.gz will try again)
+            for gz_file in gz_files:
+                tar.add(gz_file, arcname=gz_file.name)
+        
+        # Get archive size
+        archive_size = archive_path.stat().st_size
+        logger.info("=" * 80)
+        logger.info("✅ Archive created successfully!")
+        logger.info(f"   Location: {archive_path}")
+        logger.info(f"   Size: {archive_size / 1024 / 1024:.2f} MB")
+        logger.info(f"   Files: {len(json_files) + len(gz_files)} logs")
+        logger.info("=" * 80)
+        logger.info("")
+        logger.info("📊 These logs are crucial for improving argo-proxy and Argo API!")
+        logger.info("")
+        logger.info("They contain examples of Claude model's tool call buggy forms,")
+        logger.info("which help us understand and fix edge cases in tool call handling.")
+        logger.info("")
+        logger.info("Please send this archive to:")
+        logger.info("  • Matthew Dearing (Argo API maintainer): mdearing@anl.gov")
+        logger.info("  • Peng Ding (argo-proxy maintainer): dingpeng@uchicago.edu")
+        logger.info("")
+        logger.info("Thank you for helping us improve the service! 🙏")
+        logger.info("=" * 80)
+        
+    except Exception as e:
+        logger.error(f"Failed to create archive: {e}")
+        sys.exit(1)
+
+
 def main():
     args = parsing_args()
 
     if args.edit:
         open_in_editor(args.config)
+        return
+
+    if args.collect_leaked_logs:
+        collect_leaked_logs(args.config)
         return
 
     set_config_envs(args)
