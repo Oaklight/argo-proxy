@@ -88,7 +88,7 @@ def create_usage(
 def generate_usage_chunk(
     prompt_tokens: int,
     completion_tokens: int,
-    api_type: Literal["chat_completion", "response"],
+    api_type: Literal["chat_completion", "completion", "response"],
     model: str,
     created_timestamp: int,
 ) -> Dict[str, Any]:
@@ -110,6 +110,15 @@ def generate_usage_chunk(
         return {
             "id": str(uuid.uuid4().hex),
             "object": "chat.completion.chunk",
+            "created": created_timestamp,
+            "model": model,
+            "choices": [],
+            "usage": usage.model_dump(),
+        }
+    elif api_type == "completion":
+        return {
+            "id": str(uuid.uuid4().hex),
+            "object": "completion",
             "created": created_timestamp,
             "model": model,
             "choices": [],
