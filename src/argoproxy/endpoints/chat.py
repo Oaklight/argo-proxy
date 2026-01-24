@@ -412,7 +412,7 @@ async def _handle_pseudo_stream(
             total_processed += len(chunk_text)
             finish_reason = None
             if total_processed >= len(cleaned_text):
-                finish_reason = "stop"
+                finish_reason = "tool_calls" if tool_calls else "stop"
             if asyncio.iscoroutinefunction(openai_compat_fn):
                 chunk_json = await openai_compat_fn(
                     chunk_text,
