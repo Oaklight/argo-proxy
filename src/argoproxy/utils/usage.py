@@ -91,6 +91,7 @@ def generate_usage_chunk(
     api_type: Literal["chat_completion", "completion", "response"],
     model: str,
     created_timestamp: int,
+    chunk_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Generate a usage chunk for streaming responses.
 
@@ -100,6 +101,7 @@ def generate_usage_chunk(
         api_type: The type of API.
         model: The model name.
         created_timestamp: The creation timestamp.
+        chunk_id: Optional ID for the chunk. If not provided, generates a new one.
 
     Returns:
         A dictionary representing the usage chunk.
@@ -108,7 +110,7 @@ def generate_usage_chunk(
 
     if api_type == "chat_completion":
         return {
-            "id": str(uuid.uuid4().hex),
+            "id": chunk_id if chunk_id is not None else str(uuid.uuid4().hex),
             "object": "chat.completion.chunk",
             "created": created_timestamp,
             "model": model,
@@ -117,7 +119,7 @@ def generate_usage_chunk(
         }
     elif api_type == "completion":
         return {
-            "id": str(uuid.uuid4().hex),
+            "id": chunk_id if chunk_id is not None else str(uuid.uuid4().hex),
             "object": "completion",
             "created": created_timestamp,
             "model": model,
