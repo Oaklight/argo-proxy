@@ -39,12 +39,12 @@ from ..utils.tokens import (
     calculate_prompt_tokens_async,
     count_tokens_async,
 )
+from ..utils.transports import pseudo_chunk_generator, send_off_sse
 from ..utils.usage import (
     calculate_completion_tokens_async,
     create_usage,
     generate_usage_chunk,
 )
-from ..utils.transports import pseudo_chunk_generator, send_off_sse
 
 DEFAULT_MODEL = "argo:gpt-4o"
 
@@ -57,19 +57,26 @@ async def transform_chat_completions_streaming_async(
     finish_reason: FINISH_REASONS = "stop",
     tool_calls: Optional[Dict[str, Any]] = None,
     tc_index: int = 0,
+    is_first_chunk: bool = False,
     **kwargs,
 ) -> Dict[str, Any]:
     """
     Transforms the custom API response into a streaming OpenAI-compatible format.
-    """
 
-    # in stream mode we could only have one tool call at a time, but we need to wrap it in a list to match the tool_calls_to_openai_stream function signature
+    Args:
+        content: The text content of the delta.
+        model_name: The model name.
+        create_timestamp: The creation timestamp.
+        finish_reason: The finish reason for the completion.
+        tool_calls: The tool calls data.
+        tc_index: The tool call index.
+        is_first_chunk: Whether this is the first chunk (should include role).
+    """
     try:
         # Handle tool calls for streaming
         tool_calls_obj = None
         if tool_calls:
             logger.warning(f"transforming tool_calls: {tool_calls}")
-            # tool_calls_obj is None or List of ChoiceDeltaToolCall
             tool_calls_obj = [
                 tool_calls_to_openai_stream(
                     tool_calls,
@@ -78,6 +85,13 @@ async def transform_chat_completions_streaming_async(
                 )
             ]
 
+        # For the first chunk, include role: assistant
+        delta = ChoiceDelta(
+            content=content,
+            tool_calls=tool_calls_obj,
+            role="assistant" if is_first_chunk else None,
+        )
+
         openai_response = ChatCompletionChunk(
             id=str(uuid.uuid4().hex),
             created=create_timestamp,
@@ -85,10 +99,7 @@ async def transform_chat_completions_streaming_async(
             choices=[
                 StreamChoice(
                     index=0,
-                    delta=ChoiceDelta(
-                        content=content,
-                        tool_calls=tool_calls_obj,
-                    ),
+                    delta=delta,
                     finish_reason=finish_reason,
                 )
             ],
@@ -468,31 +479,52 @@ async def _handle_real_stream(
         convert_to_openai: If True, converts the response to OpenAI format.
         openai_compat_fn: Function for conversion to OpenAI-compatible format.
     """
-    chunk_iterator = upstream_resp.content.iter_any()
-    async for chunk_bytes in chunk_iterator:
-        if convert_to_openai:
-            if asyncio.iscoroutinefunction(openai_compat_fn):
-                chunk_json = await openai_compat_fn(
-                    chunk_bytes.decode() if chunk_bytes else None,
-                    model_name=data["model"],
-                    create_timestamp=created_timestamp,
-                    prompt_tokens=prompt_tokens,
-                    is_streaming=True,
-                    finish_reason=None,
-                    tool_calls=None,
-                )
-            else:
-                chunk_json = openai_compat_fn(
-                    chunk_bytes.decode() if chunk_bytes else None,
-                    model_name=data["model"],
-                    create_timestamp=created_timestamp,
-                    prompt_tokens=prompt_tokens,
-                    is_streaming=True,
-                    finish_reason=None,
-                    tool_calls=None,
-                )
-            await send_off_sse(response, cast(Dict[str, Any], chunk_json))
-        else:
+    if convert_to_openai:
+        # Collect all chunks for usage calculation
+        total_response_content = ""
+        chunk_iterator = upstream_resp.content.iter_any()
+        async for chunk_bytes in chunk_iterator:
+            if chunk_bytes:
+                chunk_text = chunk_bytes.decode()
+                total_response_content += chunk_text
+                if asyncio.iscoroutinefunction(openai_compat_fn):
+                    chunk_json = await openai_compat_fn(
+                        chunk_text,
+                        model_name=data["model"],
+                        create_timestamp=created_timestamp,
+                        prompt_tokens=prompt_tokens,
+                        is_streaming=True,
+                        finish_reason=None,
+                        tool_calls=None,
+                    )
+                else:
+                    chunk_json = openai_compat_fn(
+                        chunk_text,
+                        model_name=data["model"],
+                        create_timestamp=created_timestamp,
+                        prompt_tokens=prompt_tokens,
+                        is_streaming=True,
+                        finish_reason=None,
+                        tool_calls=None,
+                    )
+                await send_off_sse(response, cast(Dict[str, Any], chunk_json))
+
+        # Count completion tokens and send usage
+        completion_tokens = await count_tokens_async(
+            total_response_content, data["model"]
+        )
+        usage_chunk = generate_usage_chunk(
+            prompt_tokens,
+            completion_tokens,
+            api_type="chat_completion",
+            model=data["model"],
+            created_timestamp=created_timestamp,
+        )
+        await send_off_sse(response, usage_chunk)
+    else:
+        # For non-OpenAI conversion, forward chunks directly
+        chunk_iterator = upstream_resp.content.iter_any()
+        async for chunk_bytes in chunk_iterator:
             await send_off_sse(response, chunk_bytes)
 
 
