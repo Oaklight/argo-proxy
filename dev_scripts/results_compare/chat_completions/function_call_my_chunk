@@ -1,0 +1,7 @@
+Running Chat Test with Tool Calls
+Status Code:  200
+Headers:  Headers({'content-type': 'text/event-stream', 'date': 'Sat, 24 Jan 2026 14:31:36 GMT', 'connection': 'keep-alive', 'strict-transport-security': 'max-age=31536000; includeSubDomains', 'vary': 'Accept-Encoding', 'transfer-encoding': 'chunked', 'server': 'Python/3.10 aiohttp/3.12.13'})
+Streaming Response: 
+data: {"id": "10e2201fef8c4503bc03d35620a7d0d4", "created": 1769265095, "model": "gpt41nano", "service_tier": null, "system_fingerprint": null, "usage": null, "choices": [{"finish_reason": "tool_calls", "index": 0, "delta": {"content": null, "refusal": null, "role": "assistant", "tool_calls": [{"index": 0, "id": "call_kYChSj5LDFKGSx29fdOBqqYJ", "function": {"arguments": "{\"ticker\":\"AAPL\"}", "name": "get_stock_price"}, "type": null}]}}], "object": "chat.completion.chunk"}
+
+data: {"id": "10e2201fef8c4503bc03d35620a7d0d4", "object": "chat.completion.chunk", "created": 1769265095, "model": "gpt41nano", "choices": [], "usage": {"completion_tokens": 0, "prompt_tokens": 12, "total_tokens": 12}}
