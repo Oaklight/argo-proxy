@@ -13,6 +13,7 @@ from ..config import ArgoConfig
 from ..models import ModelRegistry
 from ..types import Completion, CompletionChoice
 from ..types.completions import FINISH_REASONS
+from ..utils.logging import log_upstream_error
 from ..utils.misc import apply_username_passthrough, make_bar
 from ..utils.tokens import count_tokens, count_tokens_async
 from ..utils.transports import pseudo_chunk_generator, send_off_sse
@@ -284,13 +285,27 @@ async def send_streaming_completions_request(
         async with session.post(api_url, headers=headers, json=data) as upstream_resp:
             if upstream_resp.status != 200:
                 error_text = await upstream_resp.text()
-                return web.json_response(
-                    {
-                        "error": f"Upstream API error: {upstream_resp.status} {error_text}"
-                    },
-                    status=upstream_resp.status,
-                    content_type="application/json",
+                log_upstream_error(
+                    upstream_resp.status,
+                    error_text,
+                    endpoint="completion",
+                    is_streaming=True,
                 )
+                try:
+                    error_json = json.loads(error_text)
+                    return web.json_response(
+                        error_json,
+                        status=upstream_resp.status,
+                        content_type="application/json",
+                    )
+                except json.JSONDecodeError:
+                    return web.json_response(
+                        {
+                            "error": f"Upstream API error: {upstream_resp.status} {error_text}"
+                        },
+                        status=upstream_resp.status,
+                        content_type="application/json",
+                    )
 
             response_headers.update(
                 {

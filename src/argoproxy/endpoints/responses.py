@@ -26,14 +26,15 @@ from ..types import (
     ResponseTextDeltaEvent,
     ResponseTextDoneEvent,
 )
+from ..utils.logging import log_upstream_error
 from ..utils.misc import apply_username_passthrough, make_bar
 from ..utils.tokens import (
     calculate_prompt_tokens_async,
     count_tokens,
     count_tokens_async,
 )
-from ..utils.usage import calculate_completion_tokens_async, create_usage
 from ..utils.transports import send_off_sse
+from ..utils.usage import calculate_completion_tokens_async, create_usage
 from .chat import (
     prepare_chat_request_data,
     send_non_streaming_request,
@@ -388,6 +389,12 @@ async def send_streaming_request(
     async with session.post(api_url, headers=headers, json=data) as upstream_resp:
         if upstream_resp.status != 200:
             error_text = await upstream_resp.text()
+            log_upstream_error(
+                upstream_resp.status,
+                error_text,
+                endpoint="response",
+                is_streaming=True,
+            )
             return web.json_response(
                 {"error": f"Upstream API error: {upstream_resp.status} {error_text}"},
                 status=upstream_resp.status,

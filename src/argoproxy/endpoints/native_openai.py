@@ -17,7 +17,11 @@ from ..config import ArgoConfig
 from ..models import ModelRegistry
 from ..tool_calls.input_handle import handle_tools
 from ..utils.image_processing import process_chat_images
-from ..utils.logging import log_original_request, log_converted_request
+from ..utils.logging import (
+    log_converted_request,
+    log_original_request,
+    log_upstream_error,
+)
 from ..utils.misc import apply_username_passthrough
 from ..utils.models import determine_model_family
 
@@ -222,6 +226,12 @@ async def _handle_streaming_passthrough(
         ) as upstream_resp:
             if upstream_resp.status != 200:
                 error_text = await upstream_resp.text()
+                log_upstream_error(
+                    upstream_resp.status,
+                    error_text,
+                    endpoint="native_openai",
+                    is_streaming=True,
+                )
                 return web.json_response(
                     {
                         "error": f"Upstream API error: {upstream_resp.status} {error_text}"

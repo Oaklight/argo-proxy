@@ -33,7 +33,11 @@ from ..utils.input_handle import (
     handle_option_2_input,
     scrutinize_message_entries,
 )
-from ..utils.logging import log_converted_request, log_original_request
+from ..utils.logging import (
+    log_converted_request,
+    log_original_request,
+    log_upstream_error,
+)
 from ..utils.misc import apply_username_passthrough
 from ..utils.models import determine_model_family
 from ..utils.tokens import (
@@ -264,6 +268,31 @@ async def send_non_streaming_request(
         async with session.post(
             config.argo_url, headers=headers, json=data
         ) as upstream_resp:
+            if upstream_resp.status != 200:
+                error_text = await upstream_resp.text()
+                log_upstream_error(
+                    upstream_resp.status,
+                    error_text,
+                    endpoint="chat",
+                    is_streaming=False,
+                )
+                try:
+                    response_data = json.loads(error_text)
+                    return web.json_response(
+                        response_data,
+                        status=upstream_resp.status,
+                        content_type="application/json",
+                    )
+                except json.JSONDecodeError:
+                    return web.json_response(
+                        {
+                            "object": "error",
+                            "message": f"Upstream error {upstream_resp.status}: {error_text}",
+                            "type": "upstream_error",
+                        },
+                        status=upstream_resp.status,
+                    )
+
             try:
                 response_data = await upstream_resp.json()
             except (aiohttp.ContentTypeError, json.JSONDecodeError):
@@ -608,13 +637,27 @@ async def send_streaming_request(
         async with session.post(api_url, headers=headers, json=data) as upstream_resp:
             if upstream_resp.status != 200:
                 error_text = await upstream_resp.text()
-                return web.json_response(
-                    {
-                        "error": f"Upstream API error: {upstream_resp.status} {error_text}"
-                    },
-                    status=upstream_resp.status,
-                    content_type="application/json",
+                log_upstream_error(
+                    upstream_resp.status,
+                    error_text,
+                    endpoint="chat",
+                    is_streaming=True,
                 )
+                try:
+                    error_json = json.loads(error_text)
+                    return web.json_response(
+                        error_json,
+                        status=upstream_resp.status,
+                        content_type="application/json",
+                    )
+                except json.JSONDecodeError:
+                    return web.json_response(
+                        {
+                            "error": f"Upstream API error: {upstream_resp.status} {error_text}"
+                        },
+                        status=upstream_resp.status,
+                        content_type="application/json",
+                    )
 
             # Initialize the streaming response
             response_headers.update(

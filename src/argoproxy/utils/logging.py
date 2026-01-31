@@ -306,3 +306,26 @@ def log_request_diff(
 
     if diffs:
         logger.info(f"[CHANGES] {', '.join(diffs)}")
+
+
+def log_upstream_error(
+    status_code: int,
+    error_text: str,
+    *,
+    endpoint: str = "unknown",
+    is_streaming: bool = False,
+) -> None:
+    """
+    Log an upstream API error in a consistent format.
+
+    Args:
+        status_code: The HTTP status code from the upstream response.
+        error_text: The error text/body from the upstream response.
+        endpoint: The endpoint name (e.g., "chat", "embed", "response", "native_openai").
+        is_streaming: Whether this was a streaming request.
+    """
+    request_type = "streaming" if is_streaming else "non-streaming"
+    logger.error(
+        f"[UPSTREAM ERROR] endpoint={endpoint}, type={request_type}, "
+        f"status={status_code}, error={error_text}"
+    )

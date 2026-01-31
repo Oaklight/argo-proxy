@@ -9,6 +9,7 @@ from loguru import logger
 from ..config import ArgoConfig
 from ..models import ModelRegistry
 from ..types import CreateEmbeddingResponse, Embedding
+from ..utils.logging import log_upstream_error
 from ..utils.misc import make_bar
 from ..utils.tokens import count_tokens
 from ..utils.usage import create_usage
@@ -136,8 +137,29 @@ async def proxy_request(
         async with session.post(
             config.argo_embedding_url, headers=headers, json=data
         ) as resp:
+            if resp.status != 200:
+                error_text = await resp.text()
+                log_upstream_error(
+                    resp.status,
+                    error_text,
+                    endpoint="embed",
+                    is_streaming=False,
+                )
+                try:
+                    error_json = json.loads(error_text)
+                    return web.json_response(
+                        error_json,
+                        status=resp.status,
+                        content_type="application/json",
+                    )
+                except json.JSONDecodeError:
+                    return web.json_response(
+                        {"error": f"Upstream error {resp.status}: {error_text}"},
+                        status=resp.status,
+                        content_type="application/json",
+                    )
+
             response_data: Dict[str, Any] = await resp.json()
-            resp.raise_for_status()
 
             if config.verbose:
                 logger.info(make_bar("[embed] fwd. response"))
