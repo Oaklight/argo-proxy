@@ -329,3 +329,33 @@ def log_upstream_error(
         f"[UPSTREAM ERROR] endpoint={endpoint}, type={request_type}, "
         f"status={status_code}, error={error_text}"
     )
+
+
+def log_warning(message: str, *, context: str = "") -> None:
+    """
+    Log a warning message in a consistent format.
+
+    Args:
+        message: The warning message to log.
+        context: Optional context information (e.g., function name, module).
+    """
+    if context:
+        logger.warning(f"[{context}] {message}")
+    else:
+        logger.warning(message)
+
+
+def log_error(message: str, *, context: str = "") -> None:
+    """
+    Log an error message in a consistent format.
+
+    Args:
+        message: The error message to log.
+        context: Optional context information (e.g., function name, module).
+    """
+    if context:
+        logger.error(f"[{context}] {message}")
+    else:
+        logger.error(message)
+
+

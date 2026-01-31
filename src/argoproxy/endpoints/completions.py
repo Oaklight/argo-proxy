@@ -18,6 +18,7 @@ from ..utils.logging import (
     log_upstream_error,
 )
 from ..utils.misc import apply_username_passthrough
+from ..utils.models import apply_claude_max_tokens_limit
 from ..utils.tokens import count_tokens, count_tokens_async
 from ..utils.transports import pseudo_chunk_generator, send_off_sse
 from ..utils.usage import create_usage, generate_usage_chunk
@@ -393,6 +394,12 @@ async def proxy_request(
         if stream and use_pseudo_stream:
             # When using pseudo_stream, upstream request is non-streaming
             data["stream"] = False
+
+        # Apply Claude max_tokens limit for non-streaming requests
+        is_non_streaming_upstream = not stream or use_pseudo_stream
+        data = apply_claude_max_tokens_limit(
+            data, is_non_streaming=is_non_streaming_upstream
+        )
 
         # Log converted request (now reflects actual upstream request mode)
         log_converted_request(data, verbose=config.verbose)
