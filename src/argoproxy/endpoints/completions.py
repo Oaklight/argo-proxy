@@ -7,14 +7,17 @@ from typing import Any, Awaitable, Callable, Dict, Optional, Union, cast
 
 import aiohttp
 from aiohttp import web
-from loguru import logger
 
 from ..config import ArgoConfig
 from ..models import ModelRegistry
 from ..types import Completion, CompletionChoice
 from ..types.completions import FINISH_REASONS
-from ..utils.logging import log_upstream_error
-from ..utils.misc import apply_username_passthrough, make_bar
+from ..utils.logging import (
+    log_converted_request,
+    log_original_request,
+    log_upstream_error,
+)
+from ..utils.misc import apply_username_passthrough
 from ..utils.tokens import count_tokens, count_tokens_async
 from ..utils.transports import pseudo_chunk_generator, send_off_sse
 from ..utils.usage import create_usage, generate_usage_chunk
@@ -276,7 +279,7 @@ async def send_streaming_completions_request(
         response_headers = {"Content-Type": "text/plain; charset=utf-8"}
 
     if pseudo_stream:
-        data["stream"] = False
+        # Note: data["stream"] is already set to False in proxy_request when pseudo_stream is True
         api_url = config.argo_url
     else:
         api_url = config.argo_stream_url
@@ -378,13 +381,21 @@ async def proxy_request(
 
         if not data:
             raise ValueError("Invalid input. Expected JSON data.")
-        if config.verbose:
-            logger.info(make_bar("[completion] input"))
-            logger.info(json.dumps(data, indent=4))
-            logger.info(make_bar())
+
+        # Log original request
+        log_original_request(data, verbose=config.verbose)
 
         data = prepare_chat_request_data(data, config, model_registry)
         apply_username_passthrough(data, request, config.user)
+
+        # Determine actual streaming mode for upstream request
+        use_pseudo_stream = config.pseudo_stream
+        if stream and use_pseudo_stream:
+            # When using pseudo_stream, upstream request is non-streaming
+            data["stream"] = False
+
+        # Log converted request (now reflects actual upstream request mode)
+        log_converted_request(data, verbose=config.verbose)
 
         session = request.app["http_session"]
 
@@ -396,7 +407,7 @@ async def proxy_request(
                 request,
                 convert_to_openai=True,
                 openai_compat_fn=transform_completions_compat_async,
-                pseudo_stream=config.pseudo_stream,
+                pseudo_stream=use_pseudo_stream,
             )
         else:
             return await send_non_streaming_request(

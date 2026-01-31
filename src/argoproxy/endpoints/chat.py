@@ -628,7 +628,7 @@ async def send_streaming_request(
         response_headers = {"Content-Type": "text/plain; charset=utf-8"}
 
     if pseudo_stream:
-        data["stream"] = False  # disable streaming in upstream request
+        # Note: data["stream"] is already set to False in proxy_request when pseudo_stream is True
         api_url = config.argo_url
     else:
         api_url = config.argo_stream_url
@@ -762,7 +762,13 @@ async def proxy_request(
         # Apply username passthrough if enabled
         apply_username_passthrough(data, request, config.user)
 
-        # Log converted request
+        # Determine actual streaming mode for upstream request
+        use_pseudo_stream = config.pseudo_stream or pseudo_stream_override
+        if stream and use_pseudo_stream:
+            # When using pseudo_stream, upstream request is non-streaming
+            data["stream"] = False
+
+        # Log converted request (now reflects actual upstream request mode)
         log_converted_request(data, verbose=config.verbose)
 
         if stream:
@@ -773,7 +779,7 @@ async def proxy_request(
                 request,
                 convert_to_openai=convert_to_openai,
                 openai_compat_fn=transform_chat_completions_streaming_async,
-                pseudo_stream=config.pseudo_stream or pseudo_stream_override,
+                pseudo_stream=use_pseudo_stream,
             )
         else:
             return await send_non_streaming_request(

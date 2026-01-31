@@ -9,7 +9,11 @@ from loguru import logger
 from ..config import ArgoConfig
 from ..models import ModelRegistry
 from ..types import CreateEmbeddingResponse, Embedding
-from ..utils.logging import log_upstream_error
+from ..utils.logging import (
+    log_converted_request,
+    log_original_request,
+    log_upstream_error,
+)
 from ..utils.misc import make_bar
 from ..utils.tokens import count_tokens
 from ..utils.usage import create_usage
@@ -122,12 +126,14 @@ async def proxy_request(
         data: Dict[str, Any] = await request.json()
         if not data:
             raise ValueError("Invalid input. Expected JSON data.")
-        if config.verbose:
-            logger.info(make_bar("[embed] input"))
-            logger.info(json.dumps(data, indent=4))
-            logger.info(make_bar())
+
+        # Log original request
+        log_original_request(data, verbose=config.verbose)
 
         data = prepare_request_data(data, config, model_registry)
+
+        # Log converted request
+        log_converted_request(data, verbose=config.verbose)
 
         headers: Dict[str, str] = {"Content-Type": "application/json"}
 

@@ -26,8 +26,12 @@ from ..types import (
     ResponseTextDeltaEvent,
     ResponseTextDoneEvent,
 )
-from ..utils.logging import log_upstream_error
-from ..utils.misc import apply_username_passthrough, make_bar
+from ..utils.logging import (
+    log_converted_request,
+    log_original_request,
+    log_upstream_error,
+)
+from ..utils.misc import apply_username_passthrough
 from ..utils.tokens import (
     calculate_prompt_tokens_async,
     count_tokens,
@@ -381,7 +385,7 @@ async def send_streaming_request(
     prompt_tokens = await calculate_prompt_tokens_async(data, data["model"])
 
     if pseudo_stream:
-        data["stream"] = False  # disable streaming in upstream request
+        # Note: data["stream"] is already set to False in proxy_request when pseudo_stream is True
         api_url = config.argo_url
     else:
         api_url = config.argo_stream_url
@@ -583,16 +587,24 @@ async def proxy_request(
 
         if not data:
             raise ValueError("Invalid input. Expected JSON data.")
-        if config.verbose:
-            logger.info(make_bar("[response] input"))
-            logger.info(json.dumps(data, indent=4))
-            logger.info(make_bar())
+
+        # Log original request
+        log_original_request(data, verbose=config.verbose)
 
         # Prepare the request data (includes message scrutinization and normalization)
         data = prepare_request_data(data, config, model_registry)
 
         # Apply username passthrough if enabled
         apply_username_passthrough(data, request, config.user)
+
+        # Determine actual streaming mode for upstream request
+        use_pseudo_stream = config.pseudo_stream
+        if stream and use_pseudo_stream:
+            # When using pseudo_stream, upstream request is non-streaming
+            data["stream"] = False
+
+        # Log converted request (now reflects actual upstream request mode)
+        log_converted_request(data, verbose=config.verbose)
 
         # Use the shared HTTP session from app context for connection pooling
         session = request.app["http_session"]
@@ -603,7 +615,7 @@ async def proxy_request(
                 config,
                 data,
                 request,
-                pseudo_stream=config.pseudo_stream,
+                pseudo_stream=use_pseudo_stream,
             )
         else:
             return await send_non_streaming_request(
