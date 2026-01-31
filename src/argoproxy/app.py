@@ -15,7 +15,7 @@ from .performance import (
     get_performance_config,
     optimize_event_loop,
 )
-from .utils.logging import log_error, log_info, log_warning
+from .utils.logging import log_debug, log_error, log_info, log_warning
 
 
 async def prepare_app(app):
@@ -82,7 +82,7 @@ async def prepare_app(app):
 
     # Get performance configuration
     perf_config = get_performance_config()
-    log_info(f"Performance config: {perf_config}", context="app")
+    log_debug(f"Performance config: {perf_config}", context="app")
 
     # Create optimized HTTP session
     http_session_manager = OptimizedHTTPSession(
@@ -92,19 +92,19 @@ async def prepare_app(app):
     app["http_session_manager"] = http_session_manager
     app["http_session"] = await http_session_manager.create_session()
 
-    log_info("Optimized HTTP connection pool initialized", context="app")
+    log_debug("HTTP connection pool initialized", context="app")
 
 
 async def cleanup_app(app):
     """Clean up resources when app shuts down"""
     if "http_session_manager" in app:
         await app["http_session_manager"].close()
-        log_info("HTTP session manager closed", context="app")
+        log_debug("HTTP session manager closed", context="app")
 
     # Cancel all pending tasks (best effort)
     pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
     if pending:
-        log_info("Cancelling pending tasks...", context="app")
+        log_debug("Cancelling pending tasks...", context="app")
         [task.cancel() for task in pending]
         await asyncio.gather(*pending, return_exceptions=True)
 

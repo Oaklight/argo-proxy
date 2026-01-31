@@ -11,7 +11,7 @@ from typing import Optional
 import aiohttp
 from tqdm import tqdm
 
-from .utils.logging import log_debug, log_info, log_warning
+from .utils.logging import log_debug, log_warning
 
 
 class OptimizedHTTPSession:
@@ -107,8 +107,8 @@ class OptimizedHTTPSession:
                     headers={"User-Agent": self.user_agent},
                 )
 
-            log_info(
-                f"✅ HTTP session created with {self.connector.limit} total connections, "
+            log_debug(
+                f"HTTP session created with {self.connector.limit} total connections, "
                 f"{self.connector.limit_per_host} per host",
                 context="performance",
             )
@@ -118,11 +118,11 @@ class OptimizedHTTPSession:
         """Close the HTTP session and connector."""
         if self.session and not self.session.closed:
             await self.session.close()
-            log_info("HTTP session closed", context="performance")
+            log_debug("HTTP session closed", context="performance")
 
         if not self.connector.closed:
             await self.connector.close()
-            log_info("HTTP connector closed", context="performance")
+            log_debug("HTTP connector closed", context="performance")
 
 
 async def optimize_event_loop():
@@ -138,7 +138,7 @@ async def optimize_event_loop():
         if hasattr(loop, "set_task_factory"):
             loop.set_task_factory(None)
 
-        log_info("Event loop optimizations applied", context="performance")
+        log_debug("Event loop optimizations applied", context="performance")
 
     except Exception as e:
         log_warning(
