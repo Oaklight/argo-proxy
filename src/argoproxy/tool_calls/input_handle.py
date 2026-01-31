@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from loguru import logger
 from pydantic import ValidationError
 
+from ..utils.logging import truncate_string
 from ..utils.models import determine_model_family
 from .tool_prompts import get_prompt_skeleton
 
@@ -337,7 +338,8 @@ def handle_tools_native(data: Dict[str, Any]) -> Dict[str, Any]:
             logger.warning(
                 f"[Input Handle] {model_type.title()} model detected, converted tools"
             )
-            logger.warning(f"[Input Handle] Converted tools: {converted_tools}")
+            logger.warning(f"[Input Handle] Converted {len(converted_tools)} tools")
+            logger.debug(f"[Input Handle] Converted tools: {converted_tools}")
             logger.warning(
                 f"[Input Handle] Converted tool_choice: {converted_tool_choice}"
             )
@@ -371,6 +373,9 @@ def handle_tools_native(data: Dict[str, Any]) -> Dict[str, Any]:
                             )
                         converted_message["tool_calls"] = converted_tool_calls
                         logger.warning(
+                            f"[Input Handle] Converted {len(converted_tool_calls)} tool_calls in message"
+                        )
+                        logger.debug(
                             f"[Input Handle] Converted tool_calls in message: {converted_tool_calls}"
                         )
 
@@ -398,6 +403,9 @@ def handle_tools_native(data: Dict[str, Any]) -> Dict[str, Any]:
                             "tool_calls", None
                         )  # Remove tool_calls field
                         logger.warning(
+                            f"[Input Handle] Converted tool_calls to Anthropic content format (truncated): {truncate_string(str(content_blocks), 200)}"
+                        )
+                        logger.debug(
                             f"[Input Handle] Converted tool_calls to Anthropic content format: {content_blocks}"
                         )
 
@@ -413,6 +421,9 @@ def handle_tools_native(data: Dict[str, Any]) -> Dict[str, Any]:
                             )
                         converted_message["tool_calls"] = converted_tool_calls
                         logger.warning(
+                            f"[Input Handle] Converted {len(converted_tool_calls)} tool_calls in message"
+                        )
+                        logger.debug(
                             f"[Input Handle] Converted tool_calls in message: {converted_tool_calls}"
                         )
 
@@ -428,6 +439,9 @@ def handle_tools_native(data: Dict[str, Any]) -> Dict[str, Any]:
                             )
                         converted_message["tool_calls"] = converted_tool_calls
                         logger.warning(
+                            f"[Input Handle] Converted {len(converted_tool_calls)} tool_calls in message"
+                        )
+                        logger.debug(
                             f"[Input Handle] Converted tool_calls in message: {converted_tool_calls}"
                         )
 
@@ -458,6 +472,9 @@ def handle_tools_native(data: Dict[str, Any]) -> Dict[str, Any]:
                         ],
                     }
                     logger.warning(
+                        "[Input Handle] Converted tool message to Anthropic format"
+                    )
+                    logger.debug(
                         f"[Input Handle] Converted tool message to Anthropic format: {converted_message}"
                     )
                 elif model_type == "google":

@@ -26,6 +26,7 @@ from ..types.function_call import (
     Function,
     ResponseFunctionToolCall,
 )
+from ..utils.logging import truncate_string
 from ..utils.models import generate_id
 from .handler import ToolCall
 
@@ -263,7 +264,7 @@ class ToolInterceptor:
             Tuple of (list of tool calls or None, text content)
         """
         logger.warning(" ")
-        logger.warning(f"Received response data: {response_data}")
+        logger.debug(f"Received response data: {response_data}")
         logger.warning(" ")
 
         if model_family == "openai":
@@ -358,8 +359,13 @@ class ToolInterceptor:
         # Get tool calls array
         claude_tool_calls = response.get("tool_calls", [])
 
-        logger.warning(f"[Output Handle] Claude tool calls: {claude_tool_calls}")
-        logger.warning(f"[Output Handle] Claude text content: {text_content}")
+        logger.warning(
+            f"[Output Handle] Claude tool calls: {len(claude_tool_calls)} calls"
+        )
+        logger.debug(f"[Output Handle] Claude tool calls: {claude_tool_calls}")
+        logger.warning(
+            f"[Output Handle] Claude text content: {truncate_string(text_content, 100)}"
+        )
 
         # Check if leaked tool fix is enabled
         config_data, _ = load_config(verbose=False)
@@ -417,7 +423,10 @@ class ToolInterceptor:
                     claude_tool_call, api_format="anthropic"
                 )
                 tool_calls.append(tool_call)
-            logger.warning(f"[Output Handle] Converted ToolCall objects: {tool_calls}")
+            logger.warning(
+                f"[Output Handle] Converted {len(tool_calls)} ToolCall objects"
+            )
+            logger.debug(f"[Output Handle] Converted ToolCall objects: {tool_calls}")
 
         return tool_calls, text_content
 
@@ -444,8 +453,13 @@ class ToolInterceptor:
         content = response_data.get("content", "")
         tool_calls_data = response_data.get("tool_calls", [])
 
-        logger.warning(f"[Output Handle] Google tool calls: {tool_calls_data}")
-        logger.warning(f"[Output Handle] Google text content: {content}")
+        logger.warning(
+            f"[Output Handle] Google tool calls: {len(tool_calls_data)} calls"
+        )
+        logger.debug(f"[Output Handle] Google tool calls: {tool_calls_data}")
+        logger.warning(
+            f"[Output Handle] Google text content: {truncate_string(content, 100)}"
+        )
 
         # Convert Google tool calls to ToolCall objects
         tool_calls = None
@@ -459,7 +473,10 @@ class ToolInterceptor:
 
                 tool_call = ToolCall.from_entry(google_tool_call, api_format="google")
                 tool_calls.append(tool_call)
-            logger.warning(f"[Output Handle] Converted ToolCall objects: {tool_calls}")
+            logger.warning(
+                f"[Output Handle] Converted {len(tool_calls)} ToolCall objects"
+            )
+            logger.debug(f"[Output Handle] Converted ToolCall objects: {tool_calls}")
 
         return tool_calls, content
 

@@ -76,14 +76,14 @@ def find_matching_tool_result(
 
     # Try ID matching first
     if tool_call_id and tool_call_id in tool_result_map:
-        logger.warning(
+        logger.debug(
             f"[Google Sequential] Found matching result for tool_call_id: {tool_call_id}"
         )
         return tool_result_map[tool_call_id], "id"
 
     # Fallback to positional matching
     if index < len(tool_results):
-        logger.warning(
+        logger.debug(
             f"[Google Sequential] Using positional matching for tool call {index + 1}"
         )
         return tool_results[index], "position"
@@ -101,7 +101,7 @@ def verify_id_alignment(tool_call: Dict[str, Any], tool_result: Dict[str, Any]) 
     result_tool_call_id = tool_result.get("tool_call_id")
 
     if tool_call_id and result_tool_call_id and tool_call_id != result_tool_call_id:
-        logger.warning(
+        logger.debug(
             f"[Google Sequential] ID mismatch: tool_call_id={tool_call_id}, "
             f"result_tool_call_id={result_tool_call_id}"
         )
@@ -154,7 +154,7 @@ def create_sequential_call_result_pairs(
         # Log the creation
         tool_call_id = tool_call.get("id")
         result_tool_call_id = corresponding_result.get("tool_call_id")
-        logger.warning(
+        logger.debug(
             f"[Google Sequential] Created call-result pair {idx + 1}/{len(tool_calls)} "
             f"(ID: {tool_call_id} -> {result_tool_call_id}, match: {match_type})"
         )
