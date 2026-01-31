@@ -2,6 +2,26 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v2.8.2 (2026-01-31)
+
+### Refactor
+
+- **Logging System Overhaul**: Replaced loguru with standard library logging for better compatibility; centralized request logging utilities with improved formatting and log levels
+
+### Features
+
+- **Large Image Payload Support**: Increased aiohttp client_max_size to 100MB to handle large image uploads
+
+### Bug Fixes
+
+- **Claude Max Tokens Fix**: Fixed 500 upstream errors caused by excessive max_tokens in non-streaming tool call requests
+  - Enforced max_tokens limit for Claude models to prevent issues with clients (like OpenCode) requesting 32k+ tokens with large tool definitions
+
+### Improvements
+
+- Centralized pseudo_stream handling and improved logging consistency across endpoints
+- Improved upstream error handling across all endpoints with better error messages and recovery
+
 ## v2.8.1 (2026-01-24)
 
 ### Features
