@@ -27,8 +27,11 @@ def extract_text_content(content: Union[str, list]) -> str:
     elif isinstance(content, list):
         texts = []
         for item in content:
-            if isinstance(item, dict) and "text" in item:
-                texts.append(item["text"])
+            if isinstance(item, dict):
+                if "text" in item:
+                    texts.append(item["text"])
+                elif "content" in item: # Handle tool_result and other nested content
+                    texts.append(extract_text_content(item["content"]))
             elif isinstance(item, str):
                 texts.append(item)
         return " ".join(texts)
@@ -48,7 +51,7 @@ def count_tokens(text: Union[str, List[str]], model: str) -> int:
     if isinstance(text, list):
         return sum([len(encoding.encode(each)) for each in text])
 
-    return len(encoding.encode(text))
+    return len(encoding.encode(text or ""))
 
 
 async def count_tokens_async(text: Union[str, List[str]], model: str) -> int:
@@ -62,7 +65,7 @@ async def count_tokens_async(text: Union[str, List[str]], model: str) -> int:
 def calculate_prompt_tokens(data: dict, model: str) -> int:
     """
     Calculate prompt tokens from either messages or prompt field in the request data.
-    Supports both string content and list of content objects in messages.
+    Includes tools, system prompt and tool results.
 
     Args:
         data: The request data dictionary
@@ -71,16 +74,33 @@ def calculate_prompt_tokens(data: dict, model: str) -> int:
     Returns:
         int: Total token count for the prompt/messages
     """
+    total_text = []
 
+    # Include system prompt
+    if "system" in data:
+        total_text.append(extract_text_content(data["system"]))
+
+    # Include messages
     if "messages" in data:
-        messages_content = [
-            extract_text_content(msg["content"])
-            for msg in data["messages"]
-            if "content" in msg
-        ]
-        prompt_tokens = count_tokens(messages_content, model)
-        return prompt_tokens
-    return count_tokens(data.get("prompt", ""), model)
+        for msg in data["messages"]:
+            if "content" in msg:
+                total_text.append(extract_text_content(msg["content"]))
+            
+            # Handle tool_calls in assistant messages
+            if "tool_calls" in msg and msg["tool_calls"]:
+                import json
+                total_text.append(json.dumps(msg["tool_calls"]))
+
+    # Include prompt (legacy/completions)
+    if "prompt" in data:
+        total_text.append(extract_text_content(data["prompt"]))
+
+    # Include tool definitions
+    if "tools" in data and data["tools"]:
+        import json
+        total_text.append(json.dumps(data["tools"]))
+
+    return count_tokens(total_text, model)
 
 
 async def calculate_prompt_tokens_async(data: dict, model: str) -> int:
