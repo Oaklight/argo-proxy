@@ -231,7 +231,10 @@ async def get_version(request: web.Request):
 
 def create_app():
     """Factory function to create a new application instance"""
-    app = web.Application()
+    # Set client_max_size to 100MB to handle large image payloads from remote clients
+    # Users may send images larger than the gateway's 20MB limit; argo-proxy will
+    # compress them before forwarding. Default aiohttp limit is 1MB which is too small.
+    app = web.Application(client_max_size=100 * 1024 * 1024)
     app.on_startup.append(prepare_app)
     app.on_shutdown.append(cleanup_app)
 
