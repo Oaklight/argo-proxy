@@ -13,12 +13,12 @@ This page records the major version changes and important feature updates of the
 - **Large Image Payload Support**: Increased aiohttp client_max_size to 100MB to handle large image uploads
 
 - **Token Counting Accuracy** (@Neil Getty): Fixed missing token counts for tool-related content
-  - Added token counting for `tool_calls` and `tools` definitions
-  - Improved recursive text extraction for nested content
-  - Fixed `count_tokens` to handle None values gracefully
+    - Added token counting for `tool_calls` and `tools` definitions
+    - Improved recursive text extraction for nested content
+    - Fixed `count_tokens` to handle None values gracefully
 
 - **Claude Max Tokens Fix**: Fixed 500 upstream errors caused by excessive max_tokens in non-streaming tool call requests
-  - Enforced max_tokens limit for Claude models to prevent issues with clients (like OpenCode) requesting 32k+ tokens with large tool definitions
+    - Enforced max_tokens limit for Claude models to prevent issues with clients (like OpenCode) requesting 32k+ tokens with large tool definitions
 
 ### Improvements
 
