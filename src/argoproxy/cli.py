@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import asyncio
+import logging
 import os
 import subprocess
 import sys
@@ -15,13 +16,80 @@ from .app import run
 from .config import PATHS_TO_TRY, validate_config
 from .endpoints.extras import get_latest_pypi_version
 
-logger.remove()  # Remove default handlers
-logger.add(
-    sys.stdout,
-    colorize=True,
-    format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{message}</level>",
-    level="INFO",
-)
+
+class HTTPAttackFilter(logging.Filter):
+    """Filter to suppress logging of known HTTP attack patterns."""
+
+    ATTACK_PATTERNS = [
+        # Apache Struts2 OGNL injection patterns
+        "xwork.MethodAccessor.denyMethodExecution",
+        "_memberAccess",
+        "allowStaticMethodAccess",
+        "org.apache.commons.io.IOUtils",
+        "org.apache.struts2.ServletActionContext",
+        "java.lang.Runtime",
+        "java.io.InputStreamReader",
+        "java.io.BufferedReader",
+        # OGNL expression patterns
+        "${#",
+        "%24%7B",  # URL encoded ${
+        "redirect:",
+    ]
+
+    ERROR_PATTERNS = [
+        # aiohttp HTTP parser errors from attacks
+        "BadStatusLine",
+        "InvalidURLError",
+        "Expected CRLF after version",
+        "Unexpected start char in url",
+    ]
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """Filter out log records containing attack patterns."""
+        message = record.getMessage()
+
+        # Check for attack payloads in the message
+        for pattern in self.ATTACK_PATTERNS:
+            if pattern in message:
+                return False  # Suppress this log record
+
+        # Check for specific error types from attacks
+        for pattern in self.ERROR_PATTERNS:
+            if pattern in message:
+                # Additional check: these errors often contain attack patterns
+                # or come from suspicious IPs with malformed requests
+                return False  # Suppress this log record
+
+        return True  # Allow normal log records
+
+
+def setup_logging(verbose: bool = False):
+    """Setup logging with attack filter."""
+    logger.remove()  # Remove default handlers
+
+    # Add loguru handler
+    logger.add(
+        sys.stdout,
+        colorize=True,
+        format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{message}</level>",
+        level="DEBUG" if verbose else "INFO",
+    )
+
+    # Suppress aiohttp access logs for attacks
+    aiohttp_logger = logging.getLogger("aiohttp")
+    aiohttp_logger.addFilter(HTTPAttackFilter())
+
+    # Suppress aiohttp.server logs for attacks
+    aiohttp_server_logger = logging.getLogger("aiohttp.server")
+    aiohttp_server_logger.addFilter(HTTPAttackFilter())
+
+    # Also filter asyncio logs which may contain similar errors
+    asyncio_logger = logging.getLogger("asyncio")
+    asyncio_logger.addFilter(HTTPAttackFilter())
+
+
+# Initialize logging with default settings
+setup_logging()
 
 
 def parsing_args() -> argparse.Namespace:
@@ -333,6 +401,9 @@ def main():
         return
 
     set_config_envs(args)
+
+    # Re-setup logging with correct verbosity
+    setup_logging(verbose=args.verbose)
 
     try:
         # Display startup banner
