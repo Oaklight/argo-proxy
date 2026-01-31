@@ -4,11 +4,16 @@ from typing import Any, Dict, List, Union
 
 import aiohttp
 from aiohttp import web
-from loguru import logger
 
 from ..config import ArgoConfig
 from ..models import ModelRegistry
 from ..types import CreateEmbeddingResponse, Embedding
+from ..utils.logging import (
+    log_converted_request,
+    log_info,
+    log_original_request,
+    log_upstream_error,
+)
 from ..utils.misc import make_bar
 from ..utils.tokens import count_tokens
 from ..utils.usage import create_usage
@@ -121,12 +126,14 @@ async def proxy_request(
         data: Dict[str, Any] = await request.json()
         if not data:
             raise ValueError("Invalid input. Expected JSON data.")
-        if config.verbose:
-            logger.info(make_bar("[embed] input"))
-            logger.info(json.dumps(data, indent=4))
-            logger.info(make_bar())
+
+        # Log original request
+        log_original_request(data, verbose=config.verbose)
 
         data = prepare_request_data(data, config, model_registry)
+
+        # Log converted request
+        log_converted_request(data, verbose=config.verbose)
 
         headers: Dict[str, str] = {"Content-Type": "application/json"}
 
@@ -136,11 +143,32 @@ async def proxy_request(
         async with session.post(
             config.argo_embedding_url, headers=headers, json=data
         ) as resp:
+            if resp.status != 200:
+                error_text = await resp.text()
+                log_upstream_error(
+                    resp.status,
+                    error_text,
+                    endpoint="embed",
+                    is_streaming=False,
+                )
+                try:
+                    error_json = json.loads(error_text)
+                    return web.json_response(
+                        error_json,
+                        status=resp.status,
+                        content_type="application/json",
+                    )
+                except json.JSONDecodeError:
+                    return web.json_response(
+                        {"error": f"Upstream error {resp.status}: {error_text}"},
+                        status=resp.status,
+                        content_type="application/json",
+                    )
+
             response_data: Dict[str, Any] = await resp.json()
-            resp.raise_for_status()
 
             if config.verbose:
-                logger.info(make_bar("[embed] fwd. response"))
+                log_info(make_bar("[embed] fwd. response"), context="embed")
                 # Create a new dict with copied lists to avoid modifying the original
                 log_data = {
                     "embedding": [
@@ -149,8 +177,8 @@ async def proxy_request(
                         for emb in response_data["embedding"]
                     ]
                 }
-                logger.info(json.dumps(log_data, indent=4))
-                logger.info(make_bar())
+                log_info(json.dumps(log_data, indent=4), context="embed")
+                log_info(make_bar(), context="embed")
 
             if convert_to_openai:
                 openai_response = make_it_openai_embeddings_compat(

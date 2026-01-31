@@ -5,6 +5,10 @@ from typing import Any, Dict, Literal, Union
 from pydantic import ValidationError
 
 from ..types.function_call import ChatCompletionNamedToolChoiceParam
+from .logging import log_warning
+
+# Claude models have a max_tokens limit of 21000 for non-streaming requests
+CLAUDE_NON_STREAMING_MAX_TOKENS = 21000
 
 API_FORMATS = Literal[
     "openai",  # old default, alias to openai-chatcompletion
@@ -88,6 +92,49 @@ def generate_id(
 
     else:
         raise ValueError(f"Unknown mode: {mode!r}")
+
+
+def apply_claude_max_tokens_limit(
+    data: Dict[str, Any],
+    *,
+    is_non_streaming: bool = False,
+) -> Dict[str, Any]:
+    """
+    Apply max_tokens limit for Claude models when using non-streaming mode.
+
+    Claude models have a max_tokens limit of 21000 for non-streaming requests.
+    If the requested max_tokens exceeds this limit, it will be capped.
+
+    Args:
+        data: The request data dictionary containing model and max_tokens.
+        is_non_streaming: Whether this is a non-streaming request (including pseudo_stream).
+
+    Returns:
+        The modified request data with capped max_tokens if applicable.
+    """
+    if not is_non_streaming:
+        return data
+
+    model = data.get("model", "")
+    model_family = determine_model_family(model)
+
+    if model_family != "anthropic":
+        return data
+
+    max_tokens = data.get("max_tokens")
+    if max_tokens is None:
+        return data
+
+    if max_tokens > CLAUDE_NON_STREAMING_MAX_TOKENS:
+        log_warning(
+            f"Claude model '{model}' max_tokens ({max_tokens}) exceeds "
+            f"non-streaming limit ({CLAUDE_NON_STREAMING_MAX_TOKENS}). "
+            f"Capping to {CLAUDE_NON_STREAMING_MAX_TOKENS}.",
+            context="CLAUDE_MAX_TOKENS",
+        )
+        data["max_tokens"] = CLAUDE_NON_STREAMING_MAX_TOKENS
+
+    return data
 
 
 def validate_tool_choice(tool_choice: Union[str, Dict[str, Any]]) -> None:

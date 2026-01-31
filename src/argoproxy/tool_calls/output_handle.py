@@ -15,7 +15,6 @@ from typing import (
     overload,
 )
 
-from loguru import logger
 from pydantic import ValidationError
 
 from ..config import load_config
@@ -26,6 +25,7 @@ from ..types.function_call import (
     Function,
     ResponseFunctionToolCall,
 )
+from ..utils.logging import log_debug, log_error, log_warning, truncate_string
 from ..utils.models import generate_id
 from .handler import ToolCall
 
@@ -75,7 +75,10 @@ def _compress_log_files(log_dir: Path) -> None:
         if not json_files:
             return
 
-        logger.warning(f"Compressing {len(json_files)} log files in {log_dir}")
+        log_warning(
+            f"Compressing {len(json_files)} log files in {log_dir}",
+            context="output_handle",
+        )
 
         for json_file in json_files:
             try:
@@ -90,12 +93,17 @@ def _compress_log_files(log_dir: Path) -> None:
                 json_file.unlink()
 
             except Exception as e:
-                logger.error(f"Failed to compress {json_file}: {e}")
+                log_error(
+                    f"Failed to compress {json_file}: {e}", context="output_handle"
+                )
 
-        logger.warning(f"Compression complete. Compressed {len(json_files)} files.")
+        log_warning(
+            f"Compression complete. Compressed {len(json_files)} files.",
+            context="output_handle",
+        )
 
     except Exception as e:
-        logger.error(f"Failed to compress log files: {e}")
+        log_error(f"Failed to compress log files: {e}", context="output_handle")
 
 
 def _log_leaked_tool_case(
@@ -121,8 +129,9 @@ def _log_leaked_tool_case(
         # before compression, providing sufficient samples for analysis
         dir_size = _get_log_dir_size(log_dir)
         if dir_size > 50 * 1024 * 1024:  # 50MB in bytes
-            logger.warning(
-                f"Log directory size ({dir_size / 1024 / 1024:.2f}MB) exceeds 50MB, compressing logs..."
+            log_warning(
+                f"Log directory size ({dir_size / 1024 / 1024:.2f}MB) exceeds 50MB, compressing logs...",
+                context="output_handle",
             )
             _compress_log_files(log_dir)
 
@@ -151,9 +160,11 @@ def _log_leaked_tool_case(
         with open(log_file, "w", encoding="utf-8") as f:
             json.dump(log_entry, f, indent=2, ensure_ascii=False)
 
-        logger.warning(f"Logged leaked tool call case to: {log_file}")
+        log_warning(
+            f"Logged leaked tool call case to: {log_file}", context="output_handle"
+        )
     except Exception as e:
-        logger.error(f"Failed to log leaked tool call case: {e}")
+        log_error(f"Failed to log leaked tool call case: {e}", context="output_handle")
 
 
 class ToolInterceptor:
@@ -192,8 +203,9 @@ class ToolInterceptor:
             # Native tool calling format
             return self._process_native(response_content, model_family, request_data)
         else:
-            logger.warning(
-                f"Unexpected response content type: {type(response_content)}"
+            log_warning(
+                f"Unexpected response content type: {type(response_content)}",
+                context="ToolInterceptor",
             )
             return None, str(response_content)
 
@@ -262,24 +274,32 @@ class ToolInterceptor:
         Returns:
             Tuple of (list of tool calls or None, text content)
         """
-        logger.warning(" ")
-        logger.warning(f"Received response data: {response_data}")
-        logger.warning(" ")
+        log_warning(" ", context="output_handle")
+        log_debug(f"Received response data: {response_data}", context="output_handle")
+        log_warning(" ", context="output_handle")
 
         if model_family == "openai":
-            logger.warning("[Output Handle] Using [OpenAI] native tool calling format")
+            log_warning(
+                "[Output Handle] Using [OpenAI] native tool calling format",
+                context="output_handle",
+            )
             return self._process_openai_native(response_data)
         elif model_family == "anthropic":
-            logger.warning(
-                "[Output Handle] Using [Anthropic] native tool calling format"
+            log_warning(
+                "[Output Handle] Using [Anthropic] native tool calling format",
+                context="output_handle",
             )
             return self._process_anthropic_native(response_data, request_data)
         elif model_family == "google":
-            logger.warning("[Output Handle] Using [Google] native tool calling format")
+            log_warning(
+                "[Output Handle] Using [Google] native tool calling format",
+                context="output_handle",
+            )
             return self._process_google_native(response_data)
         else:
-            logger.warning(
-                f"Unknown model family for model: {model_family}, falling back to OpenAI format"
+            log_warning(
+                f"Unknown model family for model: {model_family}, falling back to OpenAI format",
+                context="output_handle",
             )
             return self._process_openai_native(response_data)
 
@@ -358,8 +378,18 @@ class ToolInterceptor:
         # Get tool calls array
         claude_tool_calls = response.get("tool_calls", [])
 
-        logger.warning(f"[Output Handle] Claude tool calls: {claude_tool_calls}")
-        logger.warning(f"[Output Handle] Claude text content: {text_content}")
+        log_warning(
+            f"[Output Handle] Claude tool calls: {len(claude_tool_calls)} calls",
+            context="output_handle",
+        )
+        log_debug(
+            f"[Output Handle] Claude tool calls: {claude_tool_calls}",
+            context="output_handle",
+        )
+        log_warning(
+            f"[Output Handle] Claude text content: {truncate_string(text_content, 100)}",
+            context="output_handle",
+        )
 
         # Check if leaked tool fix is enabled
         config_data, _ = load_config(verbose=False)
@@ -395,19 +425,24 @@ class ToolInterceptor:
 
                     if enable_fix:
                         # Use simple fix approach when enabled
-                        logger.warning(
-                            f"[LEAKED TOOL FIX ENABLED] Found leaked tool string: {leaked_str}"
+                        log_warning(
+                            f"[LEAKED TOOL FIX ENABLED] Found leaked tool string: {leaked_str}",
+                            context="output_handle",
                         )
                         leaked_dict = ast.literal_eval(leaked_str)
                         claude_tool_calls = [leaked_dict]
                         # Remove from text
                         text_content = text_content[:start_idx] + text_content[end_idx:]
                     else:
-                        logger.warning(
-                            f"[LEAKED TOOL FIX DISABLED] Found potential leaked tool call, logged for analysis: {leaked_str[:100]}..."
+                        log_warning(
+                            f"[LEAKED TOOL FIX DISABLED] Found potential leaked tool call, logged for analysis: {leaked_str[:100]}...",
+                            context="output_handle",
                         )
             except Exception as e:
-                logger.warning(f"Failed to process potential leaked tool: {e}")
+                log_warning(
+                    f"Failed to process potential leaked tool: {e}",
+                    context="output_handle",
+                )
 
         if claude_tool_calls:
             tool_calls = []
@@ -417,7 +452,14 @@ class ToolInterceptor:
                     claude_tool_call, api_format="anthropic"
                 )
                 tool_calls.append(tool_call)
-            logger.warning(f"[Output Handle] Converted ToolCall objects: {tool_calls}")
+            log_warning(
+                f"[Output Handle] Converted {len(tool_calls)} ToolCall objects",
+                context="output_handle",
+            )
+            log_debug(
+                f"[Output Handle] Converted ToolCall objects: {tool_calls}",
+                context="output_handle",
+            )
 
         return tool_calls, text_content
 
@@ -444,8 +486,18 @@ class ToolInterceptor:
         content = response_data.get("content", "")
         tool_calls_data = response_data.get("tool_calls", [])
 
-        logger.warning(f"[Output Handle] Google tool calls: {tool_calls_data}")
-        logger.warning(f"[Output Handle] Google text content: {content}")
+        log_warning(
+            f"[Output Handle] Google tool calls: {len(tool_calls_data)} calls",
+            context="output_handle",
+        )
+        log_debug(
+            f"[Output Handle] Google tool calls: {tool_calls_data}",
+            context="output_handle",
+        )
+        log_warning(
+            f"[Output Handle] Google text content: {truncate_string(content, 100)}",
+            context="output_handle",
+        )
 
         # Convert Google tool calls to ToolCall objects
         tool_calls = None
@@ -459,7 +511,14 @@ class ToolInterceptor:
 
                 tool_call = ToolCall.from_entry(google_tool_call, api_format="google")
                 tool_calls.append(tool_call)
-            logger.warning(f"[Output Handle] Converted ToolCall objects: {tool_calls}")
+            log_warning(
+                f"[Output Handle] Converted {len(tool_calls)} ToolCall objects",
+                context="output_handle",
+            )
+            log_debug(
+                f"[Output Handle] Converted ToolCall objects: {tool_calls}",
+                context="output_handle",
+            )
 
         return tool_calls, content
 

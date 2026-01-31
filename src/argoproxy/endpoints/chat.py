@@ -7,7 +7,6 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Union, cast
 
 import aiohttp
 from aiohttp import web
-from loguru import logger
 
 from ..config import ArgoConfig
 from ..models import ModelRegistry
@@ -26,15 +25,22 @@ from ..types import (
     StreamChoice,
 )
 from ..types.chat_completion import FINISH_REASONS
-from ..utils.image_processing import process_chat_images, sanitize_data_for_logging
+from ..utils.image_processing import process_chat_images
 from ..utils.input_handle import (
     handle_multiple_entries_prompt,
     handle_no_sys_msg,
     handle_option_2_input,
     scrutinize_message_entries,
 )
-from ..utils.misc import apply_username_passthrough, make_bar
-from ..utils.models import determine_model_family
+from ..utils.logging import (
+    log_converted_request,
+    log_error,
+    log_original_request,
+    log_upstream_error,
+    log_warning,
+)
+from ..utils.misc import apply_username_passthrough
+from ..utils.models import apply_claude_max_tokens_limit, determine_model_family
 from ..utils.tokens import (
     calculate_prompt_tokens_async,
     count_tokens_async,
@@ -78,7 +84,9 @@ async def transform_chat_completions_streaming_async(
         # Handle tool calls for streaming
         tool_calls_obj = None
         if tool_calls:
-            logger.warning(f"transforming tool_calls: {tool_calls}")
+            log_warning(
+                f"transforming tool_calls: {tool_calls}", context="chat.streaming"
+            )
             tool_calls_obj = [
                 tool_calls_to_openai_stream(
                     tool_calls,
@@ -263,6 +271,31 @@ async def send_non_streaming_request(
         async with session.post(
             config.argo_url, headers=headers, json=data
         ) as upstream_resp:
+            if upstream_resp.status != 200:
+                error_text = await upstream_resp.text()
+                log_upstream_error(
+                    upstream_resp.status,
+                    error_text,
+                    endpoint="chat",
+                    is_streaming=False,
+                )
+                try:
+                    response_data = json.loads(error_text)
+                    return web.json_response(
+                        response_data,
+                        status=upstream_resp.status,
+                        content_type="application/json",
+                    )
+                except json.JSONDecodeError:
+                    return web.json_response(
+                        {
+                            "object": "error",
+                            "message": f"Upstream error {upstream_resp.status}: {error_text}",
+                            "type": "upstream_error",
+                        },
+                        status=upstream_resp.status,
+                    )
+
             try:
                 response_data = await upstream_resp.json()
             except (aiohttp.ContentTypeError, json.JSONDecodeError):
@@ -365,14 +398,17 @@ async def _handle_pseudo_stream(
         convert_to_openai: If True, converts the response to OpenAI format.
         openai_compat_fn: Function for conversion to OpenAI-compatible format.
     """
-    logger.warning("Pseudo streaming!")
+    log_warning("Pseudo streaming!", context="chat")
 
     try:
         response_data = await upstream_resp.json()
         response_content = response_data.get("response", "")
     except (aiohttp.ContentTypeError, json.JSONDecodeError) as e:
         response_content = await upstream_resp.text()
-        logger.warning(f"Upstream response is not JSON in pseudo_stream mode: {e}")
+        log_warning(
+            f"Upstream response is not JSON in pseudo_stream mode: {e}",
+            context="chat.pseudo_stream",
+        )
     if convert_to_openai:
         # Generate a shared ID for all chunks in this stream
         shared_id = str(uuid.uuid4().hex)
@@ -598,7 +634,7 @@ async def send_streaming_request(
         response_headers = {"Content-Type": "text/plain; charset=utf-8"}
 
     if pseudo_stream:
-        data["stream"] = False  # disable streaming in upstream request
+        # Note: data["stream"] is already set to False in proxy_request when pseudo_stream is True
         api_url = config.argo_url
     else:
         api_url = config.argo_stream_url
@@ -607,13 +643,27 @@ async def send_streaming_request(
         async with session.post(api_url, headers=headers, json=data) as upstream_resp:
             if upstream_resp.status != 200:
                 error_text = await upstream_resp.text()
-                return web.json_response(
-                    {
-                        "error": f"Upstream API error: {upstream_resp.status} {error_text}"
-                    },
-                    status=upstream_resp.status,
-                    content_type="application/json",
+                log_upstream_error(
+                    upstream_resp.status,
+                    error_text,
+                    endpoint="chat",
+                    is_streaming=True,
                 )
+                try:
+                    error_json = json.loads(error_text)
+                    return web.json_response(
+                        error_json,
+                        status=upstream_resp.status,
+                        content_type="application/json",
+                    )
+                except json.JSONDecodeError:
+                    return web.json_response(
+                        {
+                            "error": f"Upstream API error: {upstream_resp.status} {error_text}"
+                        },
+                        status=upstream_resp.status,
+                        content_type="application/json",
+                    )
 
             # Initialize the streaming response
             response_headers.update(
@@ -700,10 +750,9 @@ async def proxy_request(
 
         if not data:
             raise ValueError("Invalid input. Expected JSON data.")
-        if config.verbose:
-            logger.info(make_bar("[chat] input"))
-            logger.info(json.dumps(sanitize_data_for_logging(data), indent=4))
-            logger.info(make_bar())
+
+        # Log original request
+        log_original_request(data, verbose=config.verbose)
 
         # Use the shared HTTP session from app context for connection pooling
         session = request.app["http_session"]
@@ -719,9 +768,21 @@ async def proxy_request(
         # Apply username passthrough if enabled
         apply_username_passthrough(data, request, config.user)
 
-        logger.warning(
-            f"[chat] data: {json.dumps(sanitize_data_for_logging(data), indent=4)}"
+        # Determine actual streaming mode for upstream request
+        use_pseudo_stream = config.pseudo_stream or pseudo_stream_override
+        if stream and use_pseudo_stream:
+            # When using pseudo_stream, upstream request is non-streaming
+            data["stream"] = False
+
+        # Apply Claude max_tokens limit for non-streaming requests
+        # This includes both non-streaming and pseudo_stream modes
+        is_non_streaming_upstream = not stream or use_pseudo_stream
+        data = apply_claude_max_tokens_limit(
+            data, is_non_streaming=is_non_streaming_upstream
         )
+
+        # Log converted request (now reflects actual upstream request mode)
+        log_converted_request(data, verbose=config.verbose)
 
         if stream:
             return await send_streaming_request(
@@ -731,7 +792,7 @@ async def proxy_request(
                 request,
                 convert_to_openai=convert_to_openai,
                 openai_compat_fn=transform_chat_completions_streaming_async,
-                pseudo_stream=config.pseudo_stream or pseudo_stream_override,
+                pseudo_stream=use_pseudo_stream,
             )
         else:
             return await send_non_streaming_request(
@@ -743,7 +804,7 @@ async def proxy_request(
             )
 
     except ValueError as err:
-        logger.error(f"ValueError: {err}")
+        log_error(f"ValueError: {err}", context="chat.proxy_request")
         return web.json_response(
             {"error": str(err)},
             status=HTTPStatus.BAD_REQUEST,
@@ -751,7 +812,7 @@ async def proxy_request(
         )
     except aiohttp.ClientError as err:
         error_message = f"HTTP error occurred: {err}"
-        logger.error(error_message)
+        log_error(error_message, context="chat.proxy_request")
         return web.json_response(
             {"error": error_message},
             status=HTTPStatus.SERVICE_UNAVAILABLE,
@@ -759,7 +820,7 @@ async def proxy_request(
         )
     except Exception as err:
         error_message = f"An unexpected error occurred: {err}"
-        logger.error(error_message)
+        log_error(error_message, context="chat.proxy_request")
         return web.json_response(
             {"error": error_message},
             status=HTTPStatus.INTERNAL_SERVER_ERROR,

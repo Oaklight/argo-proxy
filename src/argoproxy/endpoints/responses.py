@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import aiohttp
 from aiohttp import web
-from loguru import logger
 
 from ..config import ArgoConfig
 from ..models import ModelRegistry
@@ -26,14 +25,21 @@ from ..types import (
     ResponseTextDeltaEvent,
     ResponseTextDoneEvent,
 )
-from ..utils.misc import apply_username_passthrough, make_bar
+from ..utils.logging import (
+    log_converted_request,
+    log_error,
+    log_original_request,
+    log_upstream_error,
+)
+from ..utils.misc import apply_username_passthrough
+from ..utils.models import apply_claude_max_tokens_limit
 from ..utils.tokens import (
     calculate_prompt_tokens_async,
     count_tokens,
     count_tokens_async,
 )
-from ..utils.usage import calculate_completion_tokens_async, create_usage
 from ..utils.transports import send_off_sse
+from ..utils.usage import calculate_completion_tokens_async, create_usage
 from .chat import (
     prepare_chat_request_data,
     send_non_streaming_request,
@@ -123,10 +129,14 @@ def transform_non_streaming_response(
         return openai_response.model_dump()
 
     except json.JSONDecodeError as err:
-        logger.error(f"Error decoding JSON: {err}")
+        log_error(
+            f"Error decoding JSON: {err}", context="responses.transform_non_streaming"
+        )
         return {"error": f"Error decoding JSON: {err}"}
     except Exception as err:
-        logger.error(f"An error occurred: {err}")
+        log_error(
+            f"An error occurred: {err}", context="responses.transform_non_streaming"
+        )
         return {"error": f"An error occurred: {err}"}
 
 
@@ -184,10 +194,16 @@ async def transform_non_streaming_response_async(
         return openai_response.model_dump()
 
     except json.JSONDecodeError as err:
-        logger.error(f"Error decoding JSON: {err}")
+        log_error(
+            f"Error decoding JSON: {err}",
+            context="responses.transform_non_streaming_async",
+        )
         return {"error": f"Error decoding JSON: {err}"}
     except Exception as err:
-        logger.error(f"An error occurred: {err}")
+        log_error(
+            f"An error occurred: {err}",
+            context="responses.transform_non_streaming_async",
+        )
         return {"error": f"An error occurred: {err}"}
 
 
@@ -228,10 +244,12 @@ def transform_streaming_response(
         return openai_response.model_dump()
 
     except json.JSONDecodeError as err:
-        logger.error(f"Error decoding JSON: {err}")
+        log_error(
+            f"Error decoding JSON: {err}", context="responses.transform_streaming"
+        )
         return {"error": f"Error decoding JSON: {err}"}
     except Exception as err:
-        logger.error(f"An error occurred: {err}")
+        log_error(f"An error occurred: {err}", context="responses.transform_streaming")
         return {"error": f"An error occurred: {err}"}
 
 
@@ -380,7 +398,7 @@ async def send_streaming_request(
     prompt_tokens = await calculate_prompt_tokens_async(data, data["model"])
 
     if pseudo_stream:
-        data["stream"] = False  # disable streaming in upstream request
+        # Note: data["stream"] is already set to False in proxy_request when pseudo_stream is True
         api_url = config.argo_url
     else:
         api_url = config.argo_stream_url
@@ -388,6 +406,12 @@ async def send_streaming_request(
     async with session.post(api_url, headers=headers, json=data) as upstream_resp:
         if upstream_resp.status != 200:
             error_text = await upstream_resp.text()
+            log_upstream_error(
+                upstream_resp.status,
+                error_text,
+                endpoint="response",
+                is_streaming=True,
+            )
             return web.json_response(
                 {"error": f"Upstream API error: {upstream_resp.status} {error_text}"},
                 status=upstream_resp.status,
@@ -576,16 +600,30 @@ async def proxy_request(
 
         if not data:
             raise ValueError("Invalid input. Expected JSON data.")
-        if config.verbose:
-            logger.info(make_bar("[response] input"))
-            logger.info(json.dumps(data, indent=4))
-            logger.info(make_bar())
+
+        # Log original request
+        log_original_request(data, verbose=config.verbose)
 
         # Prepare the request data (includes message scrutinization and normalization)
         data = prepare_request_data(data, config, model_registry)
 
         # Apply username passthrough if enabled
         apply_username_passthrough(data, request, config.user)
+
+        # Determine actual streaming mode for upstream request
+        use_pseudo_stream = config.pseudo_stream
+        if stream and use_pseudo_stream:
+            # When using pseudo_stream, upstream request is non-streaming
+            data["stream"] = False
+
+        # Apply Claude max_tokens limit for non-streaming requests
+        is_non_streaming_upstream = not stream or use_pseudo_stream
+        data = apply_claude_max_tokens_limit(
+            data, is_non_streaming=is_non_streaming_upstream
+        )
+
+        # Log converted request (now reflects actual upstream request mode)
+        log_converted_request(data, verbose=config.verbose)
 
         # Use the shared HTTP session from app context for connection pooling
         session = request.app["http_session"]
@@ -596,7 +634,7 @@ async def proxy_request(
                 config,
                 data,
                 request,
-                pseudo_stream=config.pseudo_stream,
+                pseudo_stream=use_pseudo_stream,
             )
         else:
             return await send_non_streaming_request(

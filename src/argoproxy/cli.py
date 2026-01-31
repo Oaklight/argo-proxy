@@ -8,13 +8,18 @@ import sys
 from argparse import RawTextHelpFormatter
 from typing import Optional
 
-from loguru import logger
 from packaging import version
 
 from .__init__ import __version__
 from .app import run
 from .config import PATHS_TO_TRY, validate_config
 from .endpoints.extras import get_latest_pypi_version
+from .utils.logging import (
+    log_error,
+    log_info,
+    log_warning,
+    setup_logging as setup_app_logging,
+)
 
 
 class HTTPAttackFilter(logging.Filter):
@@ -65,15 +70,8 @@ class HTTPAttackFilter(logging.Filter):
 
 def setup_logging(verbose: bool = False):
     """Setup logging with attack filter."""
-    logger.remove()  # Remove default handlers
-
-    # Add loguru handler
-    logger.add(
-        sys.stdout,
-        colorize=True,
-        format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{message}</level>",
-        level="DEBUG" if verbose else "INFO",
-    )
+    # Setup the application logger using standard library
+    setup_app_logging(verbose=verbose)
 
     # Suppress aiohttp access logs for attacks
     aiohttp_logger = logging.getLogger("aiohttp")
@@ -261,10 +259,13 @@ def open_in_editor(config_path: Optional[str] = None):
                 except FileNotFoundError:
                     continue  # Try the next editor in the list
                 except Exception as e:
-                    logger.error(f"Failed to open editor with {editor} for {path}: {e}")
+                    log_error(
+                        f"Failed to open editor with {editor} for {path}: {e}",
+                        context="cli",
+                    )
                     sys.exit(1)
 
-    logger.error("No valid configuration file found to edit.")
+    log_error("No valid configuration file found to edit.", context="cli")
     sys.exit(1)
 
 
@@ -306,14 +307,14 @@ def display_startup_banner():
     print(banner)
 
     # Version information with styling
-    logger.info("=" * 80)
+    log_info("=" * 80, context="cli")
     if latest and version.parse(latest) > version.parse(__version__):
-        logger.warning(f"🚀 ARGO PROXY v{__version__}")
-        logger.warning(f"🆕 UPDATE AVAILABLE: v{latest}")
-        logger.info("   └─ Run: pip install --upgrade argo-proxy")
+        log_warning(f"🚀 ARGO PROXY v{__version__}", context="cli")
+        log_warning(f"🆕 UPDATE AVAILABLE: v{latest}", context="cli")
+        log_info("   └─ Run: pip install --upgrade argo-proxy", context="cli")
     else:
-        logger.warning(f"🚀 ARGO PROXY v{__version__} (Latest)")
-    logger.info("=" * 80)
+        log_warning(f"🚀 ARGO PROXY v{__version__} (Latest)", context="cli")
+    log_info("=" * 80, context="cli")
 
 
 def collect_leaked_logs(config_path: Optional[str] = None):
@@ -321,71 +322,88 @@ def collect_leaked_logs(config_path: Optional[str] = None):
     import tarfile
     from datetime import datetime
     from pathlib import Path
-    
+
     from .config import load_config
-    
+
     # Get log directory
     config_data, actual_config_path = load_config(config_path, verbose=False)
-    
+
     if actual_config_path:
         log_dir = actual_config_path.parent / "leaked_tool_calls"
     else:
         log_dir = Path.cwd() / "leaked_tool_calls"
-    
+
     if not log_dir.exists():
-        logger.error(f"Log directory not found: {log_dir}")
-        logger.info("No leaked tool call logs to collect.")
+        log_error(f"Log directory not found: {log_dir}", context="cli")
+        log_info("No leaked tool call logs to collect.", context="cli")
         return
-    
+
     # Find all log files (both .json and .json.gz)
     json_files = list(log_dir.glob("leaked_tool_*.json"))
     gz_files = list(log_dir.glob("leaked_tool_*.json.gz"))
-    
+
     if not json_files and not gz_files:
-        logger.info(f"No leaked tool call logs found in {log_dir}")
+        log_info(f"No leaked tool call logs found in {log_dir}", context="cli")
         return
-    
+
     # Create archive filename with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     archive_name = f"leaked_tool_logs_{timestamp}.tar.gz"
     archive_path = Path.cwd() / archive_name
-    
-    logger.info(f"Collecting {len(json_files)} JSON and {len(gz_files)} compressed logs...")
-    logger.info(f"Creating archive: {archive_path}")
-    
+
+    log_info(
+        f"Collecting {len(json_files)} JSON and {len(gz_files)} compressed logs...",
+        context="cli",
+    )
+    log_info(f"Creating archive: {archive_path}", context="cli")
+
     try:
         with tarfile.open(archive_path, "w:gz") as tar:
             # Add all JSON files (will be compressed by tar.gz)
             for json_file in json_files:
                 tar.add(json_file, arcname=json_file.name)
-            
+
             # Add all .json.gz files (already compressed, but tar.gz will try again)
             for gz_file in gz_files:
                 tar.add(gz_file, arcname=gz_file.name)
-        
+
         # Get archive size
         archive_size = archive_path.stat().st_size
-        logger.info("=" * 80)
-        logger.info("✅ Archive created successfully!")
-        logger.info(f"   Location: {archive_path}")
-        logger.info(f"   Size: {archive_size / 1024 / 1024:.2f} MB")
-        logger.info(f"   Files: {len(json_files) + len(gz_files)} logs")
-        logger.info("=" * 80)
-        logger.info("")
-        logger.info("📊 These logs are crucial for improving argo-proxy and Argo API!")
-        logger.info("")
-        logger.info("They contain examples of Claude model's tool call buggy forms,")
-        logger.info("which help us understand and fix edge cases in tool call handling.")
-        logger.info("")
-        logger.info("Please send this archive to:")
-        logger.info("  • Matthew Dearing (Argo API maintainer): mdearing@anl.gov")
-        logger.info("  • Peng Ding (argo-proxy maintainer): dingpeng@uchicago.edu")
-        logger.info("")
-        logger.info("Thank you for helping us improve the service! 🙏")
-        logger.info("=" * 80)
-        
+        log_info("=" * 80, context="cli")
+        log_info("✅ Archive created successfully!", context="cli")
+        log_info(f"   Location: {archive_path}", context="cli")
+        log_info(f"   Size: {archive_size / 1024 / 1024:.2f} MB", context="cli")
+        log_info(f"   Files: {len(json_files) + len(gz_files)} logs", context="cli")
+        log_info("=" * 80, context="cli")
+        log_info("", context="cli")
+        log_info(
+            "📊 These logs are crucial for improving argo-proxy and Argo API!",
+            context="cli",
+        )
+        log_info("", context="cli")
+        log_info(
+            "They contain examples of Claude model's tool call buggy forms,",
+            context="cli",
+        )
+        log_info(
+            "which help us understand and fix edge cases in tool call handling.",
+            context="cli",
+        )
+        log_info("", context="cli")
+        log_info("Please send this archive to:", context="cli")
+        log_info(
+            "  • Matthew Dearing (Argo API maintainer): mdearing@anl.gov", context="cli"
+        )
+        log_info(
+            "  • Peng Ding (argo-proxy maintainer): dingpeng@uchicago.edu",
+            context="cli",
+        )
+        log_info("", context="cli")
+        log_info("Thank you for helping us improve the service! 🙏", context="cli")
+        log_info("=" * 80, context="cli")
+
     except Exception as e:
-        logger.error(f"Failed to create archive: {e}")
+        log_error(f"Failed to create archive: {e}", context="cli")
         sys.exit(1)
 
 
@@ -412,17 +430,17 @@ def main():
         # Validate config in main process only
         config_instance = validate_config(args.config, args.show)
         if args.validate:
-            logger.info("Configuration validation successful.")
+            log_info("Configuration validation successful.", context="cli")
             return
         run(host=config_instance.host, port=config_instance.port)
     except KeyError:
-        logger.error("Port not specified in configuration file.")
+        log_error("Port not specified in configuration file.", context="cli")
         sys.exit(1)
     except subprocess.CalledProcessError as e:
-        logger.error(f"Failed to start ArgoProxy server: {e}")
+        log_error(f"Failed to start ArgoProxy server: {e}", context="cli")
         sys.exit(1)
     except Exception as e:
-        logger.error(f"An error occurred while starting the server: {e}")
+        log_error(f"An error occurred while starting the server: {e}", context="cli")
         sys.exit(1)
 
 

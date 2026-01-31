@@ -4,7 +4,8 @@ import socket
 from typing import Optional
 
 from aiohttp import web
-from loguru import logger
+
+from .logging import log_error
 
 
 def make_bar(message: str = "", bar_length=40) -> str:
@@ -26,22 +27,26 @@ def validate_input(json_input: dict, endpoint: str) -> bool:
     elif endpoint == "embeddings":
         required_fields = ["model", "input"]
     else:
-        logger.error(f"Unknown endpoint: {endpoint}")
+        log_error(f"Unknown endpoint: {endpoint}", context="misc.validate_input")
         return False
 
     # check required field presence and type
     for field in required_fields:
         if field not in json_input:
-            logger.error(f"Missing required field: {field}")
+            log_error(f"Missing required field: {field}", context="misc.validate_input")
             return False
         if field == "messages" and not isinstance(json_input[field], list):
-            logger.error(f"Field {field} must be a list")
+            log_error(f"Field {field} must be a list", context="misc.validate_input")
             return False
         if field == "prompt" and not isinstance(json_input[field], (str, list)):
-            logger.error(f"Field {field} must be a string or list")
+            log_error(
+                f"Field {field} must be a string or list", context="misc.validate_input"
+            )
             return False
         if field == "input" and not isinstance(json_input[field], (str, list)):
-            logger.error(f"Field {field} must be a string or list")
+            log_error(
+                f"Field {field} must be a string or list", context="misc.validate_input"
+            )
             return False
 
     return True

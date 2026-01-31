@@ -11,13 +11,20 @@ from typing import Union
 
 import aiohttp
 from aiohttp import web
-from loguru import logger
 
 from ..config import ArgoConfig
 from ..models import ModelRegistry
 from ..tool_calls.input_handle import handle_tools
 from ..utils.image_processing import process_chat_images
-from ..utils.misc import apply_username_passthrough, make_bar
+from ..utils.logging import (
+    log_converted_request,
+    log_debug,
+    log_error,
+    log_info,
+    log_original_request,
+    log_upstream_error,
+)
+from ..utils.misc import apply_username_passthrough
 from ..utils.models import determine_model_family
 
 
@@ -45,10 +52,8 @@ async def proxy_native_openai_request(
         # Get the incoming request data
         data = await request.json()
 
-        if config.verbose:
-            logger.info(make_bar(f"[native-openai/{endpoint_path}] input"))
-            logger.info(json.dumps(data, indent=4))
-            logger.info(make_bar())
+        # Log original request
+        log_original_request(data, verbose=config.verbose)
 
         # Use the shared HTTP session from app context
         session = request.app["http_session"]
@@ -63,7 +68,10 @@ async def proxy_native_openai_request(
             )
 
             if config.verbose and data["model"] != original_model:
-                logger.info(f"Model name resolved: {original_model} -> {data['model']}")
+                log_info(
+                    f"Model name resolved: {original_model} -> {data['model']}",
+                    context="native_openai",
+                )
 
         # Process image URLs for chat endpoints (download and convert to base64)
         if endpoint_path == "chat/completions":
@@ -97,9 +105,14 @@ async def proxy_native_openai_request(
         if "Authorization" in request.headers:
             headers["Authorization"] = request.headers["Authorization"]
 
+        # Log converted request
+        log_converted_request(data, verbose=config.verbose)
+
         if config.verbose:
-            logger.info(f"Forwarding to: {upstream_url}")
-            logger.info(f"Stream mode: {stream}")
+            log_debug(
+                f"Forwarding to: {upstream_url}, stream={stream}",
+                context="native_openai",
+            )
 
         if stream:
             # Handle streaming response
@@ -113,7 +126,7 @@ async def proxy_native_openai_request(
             )
 
     except ValueError as err:
-        logger.error(f"ValueError: {err}")
+        log_error(f"ValueError: {err}", context="native_openai.proxy")
         return web.json_response(
             {"error": str(err)},
             status=HTTPStatus.BAD_REQUEST,
@@ -121,7 +134,7 @@ async def proxy_native_openai_request(
         )
     except aiohttp.ClientError as err:
         error_message = f"HTTP error occurred: {err}"
-        logger.error(error_message)
+        log_error(error_message, context="native_openai.proxy")
         return web.json_response(
             {"error": error_message},
             status=HTTPStatus.SERVICE_UNAVAILABLE,
@@ -129,7 +142,7 @@ async def proxy_native_openai_request(
         )
     except Exception as err:
         error_message = f"An unexpected error occurred: {err}"
-        logger.error(error_message)
+        log_error(error_message, context="native_openai.proxy")
         return web.json_response(
             {"error": error_message},
             status=HTTPStatus.INTERNAL_SERVER_ERROR,
@@ -221,6 +234,12 @@ async def _handle_streaming_passthrough(
         ) as upstream_resp:
             if upstream_resp.status != 200:
                 error_text = await upstream_resp.text()
+                log_upstream_error(
+                    upstream_resp.status,
+                    error_text,
+                    endpoint="native_openai",
+                    is_streaming=True,
+                )
                 return web.json_response(
                     {
                         "error": f"Upstream API error: {upstream_resp.status} {error_text}"

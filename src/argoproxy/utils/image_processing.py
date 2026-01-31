@@ -6,7 +6,8 @@ from typing import Any, Dict, List, Optional, Set
 from urllib.parse import urlparse
 
 import aiohttp
-from loguru import logger
+
+from .logging import log_error, log_info, log_warning
 
 try:
     from PIL import Image
@@ -14,7 +15,10 @@ try:
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
-    logger.warning("PIL/Pillow not available. Image downsampling will be disabled.")
+    log_warning(
+        "PIL/Pillow not available. Image downsampling will be disabled.",
+        context="image_processing",
+    )
 
 # Supported image formats
 SUPPORTED_IMAGE_FORMATS: Set[str] = {
@@ -54,19 +58,33 @@ def truncate_base64_for_logging(data_url: str, max_length: int = 100) -> str:
 
 
 def sanitize_data_for_logging(
-    data: Dict[str, Any], max_base64_length: int = 100
+    data: Dict[str, Any],
+    max_base64_length: int = 100,
+    max_content_length: int = 500,
+    max_tool_desc_length: int = 100,
+    truncate_tools: bool = True,
 ) -> Dict[str, Any]:
     """
-    Sanitizes request data for logging by truncating base64 content.
+    Sanitizes request data for logging by truncating long content.
 
     Args:
         data: The request data dictionary.
         max_base64_length: Maximum length to show for base64 content.
+        max_content_length: Maximum length to show for message content.
+        max_tool_desc_length: Maximum length to show for tool descriptions.
+        truncate_tools: Whether to truncate tool definitions.
 
     Returns:
-        Sanitized data dictionary with truncated base64 content.
+        Sanitized data dictionary with truncated content for cleaner logging.
     """
     import copy
+
+    def truncate_string(s: str, max_length: int, suffix: str = "...") -> str:
+        """Truncate a string to max_length with suffix."""
+        if len(s) <= max_length:
+            return s
+        remaining = len(s) - max_length
+        return f"{s[:max_length]}{suffix}[{remaining} more chars]"
 
     # Deep copy to avoid modifying original data
     sanitized = copy.deepcopy(data)
@@ -77,22 +95,82 @@ def sanitize_data_for_logging(
             if isinstance(message, dict) and "content" in message:
                 content = message["content"]
 
+                # Process string content (truncate long system prompts, etc.)
+                if isinstance(content, str) and len(content) > max_content_length:
+                    message["content"] = truncate_string(content, max_content_length)
+
                 # Process list-type content (multimodal messages)
-                if isinstance(content, list):
+                elif isinstance(content, list):
                     for content_part in content:
-                        if (
-                            isinstance(content_part, dict)
-                            and content_part.get("type") == "image_url"
-                            and "image_url" in content_part
-                            and "url" in content_part["image_url"]
-                        ):
-                            url = content_part["image_url"]["url"]
-                            if url.startswith("data:"):
-                                content_part["image_url"]["url"] = (
-                                    truncate_base64_for_logging(url, max_base64_length)
+                        if isinstance(content_part, dict):
+                            # Handle image URLs
+                            if (
+                                content_part.get("type") == "image_url"
+                                and "image_url" in content_part
+                                and "url" in content_part["image_url"]
+                            ):
+                                url = content_part["image_url"]["url"]
+                                if url.startswith("data:"):
+                                    content_part["image_url"]["url"] = (
+                                        truncate_base64_for_logging(
+                                            url, max_base64_length
+                                        )
+                                    )
+                            # Handle text content
+                            elif (
+                                content_part.get("type") == "text"
+                                and "text" in content_part
+                                and isinstance(content_part["text"], str)
+                                and len(content_part["text"]) > max_content_length
+                            ):
+                                content_part["text"] = truncate_string(
+                                    content_part["text"], max_content_length
                                 )
 
+    # Process tools if they exist and truncation is enabled
+    if truncate_tools and "tools" in sanitized and isinstance(sanitized["tools"], list):
+        tool_count = len(sanitized["tools"])
+        # Replace tools with a summary
+        sanitized["tools"] = f"[{tool_count} tools defined - truncated for logging]"
+
     return sanitized
+
+
+def create_request_summary(data: Dict[str, Any]) -> str:
+    """
+    Creates a concise summary of a request for logging.
+
+    Args:
+        data: The request data dictionary.
+
+    Returns:
+        A concise summary string.
+    """
+    summary_parts = []
+
+    # Model
+    if "model" in data:
+        summary_parts.append(f"model={data['model']}")
+
+    # Message count
+    if "messages" in data and isinstance(data["messages"], list):
+        msg_count = len(data["messages"])
+        summary_parts.append(f"messages={msg_count}")
+
+    # Tools
+    if "tools" in data and isinstance(data["tools"], list):
+        tool_count = len(data["tools"])
+        summary_parts.append(f"tools={tool_count}")
+
+    # Stream
+    if "stream" in data:
+        summary_parts.append(f"stream={data['stream']}")
+
+    # Max tokens
+    if "max_tokens" in data:
+        summary_parts.append(f"max_tokens={data['max_tokens']}")
+
+    return ", ".join(summary_parts)
 
 
 async def download_image_to_base64(
@@ -113,15 +191,18 @@ async def download_image_to_base64(
         # Validate URL
         parsed_url = urlparse(url)
         if not parsed_url.scheme or not parsed_url.netloc:
-            logger.warning(f"Invalid URL format: {url}")
+            log_warning(
+                f"Invalid URL format: {url}", context="image_processing.download"
+            )
             return None
 
         # Download the image
         timeout_obj = aiohttp.ClientTimeout(total=timeout)
         async with session.get(url, timeout=timeout_obj) as response:
             if response.status != 200:
-                logger.warning(
-                    f"Failed to download image from {url}: HTTP {response.status}"
+                log_warning(
+                    f"Failed to download image from {url}: HTTP {response.status}",
+                    context="image_processing.download",
                 )
                 return None
 
@@ -137,16 +218,21 @@ async def download_image_to_base64(
 
             # Validate it's a supported image format
             if not is_supported_image_format(content_type, url):
-                logger.warning(
-                    f"Unsupported image format: {url} (content-type: {content_type})"
+                log_warning(
+                    f"Unsupported image format: {url} (content-type: {content_type})",
+                    context="image_processing.download",
                 )
-                logger.info(f"Supported formats: {', '.join(SUPPORTED_IMAGE_FORMATS)}")
+                log_info(
+                    f"Supported formats: {', '.join(SUPPORTED_IMAGE_FORMATS)}",
+                    context="image_processing",
+                )
                 return None
 
             # Validate image content with magic bytes
             if not validate_image_content(image_data, content_type):
-                logger.warning(
-                    f"Image content validation failed: {url} (content-type: {content_type})"
+                log_warning(
+                    f"Image content validation failed: {url} (content-type: {content_type})",
+                    context="image_processing.download",
                 )
                 return None
 
@@ -155,10 +241,15 @@ async def download_image_to_base64(
             return f"data:{content_type};base64,{b64_data}"
 
     except asyncio.TimeoutError:
-        logger.warning(f"Timeout downloading image from {url}")
+        log_warning(
+            f"Timeout downloading image from {url}", context="image_processing.download"
+        )
         return None
     except Exception as e:
-        logger.warning(f"Error downloading image from {url}: {e}")
+        log_warning(
+            f"Error downloading image from {url}: {e}",
+            context="image_processing.download",
+        )
         return None
 
 
@@ -228,15 +319,19 @@ def downsample_images_for_payload(
         List of (processed_image_data, final_content_type) tuples that fits within the payload limit.
     """
     if not PIL_AVAILABLE:
-        logger.warning("PIL not available, skipping image downsampling")
+        log_warning(
+            "PIL not available, skipping image downsampling",
+            context="image_processing.downsample",
+        )
         return [img_data for img_data, _ in images]
 
     total_size = sum(len(img_data) for img_data, _ in images)
     if total_size <= max_payload_size:
         return [(img_data, content_type) for img_data, content_type in images]
 
-    logger.info(
-        f"Total payload size {total_size} bytes exceeds limit {max_payload_size} bytes, reducing image quality"
+    log_info(
+        f"Total payload size {total_size} bytes exceeds limit {max_payload_size} bytes, reducing image quality",
+        context="image_processing.downsample",
     )
 
     # Calculate target compression ratio
@@ -312,16 +407,20 @@ def downsample_images_for_payload(
             image.save(output_buffer, format=output_format, **save_kwargs)
             downsampled_data = output_buffer.getvalue()
 
-            logger.info(
+            log_info(
                 f"Image quality reduced: {original_size} bytes -> {len(downsampled_data)} bytes "
                 f"(quality: {save_kwargs.get('quality', 'optimized')}, format: {output_format}, "
-                f"content-type: {content_type} -> {final_content_type})"
+                f"content-type: {content_type} -> {final_content_type})",
+                context="image_processing.downsample",
             )
 
             processed_images.append((downsampled_data, final_content_type))
 
         except Exception as e:
-            logger.warning(f"Failed to reduce image quality: {e}, using original")
+            log_warning(
+                f"Failed to reduce image quality: {e}, using original",
+                context="image_processing.downsample",
+            )
             processed_images.append((img_data, content_type))
 
     return processed_images
@@ -344,7 +443,10 @@ def downsample_image_if_needed(
         The original or downsampled image data.
     """
     if not PIL_AVAILABLE:
-        logger.warning("PIL not available, skipping image downsampling")
+        log_warning(
+            "PIL not available, skipping image downsampling",
+            context="image_processing.downsample",
+        )
         return image_data
 
     if len(image_data) <= max_size:
@@ -387,15 +489,19 @@ def downsample_image_if_needed(
         resized_image.save(output_buffer, format=output_format, **save_kwargs)
         downsampled_data = output_buffer.getvalue()
 
-        logger.info(
+        log_info(
             f"Image downsampled: {original_size} bytes -> {len(downsampled_data)} bytes "
-            f"({image.width}x{image.height} -> {new_width}x{new_height})"
+            f"({image.width}x{image.height} -> {new_width}x{new_height})",
+            context="image_processing.downsample",
         )
 
         return downsampled_data
 
     except Exception as e:
-        logger.warning(f"Failed to downsample image: {e}, using original")
+        log_warning(
+            f"Failed to downsample image: {e}, using original",
+            context="image_processing.downsample",
+        )
         return image_data
 
 
@@ -464,7 +570,9 @@ def collect_image_urls_from_content_part(content_part: Dict[str, Any]) -> List[s
     if is_http_url(url):
         urls.append(url)
     else:
-        logger.warning(f"Unsupported URL scheme for image: {url}")
+        log_warning(
+            f"Unsupported URL scheme for image: {url}", context="image_processing"
+        )
 
     return urls
 
@@ -500,11 +608,14 @@ async def apply_downloaded_images_to_content_part(
         content_part = content_part.copy()
         content_part["image_url"] = image_url_obj.copy()
         content_part["image_url"]["url"] = base64_url
-        logger.info(
-            f"Successfully applied downloaded image (size: {len(base64_url)} chars): {truncate_base64_for_logging(base64_url)}"
+        log_info(
+            f"Successfully applied downloaded image (size: {len(base64_url)} chars): {truncate_base64_for_logging(base64_url)}",
+            context="image_processing",
         )
     else:
-        logger.error(f"Failed to convert image URL to base64: {url}")
+        log_error(
+            f"Failed to convert image URL to base64: {url}", context="image_processing"
+        )
 
     return content_part
 
@@ -614,7 +725,10 @@ async def process_chat_images(
     max_payload_size = max_payload_mb * 1024 * 1024  # Convert MB to bytes
 
     # Step 2: Download all images concurrently
-    logger.info(f"Starting parallel download of {len(all_urls)} images")
+    log_info(
+        f"Starting parallel download of {len(all_urls)} images",
+        context="image_processing",
+    )
     download_tasks = [
         download_image_to_base64(session, url, timeout=timeout) for url in all_urls
     ]
@@ -628,7 +742,9 @@ async def process_chat_images(
 
     for url, result in zip(all_urls, download_results):
         if isinstance(result, Exception):
-            logger.error(f"Failed to download image {url}: {result}")
+            log_error(
+                f"Failed to download image {url}: {result}", context="image_processing"
+            )
             url_to_base64[url] = None
         else:
             if result:
@@ -638,7 +754,10 @@ async def process_chat_images(
                     content_type = header.replace("data:", "")
                     img_data = base64.b64decode(b64_data)
                     successful_downloads.append((img_data, content_type, url, result))
-                    logger.info(f"Successfully downloaded image: {url}")
+                    log_info(
+                        f"Successfully downloaded image: {url}",
+                        context="image_processing",
+                    )
                 else:
                     url_to_base64[url] = None
             else:
@@ -647,13 +766,15 @@ async def process_chat_images(
     # Step 4: Check total payload size and downsample if needed
     if successful_downloads:
         total_size = sum(len(img_data) for img_data, _, _, _ in successful_downloads)
-        logger.info(
-            f"Total image payload size: {total_size} bytes ({total_size / 1024 / 1024:.2f} MB)"
+        log_info(
+            f"Total image payload size: {total_size} bytes ({total_size / 1024 / 1024:.2f} MB)",
+            context="image_processing",
         )
 
         if enable_payload_control and total_size > max_payload_size:
-            logger.warning(
-                f"Payload size [{total_size / 1024 / 1024:.2f}] MB exceeds limit [{max_payload_mb}] MB, reducing image quality"
+            log_warning(
+                f"Payload size [{total_size / 1024 / 1024:.2f}] MB exceeds limit [{max_payload_mb}] MB, reducing image quality",
+                context="image_processing",
             )
             # Prepare data for downsampling
             images_for_processing = [
@@ -679,8 +800,9 @@ async def process_chat_images(
         else:
             # Use original images (either payload control disabled or size within limit)
             if not enable_payload_control and total_size > max_payload_size:
-                logger.info(
-                    f"Payload control disabled - passing through {total_size / 1024 / 1024:.2f} MB payload (exceeds {max_payload_mb} MB limit)"
+                log_info(
+                    f"Payload control disabled - passing through {total_size / 1024 / 1024:.2f} MB payload (exceeds {max_payload_mb} MB limit)",
+                    context="image_processing",
                 )
             for _, _, url, original_result in successful_downloads:
                 url_to_base64[url] = original_result

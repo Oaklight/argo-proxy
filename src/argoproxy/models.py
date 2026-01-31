@@ -7,11 +7,11 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple
 
-from loguru import logger
 from pydantic import BaseModel
 from tqdm.asyncio import tqdm_asyncio
 
 from .config import ArgoConfig, _get_yes_no_input_with_timeout
+from .utils.logging import log_error, log_info, log_warning
 from .utils.transports import validate_api_async
 
 DEFAULT_TIMEOUT = 30
@@ -279,38 +279,48 @@ def get_upstream_model_list(url: str) -> Dict[str, str]:
         A dictionary containing the list of available models mapping
         argo model names to internal IDs.
     """
-    logger.info(f"Starting model list fetch from: {url}")
+    log_info(f"Starting model list fetch from: {url}", context="models")
 
     try:
         # Create request object
         req = urllib.request.Request(url)
         req.add_header("User-Agent", "argo-proxy/1.0")
 
-        logger.info(f"Sending request to: {url}")
+        log_info(f"Sending request to: {url}", context="models")
 
         # Use detailed parameters
         with urllib.request.urlopen(req, timeout=30) as response:
             status_code = response.getcode()
-            logger.info(f"Received response with status code: {status_code}")
+            log_info(
+                f"Received response with status code: {status_code}", context="models"
+            )
 
             raw_data = response.read().decode()
-            logger.info(f"Response data length: {len(raw_data)} characters")
+            log_info(
+                f"Response data length: {len(raw_data)} characters", context="models"
+            )
 
             # Parse JSON
             data = json.loads(raw_data)
             model_count = len(data.get("data", []))
-            logger.info(f"Parsed {model_count} models")
+            log_info(f"Parsed {model_count} models", context="models")
 
             # Detect API format
             if data.get("data") and len(data["data"]) > 0:
                 sample_model = data["data"][0]
                 if "model_name" in sample_model:
-                    logger.info("Detected old format API (contains model_name field)")
+                    log_info(
+                        "Detected old format API (contains model_name field)",
+                        context="models",
+                    )
                 elif "internal_id" in sample_model:
-                    logger.info("Detected new format API (contains internal_id field)")
+                    log_info(
+                        "Detected new format API (contains internal_id field)",
+                        context="models",
+                    )
                 else:
-                    logger.warning("Detected unknown format API")
-                logger.info(f"Sample model data: {sample_model}")
+                    log_warning("Detected unknown format API", context="models")
+                log_info(f"Sample model data: {sample_model}", context="models")
 
             models = (
                 [Model(**model) for model in data.get("data", [])]
@@ -319,54 +329,58 @@ def get_upstream_model_list(url: str) -> Dict[str, str]:
             )
 
             argo_models = produce_argo_model_list(models)
-            logger.info(
-                f"Successfully fetched model list with {len(argo_models)} models"
+            log_info(
+                f"Successfully fetched model list with {len(argo_models)} models",
+                context="models",
             )
 
             # Show first few model mappings for verification
             if argo_models:
                 sample_mappings = list(argo_models.items())[:3]
-                logger.info(f"Sample model mappings: {sample_mappings}")
+                log_info(f"Sample model mappings: {sample_mappings}", context="models")
 
             return argo_models
 
     except urllib.error.HTTPError as e:
-        logger.error(f"HTTP error fetching model list from {url}")
-        logger.error(f"HTTP status code: {e.code}")
-        logger.error(f"HTTP error message: {e.reason}")
+        log_error(f"HTTP error fetching model list from {url}", context="models")
+        log_error(f"HTTP status code: {e.code}", context="models")
+        log_error(f"HTTP error message: {e.reason}", context="models")
         if hasattr(e, "read"):
             try:
                 error_body = e.read().decode()
-                logger.error(f"HTTP error response body: {error_body}")
-            except:
+                log_error(f"HTTP error response body: {error_body}", context="models")
+            except Exception:
                 pass
-        logger.warning("Using built-in model list.")
+        log_warning("Using built-in model list.", context="models")
         return _DEFAULT_CHAT_MODELS
 
     except urllib.error.URLError as e:
-        logger.error(f"URL error fetching model list from {url}")
-        logger.error(f"Network error message: {e.reason}")
-        logger.warning("Using built-in model list.")
+        log_error(f"URL error fetching model list from {url}", context="models")
+        log_error(f"Network error message: {e.reason}", context="models")
+        log_warning("Using built-in model list.", context="models")
         return _DEFAULT_CHAT_MODELS
 
     except json.JSONDecodeError as e:
-        logger.error(f"JSON parsing error fetching model list from {url}")
-        logger.error(f"JSON error: {e}")
-        logger.error(
-            f"Response content first 200 chars: {raw_data[:200] if 'raw_data' in locals() else 'unknown'}"
+        log_error(
+            f"JSON parsing error fetching model list from {url}", context="models"
         )
-        logger.warning("Using built-in model list.")
+        log_error(f"JSON error: {e}", context="models")
+        log_error(
+            f"Response content first 200 chars: {raw_data[:200] if 'raw_data' in locals() else 'unknown'}",
+            context="models",
+        )
+        log_warning("Using built-in model list.", context="models")
         return _DEFAULT_CHAT_MODELS
 
     except Exception as e:
-        logger.error(f"Unknown error fetching model list from {url}")
-        logger.error(f"Error type: {type(e).__name__}")
-        logger.error(f"Error message: {str(e)}")
-        logger.error(f"Detailed error: {e}")
+        log_error(f"Unknown error fetching model list from {url}", context="models")
+        log_error(f"Error type: {type(e).__name__}", context="models")
+        log_error(f"Error message: {str(e)}", context="models")
+        log_error(f"Detailed error: {e}", context="models")
         import traceback
 
-        logger.error(f"Exception traceback: {traceback.format_exc()}")
-        logger.warning("Using built-in model list.")
+        log_error(f"Exception traceback: {traceback.format_exc()}", context="models")
+        log_warning("Using built-in model list.", context="models")
         return _DEFAULT_CHAT_MODELS
 
 
@@ -401,7 +415,7 @@ async def _check_model_streamability(
             )
             return (model_id, False)
         except Exception:
-            logger.error(f"All attempts failed for model ID: {model_id}")
+            log_error(f"All attempts failed for model ID: {model_id}", context="models")
             return (model_id, None)
 
 
@@ -430,7 +444,7 @@ def _categorize_results(
             unavailable.update(aliases)
 
     if unavailable:
-        logger.warning(f"Unavailable models: {unavailable}")
+        log_warning(f"Unavailable models: {unavailable}", context="models")
         if _get_yes_no_input_with_timeout(
             "Do you want to keep using them? It might be a temporary issue. [Y/n]",
             timeout=5,
@@ -438,8 +452,9 @@ def _categorize_results(
             non_streamable.update(unavailable)
             unavailable.clear()
         else:
-            logger.error(
-                "Proceeding without unavailable models. Subsequent calls to these models will be replaced with argo:gpt-4o"
+            log_error(
+                "Proceeding without unavailable models. Subsequent calls to these models will be replaced with argo:gpt-4o",
+                context="models",
             )
 
     return (
@@ -510,7 +525,9 @@ class ModelRegistry:
         try:
             await self.refresh_availability()
         except Exception as e:
-            logger.error(f"Initial availability check failed: {str(e)}")
+            log_error(
+                f"Initial availability check failed: {str(e)}", context="ModelRegistry"
+            )
 
         # # Start periodic refresh (default 24h)
         # self._refresh_task = asyncio.create_task(
@@ -523,15 +540,18 @@ class ModelRegistry:
             raise ValueError("Failed to load valid configuration")
 
         # Initial model list fetch
-        logger.info(
-            f"Starting model registry initialization, URL: {self._config.argo_model_url}"
+        log_info(
+            f"Starting model registry initialization, URL: {self._config.argo_model_url}",
+            context="ModelRegistry",
         )
         self._chat_models = get_upstream_model_list(self._config.argo_model_url)
-        logger.info(
-            f"Model registry initialization completed with {len(self._chat_models)} models"
+        log_info(
+            f"Model registry initialization completed with {len(self._chat_models)} models",
+            context="ModelRegistry",
         )
-        logger.info(
-            f"Model registry initialization mode: {'Upstream API' if len(self._chat_models) > 32 else 'Built-in list'}"
+        log_info(
+            f"Model registry initialization mode: {'Upstream API' if len(self._chat_models) > 32 else 'Built-in list'}",
+            context="ModelRegistry",
         )
 
         try:
@@ -573,12 +593,19 @@ class ModelRegistry:
                 self.available_chat_models, NATIVE_TOOL_CALL_PATTERNS
             )
 
-            logger.info("Model availability refreshed successfully")
+            log_info(
+                "Model availability refreshed successfully", context="ModelRegistry"
+            )
         except Exception as e:
-            logger.error(f"Failed to refresh model availability: {str(e)}")
+            log_error(
+                f"Failed to refresh model availability: {str(e)}",
+                context="ModelRegistry",
+            )
             if not self._last_updated:
                 self._chat_models = _DEFAULT_CHAT_MODELS
-                logger.warning("Falling back to default model list")
+                log_warning(
+                    "Falling back to default model list", context="ModelRegistry"
+                )
 
     # async def _periodic_refresh(self, interval_hours: float):
     #     """Background task for periodic refresh"""
@@ -594,7 +621,7 @@ class ModelRegistry:
         try:
             await self.refresh_availability(real_test=True)
         except Exception as e:
-            logger.error(f"Manual refresh failed: {str(e)}")
+            log_error(f"Manual refresh failed: {str(e)}", context="ModelRegistry")
 
     def resolve_model_name(
         self,
@@ -794,8 +821,18 @@ if __name__ == "__main__":
     model_registry = ModelRegistry(config)
     asyncio.run(model_registry.initialize())
 
-    logger.info(f"Available stream models: {model_registry.streamable_models}")
-    logger.info(f"Available non-stream models: {model_registry.non_streamable_models}")
-    logger.info(f"Unavailable models: {model_registry.unavailable_models}")
+    log_info(
+        f"Available stream models: {model_registry.streamable_models}", context="models"
+    )
+    log_info(
+        f"Available non-stream models: {model_registry.non_streamable_models}",
+        context="models",
+    )
+    log_info(
+        f"Unavailable models: {model_registry.unavailable_models}", context="models"
+    )
 
-    logger.info(f"Native tool call models: {model_registry.native_tool_call_models}")
+    log_info(
+        f"Native tool call models: {model_registry.native_tool_call_models}",
+        context="models",
+    )

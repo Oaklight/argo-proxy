@@ -7,13 +7,18 @@ from typing import Any, Awaitable, Callable, Dict, Optional, Union, cast
 
 import aiohttp
 from aiohttp import web
-from loguru import logger
 
 from ..config import ArgoConfig
 from ..models import ModelRegistry
 from ..types import Completion, CompletionChoice
 from ..types.completions import FINISH_REASONS
-from ..utils.misc import apply_username_passthrough, make_bar
+from ..utils.logging import (
+    log_converted_request,
+    log_original_request,
+    log_upstream_error,
+)
+from ..utils.misc import apply_username_passthrough
+from ..utils.models import apply_claude_max_tokens_limit
 from ..utils.tokens import count_tokens, count_tokens_async
 from ..utils.transports import pseudo_chunk_generator, send_off_sse
 from ..utils.usage import create_usage, generate_usage_chunk
@@ -275,7 +280,7 @@ async def send_streaming_completions_request(
         response_headers = {"Content-Type": "text/plain; charset=utf-8"}
 
     if pseudo_stream:
-        data["stream"] = False
+        # Note: data["stream"] is already set to False in proxy_request when pseudo_stream is True
         api_url = config.argo_url
     else:
         api_url = config.argo_stream_url
@@ -284,13 +289,27 @@ async def send_streaming_completions_request(
         async with session.post(api_url, headers=headers, json=data) as upstream_resp:
             if upstream_resp.status != 200:
                 error_text = await upstream_resp.text()
-                return web.json_response(
-                    {
-                        "error": f"Upstream API error: {upstream_resp.status} {error_text}"
-                    },
-                    status=upstream_resp.status,
-                    content_type="application/json",
+                log_upstream_error(
+                    upstream_resp.status,
+                    error_text,
+                    endpoint="completion",
+                    is_streaming=True,
                 )
+                try:
+                    error_json = json.loads(error_text)
+                    return web.json_response(
+                        error_json,
+                        status=upstream_resp.status,
+                        content_type="application/json",
+                    )
+                except json.JSONDecodeError:
+                    return web.json_response(
+                        {
+                            "error": f"Upstream API error: {upstream_resp.status} {error_text}"
+                        },
+                        status=upstream_resp.status,
+                        content_type="application/json",
+                    )
 
             response_headers.update(
                 {
@@ -363,13 +382,27 @@ async def proxy_request(
 
         if not data:
             raise ValueError("Invalid input. Expected JSON data.")
-        if config.verbose:
-            logger.info(make_bar("[completion] input"))
-            logger.info(json.dumps(data, indent=4))
-            logger.info(make_bar())
+
+        # Log original request
+        log_original_request(data, verbose=config.verbose)
 
         data = prepare_chat_request_data(data, config, model_registry)
         apply_username_passthrough(data, request, config.user)
+
+        # Determine actual streaming mode for upstream request
+        use_pseudo_stream = config.pseudo_stream
+        if stream and use_pseudo_stream:
+            # When using pseudo_stream, upstream request is non-streaming
+            data["stream"] = False
+
+        # Apply Claude max_tokens limit for non-streaming requests
+        is_non_streaming_upstream = not stream or use_pseudo_stream
+        data = apply_claude_max_tokens_limit(
+            data, is_non_streaming=is_non_streaming_upstream
+        )
+
+        # Log converted request (now reflects actual upstream request mode)
+        log_converted_request(data, verbose=config.verbose)
 
         session = request.app["http_session"]
 
@@ -381,7 +414,7 @@ async def proxy_request(
                 request,
                 convert_to_openai=True,
                 openai_compat_fn=transform_completions_compat_async,
-                pseudo_stream=config.pseudo_stream,
+                pseudo_stream=use_pseudo_stream,
             )
         else:
             return await send_non_streaming_request(

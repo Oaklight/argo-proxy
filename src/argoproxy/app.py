@@ -4,7 +4,6 @@ import signal
 import sys
 
 from aiohttp import web
-from loguru import logger
 
 from .__init__ import __version__
 from .config import ArgoConfig, load_config
@@ -16,6 +15,7 @@ from .performance import (
     get_performance_config,
     optimize_event_loop,
 )
+from .utils.logging import log_error, log_info, log_warning
 
 
 async def prepare_app(app):
@@ -27,18 +27,20 @@ async def prepare_app(app):
 
     # Display model information with styling
     model_stats = app["model_registry"].get_model_stats()
-    family_counts = model_stats["family_counts"]
+    model_stats["family_counts"]
     chat_family_counts = model_stats["chat_family_counts"]
-    embed_family_counts = model_stats["embed_family_counts"]
+    model_stats["embed_family_counts"]
     chat_family_alias_counts = model_stats["chat_family_alias_counts"]
-    embed_family_alias_counts = model_stats["embed_family_alias_counts"]
+    model_stats["embed_family_alias_counts"]
 
-    logger.info("=" * 60)
-    logger.warning(
-        f"🤖 MODEL REGISTRY: [{model_stats['unique_models']} MODELS, {model_stats['total_aliases']} ALIASES]"
+    log_info("=" * 60, context="app")
+    log_warning(
+        f"🤖 MODEL REGISTRY: [{model_stats['unique_models']} MODELS, {model_stats['total_aliases']} ALIASES]",
+        context="app",
     )
-    logger.info(
-        f"   ├─ Chat models: {model_stats['unique_chat_models']} models ({model_stats['chat_aliases']} aliases)"
+    log_info(
+        f"   ├─ Chat models: {model_stats['unique_chat_models']} models ({model_stats['chat_aliases']} aliases)",
+        context="app",
     )
 
     # Show chat model family breakdown with alias counts
@@ -63,23 +65,24 @@ async def prepare_app(app):
     if chat_families:
         for i, family_info in enumerate(chat_families):
             if i == len(chat_families) - 1:
-                logger.info(f"   │  └─ {family_info}")
+                log_info(f"   │  └─ {family_info}", context="app")
             else:
-                logger.info(f"   │  ├─ {family_info}")
+                log_info(f"   │  ├─ {family_info}", context="app")
 
-    logger.info(
-        f"   ├─ Embed models: {model_stats['unique_embed_models']} models ({model_stats['embed_aliases']} aliases)"
+    log_info(
+        f"   ├─ Embed models: {model_stats['unique_embed_models']} models ({model_stats['embed_aliases']} aliases)",
+        context="app",
     )
 
-    logger.info("   └─ Model availability refreshed successfully")
-    logger.info("=" * 60)
+    log_info("   └─ Model availability refreshed successfully", context="app")
+    log_info("=" * 60, context="app")
 
     # Apply event loop optimizations
     await optimize_event_loop()
 
     # Get performance configuration
     perf_config = get_performance_config()
-    logger.info(f"Performance config: {perf_config}")
+    log_info(f"Performance config: {perf_config}", context="app")
 
     # Create optimized HTTP session
     http_session_manager = OptimizedHTTPSession(
@@ -89,19 +92,19 @@ async def prepare_app(app):
     app["http_session_manager"] = http_session_manager
     app["http_session"] = await http_session_manager.create_session()
 
-    logger.info("Optimized HTTP connection pool initialized")
+    log_info("Optimized HTTP connection pool initialized", context="app")
 
 
 async def cleanup_app(app):
     """Clean up resources when app shuts down"""
     if "http_session_manager" in app:
         await app["http_session_manager"].close()
-        logger.info("HTTP session manager closed")
+        log_info("HTTP session manager closed", context="app")
 
     # Cancel all pending tasks (best effort)
     pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
     if pending:
-        logger.info("Cancelling pending tasks...")
+        log_info("Cancelling pending tasks...", context="app")
         [task.cancel() for task in pending]
         await asyncio.gather(*pending, return_exceptions=True)
 
@@ -110,12 +113,12 @@ async def cleanup_app(app):
 
 
 async def proxy_argo_chat_directly(request: web.Request):
-    logger.info("/v1/chat")
+    log_info("/v1/chat", context="app")
     return await chat.proxy_request(request, convert_to_openai=False)
 
 
 async def proxy_embedding_directly(request: web.Request):
-    logger.info("/v1/embed")
+    log_info("/v1/embed", context="app")
     return await embed.proxy_request(request, convert_to_openai=False)
 
 
@@ -123,7 +126,7 @@ async def proxy_embedding_directly(request: web.Request):
 
 
 async def proxy_openai_chat_compatible(request: web.Request):
-    logger.info("/v1/chat/completions")
+    log_info("/v1/chat/completions", context="app")
     config: ArgoConfig = request.app["config"]
 
     # If native OpenAI mode is enabled, use passthrough
@@ -136,7 +139,7 @@ async def proxy_openai_chat_compatible(request: web.Request):
 
 
 async def proxy_openai_legacy_completions_compatible(request: web.Request):
-    logger.info("/v1/completions")
+    log_info("/v1/completions", context="app")
     config: ArgoConfig = request.app["config"]
 
     # If native OpenAI mode is enabled, use passthrough
@@ -147,12 +150,12 @@ async def proxy_openai_legacy_completions_compatible(request: web.Request):
 
 
 async def proxy_openai_responses_request(request: web.Request):
-    logger.info("/v1/responses")
+    log_info("/v1/responses", context="app")
     return await responses.proxy_request(request)
 
 
 async def proxy_openai_embedding_request(request: web.Request):
-    logger.info("/v1/embeddings")
+    log_info("/v1/embeddings", context="app")
     config: ArgoConfig = request.app["config"]
 
     # If native OpenAI mode is enabled, use passthrough
@@ -163,7 +166,7 @@ async def proxy_openai_embedding_request(request: web.Request):
 
 
 async def get_models(request: web.Request):
-    logger.info("/v1/models")
+    log_info("/v1/models", context="app")
     return extras.get_models(request)
 
 
@@ -197,12 +200,12 @@ async def docs(request: web.Request):
 
 
 async def health_check(request: web.Request):
-    logger.info("/health")
+    log_info("/health", context="app")
     return web.json_response({"status": "healthy"}, status=200)
 
 
 async def get_version(request: web.Request):
-    logger.info("/version")
+    log_info("/version", context="app")
     latest = await get_latest_pypi_version()
     update_available = latest and latest != __version__
 
@@ -260,7 +263,7 @@ def run(*, host: str = "0.0.0.0", port: int = 8080):
 
     # Add this to ensure signal handlers trigger a full shutdown
     def _force_exit(*_):
-        logger.info("Force exiting on signal")
+        log_info("Force exiting on signal", context="app")
         sys.exit(0)
 
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -269,5 +272,5 @@ def run(*, host: str = "0.0.0.0", port: int = 8080):
     try:
         web.run_app(app, host=host, port=port)
     except Exception as e:
-        logger.error(f"An error occurred while starting the server: {e}")
+        log_error(f"An error occurred while starting the server: {e}", context="app")
         sys.exit(1)
