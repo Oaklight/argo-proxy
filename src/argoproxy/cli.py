@@ -14,7 +14,12 @@ from .__init__ import __version__
 from .app import run
 from .config import PATHS_TO_TRY, validate_config
 from .endpoints.extras import get_latest_pypi_version
-from .utils.logging import log_error, log_info, log_warning
+from .utils.logging import (
+    log_error,
+    log_info,
+    log_warning,
+    setup_logging as setup_app_logging,
+)
 
 
 class HTTPAttackFilter(logging.Filter):
@@ -65,17 +70,8 @@ class HTTPAttackFilter(logging.Filter):
 
 def setup_logging(verbose: bool = False):
     """Setup logging with attack filter."""
-    from loguru import logger as loguru_logger
-
-    loguru_logger.remove()  # Remove default handlers
-
-    # Add loguru handler
-    loguru_logger.add(
-        sys.stdout,
-        colorize=True,
-        format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{message}</level>",
-        level="DEBUG" if verbose else "INFO",
-    )
+    # Setup the application logger using standard library
+    setup_app_logging(verbose=verbose)
 
     # Suppress aiohttp access logs for attacks
     aiohttp_logger = logging.getLogger("aiohttp")
