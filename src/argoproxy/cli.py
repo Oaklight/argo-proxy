@@ -281,6 +281,10 @@ def get_ascii_banner() -> str:
 """
 
 
+# ReadTheDocs changelog URL
+CHANGELOG_URL = "https://argo-proxy.readthedocs.io/en/latest/changelog/"
+
+
 def version_check() -> str:
     ver_content = [__version__]
     latest = asyncio.run(get_latest_pypi_version())
@@ -292,6 +296,7 @@ def version_check() -> str:
                 [
                     f"New version available: {latest}",
                     "Update with `pip install --upgrade argo-proxy`",
+                    f"Changelog: {CHANGELOG_URL}",
                 ]
             )
 
@@ -311,7 +316,8 @@ def display_startup_banner():
     if latest and version.parse(latest) > version.parse(__version__):
         log_warning(f"🚀 ARGO PROXY v{__version__}", context="cli")
         log_warning(f"🆕 UPDATE AVAILABLE: v{latest}", context="cli")
-        log_info("   └─ Run: pip install --upgrade argo-proxy", context="cli")
+        log_info("   ├─ Run: pip install --upgrade argo-proxy", context="cli")
+        log_info(f"   └─ Changelog: {CHANGELOG_URL}", context="cli")
     else:
         log_warning(f"🚀 ARGO PROXY v{__version__} (Latest)", context="cli")
     log_info("=" * 80, context="cli")
