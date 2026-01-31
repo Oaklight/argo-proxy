@@ -40,13 +40,31 @@ class Colors:
     BRIGHT_WHITE = "\033[97m"
 
 
-# Level-specific colors
+# Level-specific colors (matching loguru style)
 LEVEL_COLORS = {
+    logging.DEBUG: Colors.BLUE,
+    logging.INFO: Colors.BRIGHT_WHITE,
+    logging.WARNING: Colors.YELLOW,
+    logging.ERROR: Colors.RED,
+    logging.CRITICAL: Colors.BRIGHT_RED + Colors.BOLD,
+}
+
+# Level name colors (for the level indicator)
+LEVEL_NAME_COLORS = {
     logging.DEBUG: Colors.CYAN,
     logging.INFO: Colors.GREEN,
     logging.WARNING: Colors.YELLOW,
     logging.ERROR: Colors.RED,
     logging.CRITICAL: Colors.BRIGHT_RED + Colors.BOLD,
+}
+
+# Level name formatting (padded for alignment, matching loguru)
+LEVEL_NAMES = {
+    logging.DEBUG: "DEBUG   ",
+    logging.INFO: "INFO    ",
+    logging.WARNING: "WARNING ",
+    logging.ERROR: "ERROR   ",
+    logging.CRITICAL: "CRITICAL",
 }
 
 
@@ -98,22 +116,27 @@ class ColoredFormatter(logging.Formatter):
         self.use_colors = use_colors and _supports_color()
 
     def format(self, record: logging.LogRecord) -> str:
-        """Format the log record with colors."""
+        """Format the log record with colors matching loguru style."""
         # Create a copy to avoid modifying the original record
         record = logging.makeLogRecord(record.__dict__)
 
         # Get timestamp
         timestamp = self.formatTime(record, self.datefmt)
 
-        # Build the formatted message
+        # Get level name and colors
+        level_name = LEVEL_NAMES.get(record.levelno, "UNKNOWN ")
+        level_name_color = LEVEL_NAME_COLORS.get(record.levelno, Colors.WHITE)
+        message_color = LEVEL_COLORS.get(record.levelno, Colors.WHITE)
+
+        # Build the formatted message (loguru style: timestamp | level | message)
         if self.use_colors:
-            level_color = LEVEL_COLORS.get(record.levelno, Colors.WHITE)
             formatted = (
-                f"{Colors.BLUE}{timestamp}{Colors.RESET} | "
-                f"{level_color}{record.getMessage()}{Colors.RESET}"
+                f"{Colors.GREEN}{timestamp}{Colors.RESET} | "
+                f"{level_name_color}{Colors.BOLD}{level_name}{Colors.RESET} | "
+                f"{message_color}{record.getMessage()}{Colors.RESET}"
             )
         else:
-            formatted = f"{timestamp} | {record.getMessage()}"
+            formatted = f"{timestamp} | {level_name} | {record.getMessage()}"
 
         # Handle exception info
         if record.exc_info:
