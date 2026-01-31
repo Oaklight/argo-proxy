@@ -7,7 +7,6 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Union, cast
 
 import aiohttp
 from aiohttp import web
-from loguru import logger
 
 from ..config import ArgoConfig
 from ..models import ModelRegistry
@@ -35,8 +34,10 @@ from ..utils.input_handle import (
 )
 from ..utils.logging import (
     log_converted_request,
+    log_error,
     log_original_request,
     log_upstream_error,
+    log_warning,
 )
 from ..utils.misc import apply_username_passthrough
 from ..utils.models import apply_claude_max_tokens_limit, determine_model_family
@@ -83,7 +84,9 @@ async def transform_chat_completions_streaming_async(
         # Handle tool calls for streaming
         tool_calls_obj = None
         if tool_calls:
-            logger.warning(f"transforming tool_calls: {tool_calls}")
+            log_warning(
+                f"transforming tool_calls: {tool_calls}", context="chat.streaming"
+            )
             tool_calls_obj = [
                 tool_calls_to_openai_stream(
                     tool_calls,
@@ -395,14 +398,17 @@ async def _handle_pseudo_stream(
         convert_to_openai: If True, converts the response to OpenAI format.
         openai_compat_fn: Function for conversion to OpenAI-compatible format.
     """
-    logger.warning("Pseudo streaming!")
+    log_warning("Pseudo streaming!", context="chat")
 
     try:
         response_data = await upstream_resp.json()
         response_content = response_data.get("response", "")
     except (aiohttp.ContentTypeError, json.JSONDecodeError) as e:
         response_content = await upstream_resp.text()
-        logger.warning(f"Upstream response is not JSON in pseudo_stream mode: {e}")
+        log_warning(
+            f"Upstream response is not JSON in pseudo_stream mode: {e}",
+            context="chat.pseudo_stream",
+        )
     if convert_to_openai:
         # Generate a shared ID for all chunks in this stream
         shared_id = str(uuid.uuid4().hex)
@@ -798,7 +804,7 @@ async def proxy_request(
             )
 
     except ValueError as err:
-        logger.error(f"ValueError: {err}")
+        log_error(f"ValueError: {err}", context="chat.proxy_request")
         return web.json_response(
             {"error": str(err)},
             status=HTTPStatus.BAD_REQUEST,
@@ -806,7 +812,7 @@ async def proxy_request(
         )
     except aiohttp.ClientError as err:
         error_message = f"HTTP error occurred: {err}"
-        logger.error(error_message)
+        log_error(error_message, context="chat.proxy_request")
         return web.json_response(
             {"error": error_message},
             status=HTTPStatus.SERVICE_UNAVAILABLE,
@@ -814,7 +820,7 @@ async def proxy_request(
         )
     except Exception as err:
         error_message = f"An unexpected error occurred: {err}"
-        logger.error(error_message)
+        log_error(error_message, context="chat.proxy_request")
         return web.json_response(
             {"error": error_message},
             status=HTTPStatus.INTERNAL_SERVER_ERROR,

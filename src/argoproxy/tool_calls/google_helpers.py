@@ -9,7 +9,7 @@ tool calls to sequential format for Gemini API compatibility.
 
 from typing import Any, Dict, List, Tuple, Union
 
-from loguru import logger
+from ..utils.logging import log_debug, log_error
 
 
 def is_parallel_tool_call_message(message: Dict[str, Any]) -> bool:
@@ -76,21 +76,24 @@ def find_matching_tool_result(
 
     # Try ID matching first
     if tool_call_id and tool_call_id in tool_result_map:
-        logger.debug(
-            f"[Google Sequential] Found matching result for tool_call_id: {tool_call_id}"
+        log_debug(
+            f"[Google Sequential] Found matching result for tool_call_id: {tool_call_id}",
+            context="google_helpers",
         )
         return tool_result_map[tool_call_id], "id"
 
     # Fallback to positional matching
     if index < len(tool_results):
-        logger.debug(
-            f"[Google Sequential] Using positional matching for tool call {index + 1}"
+        log_debug(
+            f"[Google Sequential] Using positional matching for tool call {index + 1}",
+            context="google_helpers",
         )
         return tool_results[index], "position"
 
     # No match found
-    logger.error(
-        f"[Google Sequential] No corresponding result found for tool call {index + 1}"
+    log_error(
+        f"[Google Sequential] No corresponding result found for tool call {index + 1}",
+        context="google_helpers",
     )
     return None, "none"
 
@@ -101,9 +104,10 @@ def verify_id_alignment(tool_call: Dict[str, Any], tool_result: Dict[str, Any]) 
     result_tool_call_id = tool_result.get("tool_call_id")
 
     if tool_call_id and result_tool_call_id and tool_call_id != result_tool_call_id:
-        logger.debug(
+        log_debug(
             f"[Google Sequential] ID mismatch: tool_call_id={tool_call_id}, "
-            f"result_tool_call_id={result_tool_call_id}"
+            f"result_tool_call_id={result_tool_call_id}",
+            context="google_helpers",
         )
 
 
@@ -154,9 +158,10 @@ def create_sequential_call_result_pairs(
         # Log the creation
         tool_call_id = tool_call.get("id")
         result_tool_call_id = corresponding_result.get("tool_call_id")
-        logger.debug(
+        log_debug(
             f"[Google Sequential] Created call-result pair {idx + 1}/{len(tool_calls)} "
-            f"(ID: {tool_call_id} -> {result_tool_call_id}, match: {match_type})"
+            f"(ID: {tool_call_id} -> {result_tool_call_id}, match: {match_type})",
+            context="google_helpers",
         )
 
     return sequential_messages

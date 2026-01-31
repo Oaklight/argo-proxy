@@ -18,10 +18,9 @@ Usage
 import json
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from loguru import logger
 from pydantic import ValidationError
 
-from ..utils.logging import truncate_string
+from ..utils.logging import log_debug, log_error, log_warning, truncate_string
 from ..utils.models import determine_model_family
 from .tool_prompts import get_prompt_skeleton
 
@@ -199,8 +198,9 @@ def handle_google_parallel_tool_calls(
         message = messages[i]
 
         if is_parallel_tool_call_message(message):
-            logger.warning(
-                f"[Google Sequential] Found assistant message with {len(message['tool_calls'])} parallel tool calls"
+            log_warning(
+                f"[Google Sequential] Found assistant message with {len(message['tool_calls'])} parallel tool calls",
+                context="input_handle",
             )
 
             # Collect consecutive tool result messages
@@ -208,8 +208,9 @@ def handle_google_parallel_tool_calls(
 
             # Validate tool calls and results count match
             if len(tool_results) != len(message["tool_calls"]):
-                logger.warning(
-                    f"[Google Sequential] Mismatch: {len(message['tool_calls'])} tool calls but {len(tool_results)} tool results"
+                log_warning(
+                    f"[Google Sequential] Mismatch: {len(message['tool_calls'])} tool calls but {len(tool_results)} tool results",
+                    context="input_handle",
                 )
                 # Fallback: keep original structure
                 transformed_messages.append(message)
@@ -223,8 +224,9 @@ def handle_google_parallel_tool_calls(
 
             transformed_messages.extend(sequential_pairs)
 
-            logger.warning(
-                f"[Google Sequential] Converted {len(message['tool_calls'])} parallel tool calls to {len(sequential_pairs) // 2} sequential pairs"
+            log_warning(
+                f"[Google Sequential] Converted {len(message['tool_calls'])} parallel tool calls to {len(sequential_pairs) // 2} sequential pairs",
+                context="input_handle",
             )
 
             # Skip the original tool result messages
@@ -234,8 +236,9 @@ def handle_google_parallel_tool_calls(
             transformed_messages.append(message)
             i += 1
 
-    logger.warning(
-        f"[Google Sequential] Transformed {len(messages)} messages into {len(transformed_messages)} messages"
+    log_warning(
+        f"[Google Sequential] Transformed {len(messages)} messages into {len(transformed_messages)} messages",
+        context="input_handle",
     )
     return transformed_messages
 
@@ -287,7 +290,7 @@ def handle_tools_native(data: Dict[str, Any]) -> Dict[str, Any]:
 
         # Remove parallel_tool_calls from data for now
         # TODO: Implement parallel tool calls handling later
-        parallel_tool_calls = data.pop("parallel_tool_calls", False)
+        data.pop("parallel_tool_calls", False)
 
         try:
             # Convert tools using middleware classes
@@ -335,17 +338,28 @@ def handle_tools_native(data: Dict[str, Any]) -> Dict[str, Any]:
             data["tools"] = converted_tools
             data["tool_choice"] = converted_tool_choice
 
-            logger.warning(
-                f"[Input Handle] {model_type.title()} model detected, converted tools"
+            log_warning(
+                f"[Input Handle] {model_type.title()} model detected, converted tools",
+                context="input_handle",
             )
-            logger.warning(f"[Input Handle] Converted {len(converted_tools)} tools")
-            logger.debug(f"[Input Handle] Converted tools: {converted_tools}")
-            logger.warning(
-                f"[Input Handle] Converted tool_choice: {converted_tool_choice}"
+            log_warning(
+                f"[Input Handle] Converted {len(converted_tools)} tools",
+                context="input_handle",
+            )
+            log_debug(
+                f"[Input Handle] Converted tools: {converted_tools}",
+                context="input_handle",
+            )
+            log_warning(
+                f"[Input Handle] Converted tool_choice: {converted_tool_choice}",
+                context="input_handle",
             )
 
         except (ValueError, ValidationError) as e:
-            logger.error(f"[Input Handle] Tool validation/conversion failed: {e}")
+            log_error(
+                f"[Input Handle] Tool validation/conversion failed: {e}",
+                context="input_handle",
+            )
             raise ValueError(f"Tool validation/conversion failed: {e}")
 
     # Process tool_calls and tool messages if present
@@ -372,11 +386,13 @@ def handle_tools_native(data: Dict[str, Any]) -> Dict[str, Any]:
                                 tool_call_obj.serialize("openai-chatcompletion")
                             )
                         converted_message["tool_calls"] = converted_tool_calls
-                        logger.warning(
-                            f"[Input Handle] Converted {len(converted_tool_calls)} tool_calls in message"
+                        log_warning(
+                            f"[Input Handle] Converted {len(converted_tool_calls)} tool_calls in message",
+                            context="input_handle",
                         )
-                        logger.debug(
-                            f"[Input Handle] Converted tool_calls in message: {converted_tool_calls}"
+                        log_debug(
+                            f"[Input Handle] Converted tool_calls in message: {converted_tool_calls}",
+                            context="input_handle",
                         )
 
                     elif model_type == "anthropic":
@@ -402,11 +418,13 @@ def handle_tools_native(data: Dict[str, Any]) -> Dict[str, Any]:
                         converted_message.pop(
                             "tool_calls", None
                         )  # Remove tool_calls field
-                        logger.warning(
-                            f"[Input Handle] Converted tool_calls to Anthropic content format (truncated): {truncate_string(str(content_blocks), 200)}"
+                        log_warning(
+                            f"[Input Handle] Converted tool_calls to Anthropic content format (truncated): {truncate_string(str(content_blocks), 200)}",
+                            context="input_handle",
                         )
-                        logger.debug(
-                            f"[Input Handle] Converted tool_calls to Anthropic content format: {content_blocks}"
+                        log_debug(
+                            f"[Input Handle] Converted tool_calls to Anthropic content format: {content_blocks}",
+                            context="input_handle",
                         )
 
                     elif model_type == "google":
@@ -420,11 +438,13 @@ def handle_tools_native(data: Dict[str, Any]) -> Dict[str, Any]:
                                 tool_call_obj.serialize("google")
                             )
                         converted_message["tool_calls"] = converted_tool_calls
-                        logger.warning(
-                            f"[Input Handle] Converted {len(converted_tool_calls)} tool_calls in message"
+                        log_warning(
+                            f"[Input Handle] Converted {len(converted_tool_calls)} tool_calls in message",
+                            context="input_handle",
                         )
-                        logger.debug(
-                            f"[Input Handle] Converted tool_calls in message: {converted_tool_calls}"
+                        log_debug(
+                            f"[Input Handle] Converted tool_calls in message: {converted_tool_calls}",
+                            context="input_handle",
                         )
 
                     else:
@@ -438,16 +458,19 @@ def handle_tools_native(data: Dict[str, Any]) -> Dict[str, Any]:
                                 tool_call_obj.serialize("openai-chatcompletion")
                             )
                         converted_message["tool_calls"] = converted_tool_calls
-                        logger.warning(
-                            f"[Input Handle] Converted {len(converted_tool_calls)} tool_calls in message"
+                        log_warning(
+                            f"[Input Handle] Converted {len(converted_tool_calls)} tool_calls in message",
+                            context="input_handle",
                         )
-                        logger.debug(
-                            f"[Input Handle] Converted tool_calls in message: {converted_tool_calls}"
+                        log_debug(
+                            f"[Input Handle] Converted tool_calls in message: {converted_tool_calls}",
+                            context="input_handle",
                         )
 
                 except (ValueError, ValidationError) as e:
-                    logger.error(
-                        f"[Input Handle] Tool call conversion failed in message: {e}"
+                    log_error(
+                        f"[Input Handle] Tool call conversion failed in message: {e}",
+                        context="input_handle",
                     )
                     # Keep original tool_calls if conversion fails
                     pass
@@ -471,17 +494,20 @@ def handle_tools_native(data: Dict[str, Any]) -> Dict[str, Any]:
                             }
                         ],
                     }
-                    logger.warning(
-                        "[Input Handle] Converted tool message to Anthropic format"
+                    log_warning(
+                        "[Input Handle] Converted tool message to Anthropic format",
+                        context="input_handle",
                     )
-                    logger.debug(
-                        f"[Input Handle] Converted tool message to Anthropic format: {converted_message}"
+                    log_debug(
+                        f"[Input Handle] Converted tool message to Anthropic format: {converted_message}",
+                        context="input_handle",
                     )
                 elif model_type == "google":
                     # For Google/Gemini, keep tool messages in OpenAI format
                     # The upstream API expects OpenAI-style tool messages
-                    logger.warning(
-                        "[Input Handle] Keeping Google tool result in OpenAI format"
+                    log_warning(
+                        "[Input Handle] Keeping Google tool result in OpenAI format",
+                        context="input_handle",
                     )
                 # For OpenAI, keep the original format
 
@@ -536,8 +562,9 @@ def handle_tools(data: Dict[str, Any], *, native_tools: bool = True) -> Dict[str
         except (ValueError, ValidationError, NotImplementedError) as e:
             # Fallback: use prompt-based handling if native handling fails
             # This handles validation errors, unsupported model types, or unimplemented conversions
-            logger.warning(
-                f"Native tool handling failed, falling back to prompt-based: {e}"
+            log_warning(
+                f"Native tool handling failed, falling back to prompt-based: {e}",
+                context="input_handle",
             )
             return handle_tools_prompt(data)
     else:

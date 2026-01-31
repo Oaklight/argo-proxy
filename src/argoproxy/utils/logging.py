@@ -359,3 +359,29 @@ def log_error(message: str, *, context: str = "") -> None:
         logger.error(message)
 
 
+def log_info(message: str, *, context: str = "") -> None:
+    """
+    Log an info message in a consistent format.
+
+    Args:
+        message: The info message to log.
+        context: Optional context information (e.g., function name, module).
+    """
+    if context:
+        logger.info(f"[{context}] {message}")
+    else:
+        logger.info(message)
+
+
+def log_debug(message: str, *, context: str = "") -> None:
+    """
+    Log a debug message in a consistent format.
+
+    Args:
+        message: The debug message to log.
+        context: Optional context information (e.g., function name, module).
+    """
+    if context:
+        logger.debug(f"[{context}] {message}")
+    else:
+        logger.debug(message)

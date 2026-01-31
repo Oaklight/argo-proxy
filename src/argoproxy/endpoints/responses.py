@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import aiohttp
 from aiohttp import web
-from loguru import logger
 
 from ..config import ArgoConfig
 from ..models import ModelRegistry
@@ -28,6 +27,7 @@ from ..types import (
 )
 from ..utils.logging import (
     log_converted_request,
+    log_error,
     log_original_request,
     log_upstream_error,
 )
@@ -129,10 +129,14 @@ def transform_non_streaming_response(
         return openai_response.model_dump()
 
     except json.JSONDecodeError as err:
-        logger.error(f"Error decoding JSON: {err}")
+        log_error(
+            f"Error decoding JSON: {err}", context="responses.transform_non_streaming"
+        )
         return {"error": f"Error decoding JSON: {err}"}
     except Exception as err:
-        logger.error(f"An error occurred: {err}")
+        log_error(
+            f"An error occurred: {err}", context="responses.transform_non_streaming"
+        )
         return {"error": f"An error occurred: {err}"}
 
 
@@ -190,10 +194,16 @@ async def transform_non_streaming_response_async(
         return openai_response.model_dump()
 
     except json.JSONDecodeError as err:
-        logger.error(f"Error decoding JSON: {err}")
+        log_error(
+            f"Error decoding JSON: {err}",
+            context="responses.transform_non_streaming_async",
+        )
         return {"error": f"Error decoding JSON: {err}"}
     except Exception as err:
-        logger.error(f"An error occurred: {err}")
+        log_error(
+            f"An error occurred: {err}",
+            context="responses.transform_non_streaming_async",
+        )
         return {"error": f"An error occurred: {err}"}
 
 
@@ -234,10 +244,12 @@ def transform_streaming_response(
         return openai_response.model_dump()
 
     except json.JSONDecodeError as err:
-        logger.error(f"Error decoding JSON: {err}")
+        log_error(
+            f"Error decoding JSON: {err}", context="responses.transform_streaming"
+        )
         return {"error": f"Error decoding JSON: {err}"}
     except Exception as err:
-        logger.error(f"An error occurred: {err}")
+        log_error(f"An error occurred: {err}", context="responses.transform_streaming")
         return {"error": f"An error occurred: {err}"}
 
 

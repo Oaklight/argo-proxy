@@ -11,7 +11,6 @@ from typing import Union
 
 import aiohttp
 from aiohttp import web
-from loguru import logger
 
 from ..config import ArgoConfig
 from ..models import ModelRegistry
@@ -19,6 +18,9 @@ from ..tool_calls.input_handle import handle_tools
 from ..utils.image_processing import process_chat_images
 from ..utils.logging import (
     log_converted_request,
+    log_debug,
+    log_error,
+    log_info,
     log_original_request,
     log_upstream_error,
 )
@@ -66,7 +68,10 @@ async def proxy_native_openai_request(
             )
 
             if config.verbose and data["model"] != original_model:
-                logger.info(f"Model name resolved: {original_model} -> {data['model']}")
+                log_info(
+                    f"Model name resolved: {original_model} -> {data['model']}",
+                    context="native_openai",
+                )
 
         # Process image URLs for chat endpoints (download and convert to base64)
         if endpoint_path == "chat/completions":
@@ -104,7 +109,10 @@ async def proxy_native_openai_request(
         log_converted_request(data, verbose=config.verbose)
 
         if config.verbose:
-            logger.debug(f"Forwarding to: {upstream_url}, stream={stream}")
+            log_debug(
+                f"Forwarding to: {upstream_url}, stream={stream}",
+                context="native_openai",
+            )
 
         if stream:
             # Handle streaming response
@@ -118,7 +126,7 @@ async def proxy_native_openai_request(
             )
 
     except ValueError as err:
-        logger.error(f"ValueError: {err}")
+        log_error(f"ValueError: {err}", context="native_openai.proxy")
         return web.json_response(
             {"error": str(err)},
             status=HTTPStatus.BAD_REQUEST,
@@ -126,7 +134,7 @@ async def proxy_native_openai_request(
         )
     except aiohttp.ClientError as err:
         error_message = f"HTTP error occurred: {err}"
-        logger.error(error_message)
+        log_error(error_message, context="native_openai.proxy")
         return web.json_response(
             {"error": error_message},
             status=HTTPStatus.SERVICE_UNAVAILABLE,
@@ -134,7 +142,7 @@ async def proxy_native_openai_request(
         )
     except Exception as err:
         error_message = f"An unexpected error occurred: {err}"
-        logger.error(error_message)
+        log_error(error_message, context="native_openai.proxy")
         return web.json_response(
             {"error": error_message},
             status=HTTPStatus.INTERNAL_SERVER_ERROR,

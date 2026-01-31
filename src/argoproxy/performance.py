@@ -9,8 +9,9 @@ import os
 from typing import Optional
 
 import aiohttp
-from loguru import logger
 from tqdm import tqdm
+
+from .utils.logging import log_debug, log_info, log_warning
 
 
 class OptimizedHTTPSession:
@@ -56,9 +57,14 @@ class OptimizedHTTPSession:
             sig = inspect.signature(aiohttp.TCPConnector.__init__)
             if "tcp_nodelay" in sig.parameters:
                 connector_kwargs["tcp_nodelay"] = True
-                logger.debug("TCP_NODELAY enabled for lower latency")
+                log_debug(
+                    "TCP_NODELAY enabled for lower latency", context="performance"
+                )
         except Exception:
-            logger.debug("TCP_NODELAY not supported in this aiohttp version")
+            log_debug(
+                "TCP_NODELAY not supported in this aiohttp version",
+                context="performance",
+            )
 
         self.connector = aiohttp.TCPConnector(**connector_kwargs)
 
@@ -101,9 +107,10 @@ class OptimizedHTTPSession:
                     headers={"User-Agent": self.user_agent},
                 )
 
-            logger.info(
+            log_info(
                 f"✅ HTTP session created with {self.connector.limit} total connections, "
-                f"{self.connector.limit_per_host} per host"
+                f"{self.connector.limit_per_host} per host",
+                context="performance",
             )
         return self.session
 
@@ -111,11 +118,11 @@ class OptimizedHTTPSession:
         """Close the HTTP session and connector."""
         if self.session and not self.session.closed:
             await self.session.close()
-            logger.info("HTTP session closed")
+            log_info("HTTP session closed", context="performance")
 
         if not self.connector.closed:
             await self.connector.close()
-            logger.info("HTTP connector closed")
+            log_info("HTTP connector closed", context="performance")
 
 
 async def optimize_event_loop():
@@ -131,10 +138,12 @@ async def optimize_event_loop():
         if hasattr(loop, "set_task_factory"):
             loop.set_task_factory(None)
 
-        logger.info("Event loop optimizations applied")
+        log_info("Event loop optimizations applied", context="performance")
 
     except Exception as e:
-        logger.warning(f"Could not apply event loop optimizations: {e}")
+        log_warning(
+            f"Could not apply event loop optimizations: {e}", context="performance"
+        )
 
 
 def get_performance_config() -> dict:

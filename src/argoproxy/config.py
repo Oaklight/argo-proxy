@@ -9,9 +9,9 @@ from pathlib import Path
 from typing import Any, Dict, Literal, Optional, Tuple, Union, overload
 
 import yaml  # type: ignore
-from loguru import logger
 from tqdm.asyncio import tqdm_asyncio
 
+from .utils.logging import log_error, log_info, log_warning
 from .utils.misc import get_random_port, is_port_available, make_bar, str_to_bool
 from .utils.transports import validate_api_async
 
@@ -181,18 +181,20 @@ class ArgoConfig:
     def _validate_port(self) -> None:
         """Validate and patch the port attribute."""
         if self.port and is_port_available(self.port):
-            logger.info(f"Using port {self.port}...")
+            log_info(f"Using port {self.port}...", context="config")
             return  # Valid port already set
 
         if self.port:
-            logger.warning(f"Warning: Port {self.port} is already in use.")
+            log_warning(
+                f"Warning: Port {self.port} is already in use.", context="config"
+            )
 
         suggested_port = get_random_port(49152, 65535)
         self.port = _get_user_port_choice(
             prompt=f"Enter port [{suggested_port}] [Y/n/number]: ",
             default_port=suggested_port,
         )
-        logger.info(f"Using port {self.port}...")
+        log_info(f"Using port {self.port}...", context="config")
 
     def _validate_urls(self) -> None:
         """Validate URL connectivity using validate_api_async with default retries."""
@@ -209,15 +211,16 @@ class ArgoConfig:
 
         timeout = 2
         attempts = 2
-        logger.info(
-            f"Validating {len(required_urls)} URL connectivity with timeout {timeout}s and {attempts} attempts ..."
+        log_info(
+            f"Validating {len(required_urls)} URL connectivity with timeout {timeout}s and {attempts} attempts ...",
+            context="config",
         )
 
         failed_urls = []
 
         async def _validate_single_url(url: str, payload: dict) -> None:
             if not url.startswith(("http://", "https://")):
-                logger.error(f"Invalid URL format: {url}")
+                log_error(f"Invalid URL format: {url}", context="config")
                 failed_urls.append(url)
                 return
             try:
@@ -239,24 +242,27 @@ class ArgoConfig:
         try:
             asyncio.run(_main())
         except RuntimeError:
-            logger.error("Async validation failed unexpectedly.")
+            log_error("Async validation failed unexpectedly.", context="config")
             raise
 
         if failed_urls:
-            logger.error("Failed to validate the following URLs: ")
+            log_error("Failed to validate the following URLs: ", context="config")
             for url in failed_urls:
-                logger.error(url)
-            logger.warning(
-                "Are you running the proxy on ANL network?\nIf yes, it's likely a temporary network glitch. In case of persistent issues, check your network or reach out to ANL CELS Helpdesk.\nIf not, 1. set up VPN and try again, OR 2. deploy it on an ANL machine you can create ssh tunnel to."
+                log_error(url, context="config")
+            log_warning(
+                "Are you running the proxy on ANL network?\nIf yes, it's likely a temporary network glitch. In case of persistent issues, check your network or reach out to ANL CELS Helpdesk.\nIf not, 1. set up VPN and try again, OR 2. deploy it on an ANL machine you can create ssh tunnel to.",
+                context="config",
             )
 
             if not _get_yes_no_input(
                 prompt="Continue despite connectivity issue? [Y/n] ", default_choice="y"
             ):
                 raise ValueError("URL validation aborted by user")
-            logger.info("Continuing with configuration despite URL issues...")
+            log_info(
+                "Continuing with configuration despite URL issues...", context="config"
+            )
         else:
-            logger.info("All URLs connectivity validated successfully.")
+            log_info("All URLs connectivity validated successfully.", context="config")
 
     def __str__(self) -> str:
         """Provide a formatted string representation for logger.infoing."""
@@ -275,10 +281,10 @@ class ArgoConfig:
 
 def _show(body: str, message: Optional[str] = None) -> None:
     """Helper to display a formatted message with a bar."""
-    logger.info(message if message else "")
-    logger.info(make_bar())
-    logger.info(body)
-    logger.info(make_bar())
+    log_info(message if message else "", context="config")
+    log_info(make_bar(), context="config")
+    log_info(body, context="config")
+    log_info(make_bar(), context="config")
 
 
 def _get_user_port_choice(prompt: str, default_port: int) -> int:
@@ -294,7 +300,9 @@ def _get_user_port_choice(prompt: str, default_port: int) -> int:
     else:  # port number
         if is_port_available(result):
             return result
-        logger.warning(f"Port {result} is not available, please try again")
+        log_warning(
+            f"Port {result} is not available, please try again", context="config"
+        )
         return _get_user_port_choice(prompt, default_port)
 
 
@@ -327,7 +335,7 @@ def _get_yes_no_input(
                 return True
             if choice in ("n", "no"):
                 return False
-            logger.info("Invalid input, please enter Y/n")
+            log_info("Invalid input, please enter Y/n", context="config")
             continue
 
         # Handle value input
@@ -346,7 +354,10 @@ def _get_yes_no_input(
             try:
                 return value_type(choice)
             except ValueError:
-                logger.info(f"Invalid input, please enter Y/n or a valid {key}")
+                log_info(
+                    f"Invalid input, please enter Y/n or a valid {key}",
+                    context="config",
+                )
 
 
 def _get_yes_no_input_with_timeout(
@@ -409,15 +420,15 @@ def _get_valid_username(username: str = "") -> str:
         )
 
         if not username:
-            logger.warning("Username cannot be empty.")
+            log_warning("Username cannot be empty.", context="config")
             username = ""
             continue
         if " " in username:
-            logger.warning("Invalid username: Must not contain spaces.")
+            log_warning("Invalid username: Must not contain spaces.", context="config")
             username = ""
             continue
         if username.lower() == "cels":
-            logger.warning("Invalid username: 'cels' is not allowed.")
+            log_warning("Invalid username: 'cels' is not allowed.", context="config")
             username = ""
             continue
 
@@ -455,7 +466,7 @@ def save_config(
 
 def create_config() -> ArgoConfig:
     """Interactive method to create and persist config."""
-    logger.info("Creating new configuration...")
+    log_info("Creating new configuration...", context="config")
 
     random_port = get_random_port(49152, 65535)
     config_data = ArgoConfig(
@@ -468,7 +479,7 @@ def create_config() -> ArgoConfig:
     )
 
     config_path = save_config(config_data)
-    logger.info(f"Created new configuration at: {config_path}")
+    log_info(f"Created new configuration at: {config_path}", context="config")
 
     return config_data
 
@@ -563,12 +574,16 @@ def load_config(
                         config_data = _apply_env_overrides(config_data)
 
                     if verbose:
-                        logger.info(f"Loaded configuration from {actual_path}")
+                        log_info(
+                            f"Loaded configuration from {actual_path}", context="config"
+                        )
 
                     return config_data, actual_path
 
                 except (yaml.YAMLError, AssertionError) as e:
-                    logger.warning(f"Error loading config at {path}: {e}")
+                    log_warning(
+                        f"Error loading config at {path}: {e}", context="config"
+                    )
                     continue
 
     return None, None
@@ -581,7 +596,7 @@ def validate_config(
     config_data, actual_path = load_config(optional_path)
 
     if not config_data:
-        logger.error("No valid configuration found.")
+        log_error("No valid configuration found.", context="config")
         user_decision = _get_yes_no_input(
             "Would you like to create it from config.sample.yaml? [Y/n]: "
         )
@@ -589,7 +604,9 @@ def validate_config(
             config_data = create_config()
             show_config = True
         else:
-            logger.warning("User aborted configuration creation. Exiting...")
+            log_warning(
+                "User aborted configuration creation. Exiting...", context="config"
+            )
             exit(1)
 
     # Config may change here. We need to persist
@@ -618,22 +635,26 @@ def validate_config(
         config_data.show()
 
     # Display mode information with styling
-    logger.info(make_bar())
+    log_info(make_bar(), context="config")
     if config_data.use_native_openai:
-        logger.warning("🚀 NATIVE OPENAI MODE: [ENABLED]")
-        logger.info("   └─ Direct passthrough mode active")
-        logger.warning(
-            "   ⚠️  Tool call streaming behavior may differ from standard mode"
+        log_warning("🚀 NATIVE OPENAI MODE: [ENABLED]", context="config")
+        log_info("   └─ Direct passthrough mode active", context="config")
+        log_warning(
+            "   ⚠️  Tool call streaming behavior may differ from standard mode",
+            context="config",
         )
-        logger.warning("   ⚠️  Some argo-proxy features may be bypassed in native mode")
+        log_warning(
+            "   ⚠️  Some argo-proxy features may be bypassed in native mode",
+            context="config",
+        )
     else:
-        logger.warning("🔧 STANDARD MODE: [ENABLED]")
-        logger.info("   └─ Full argo-proxy processing active")
+        log_warning("🔧 STANDARD MODE: [ENABLED]", context="config")
+        log_info("   └─ Full argo-proxy processing active", context="config")
         # Only show stream mode when not in native OpenAI mode
         if not config_data.pseudo_stream:
-            logger.warning("   📡 Stream Mode: [REAL]")
+            log_warning("   📡 Stream Mode: [REAL]", context="config")
         else:
-            logger.warning("   📡 Stream Mode: [PSEUDO]")
-    logger.info(make_bar())
+            log_warning("   📡 Stream Mode: [PSEUDO]", context="config")
+    log_info(make_bar(), context="config")
 
     return config_data
