@@ -54,19 +54,33 @@ def truncate_base64_for_logging(data_url: str, max_length: int = 100) -> str:
 
 
 def sanitize_data_for_logging(
-    data: Dict[str, Any], max_base64_length: int = 100
+    data: Dict[str, Any],
+    max_base64_length: int = 100,
+    max_content_length: int = 500,
+    max_tool_desc_length: int = 100,
+    truncate_tools: bool = True,
 ) -> Dict[str, Any]:
     """
-    Sanitizes request data for logging by truncating base64 content.
+    Sanitizes request data for logging by truncating long content.
 
     Args:
         data: The request data dictionary.
         max_base64_length: Maximum length to show for base64 content.
+        max_content_length: Maximum length to show for message content.
+        max_tool_desc_length: Maximum length to show for tool descriptions.
+        truncate_tools: Whether to truncate tool definitions.
 
     Returns:
-        Sanitized data dictionary with truncated base64 content.
+        Sanitized data dictionary with truncated content for cleaner logging.
     """
     import copy
+
+    def truncate_string(s: str, max_length: int, suffix: str = "...") -> str:
+        """Truncate a string to max_length with suffix."""
+        if len(s) <= max_length:
+            return s
+        remaining = len(s) - max_length
+        return f"{s[:max_length]}{suffix}[{remaining} more chars]"
 
     # Deep copy to avoid modifying original data
     sanitized = copy.deepcopy(data)
@@ -77,22 +91,82 @@ def sanitize_data_for_logging(
             if isinstance(message, dict) and "content" in message:
                 content = message["content"]
 
+                # Process string content (truncate long system prompts, etc.)
+                if isinstance(content, str) and len(content) > max_content_length:
+                    message["content"] = truncate_string(content, max_content_length)
+
                 # Process list-type content (multimodal messages)
-                if isinstance(content, list):
+                elif isinstance(content, list):
                     for content_part in content:
-                        if (
-                            isinstance(content_part, dict)
-                            and content_part.get("type") == "image_url"
-                            and "image_url" in content_part
-                            and "url" in content_part["image_url"]
-                        ):
-                            url = content_part["image_url"]["url"]
-                            if url.startswith("data:"):
-                                content_part["image_url"]["url"] = (
-                                    truncate_base64_for_logging(url, max_base64_length)
+                        if isinstance(content_part, dict):
+                            # Handle image URLs
+                            if (
+                                content_part.get("type") == "image_url"
+                                and "image_url" in content_part
+                                and "url" in content_part["image_url"]
+                            ):
+                                url = content_part["image_url"]["url"]
+                                if url.startswith("data:"):
+                                    content_part["image_url"]["url"] = (
+                                        truncate_base64_for_logging(
+                                            url, max_base64_length
+                                        )
+                                    )
+                            # Handle text content
+                            elif (
+                                content_part.get("type") == "text"
+                                and "text" in content_part
+                                and isinstance(content_part["text"], str)
+                                and len(content_part["text"]) > max_content_length
+                            ):
+                                content_part["text"] = truncate_string(
+                                    content_part["text"], max_content_length
                                 )
 
+    # Process tools if they exist and truncation is enabled
+    if truncate_tools and "tools" in sanitized and isinstance(sanitized["tools"], list):
+        tool_count = len(sanitized["tools"])
+        # Replace tools with a summary
+        sanitized["tools"] = f"[{tool_count} tools defined - truncated for logging]"
+
     return sanitized
+
+
+def create_request_summary(data: Dict[str, Any]) -> str:
+    """
+    Creates a concise summary of a request for logging.
+
+    Args:
+        data: The request data dictionary.
+
+    Returns:
+        A concise summary string.
+    """
+    summary_parts = []
+
+    # Model
+    if "model" in data:
+        summary_parts.append(f"model={data['model']}")
+
+    # Message count
+    if "messages" in data and isinstance(data["messages"], list):
+        msg_count = len(data["messages"])
+        summary_parts.append(f"messages={msg_count}")
+
+    # Tools
+    if "tools" in data and isinstance(data["tools"], list):
+        tool_count = len(data["tools"])
+        summary_parts.append(f"tools={tool_count}")
+
+    # Stream
+    if "stream" in data:
+        summary_parts.append(f"stream={data['stream']}")
+
+    # Max tokens
+    if "max_tokens" in data:
+        summary_parts.append(f"max_tokens={data['max_tokens']}")
+
+    return ", ".join(summary_parts)
 
 
 async def download_image_to_base64(

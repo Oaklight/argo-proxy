@@ -26,14 +26,15 @@ from ..types import (
     StreamChoice,
 )
 from ..types.chat_completion import FINISH_REASONS
-from ..utils.image_processing import process_chat_images, sanitize_data_for_logging
+from ..utils.image_processing import process_chat_images
 from ..utils.input_handle import (
     handle_multiple_entries_prompt,
     handle_no_sys_msg,
     handle_option_2_input,
     scrutinize_message_entries,
 )
-from ..utils.misc import apply_username_passthrough, make_bar
+from ..utils.logging import log_converted_request, log_original_request
+from ..utils.misc import apply_username_passthrough
 from ..utils.models import determine_model_family
 from ..utils.tokens import (
     calculate_prompt_tokens_async,
@@ -700,10 +701,9 @@ async def proxy_request(
 
         if not data:
             raise ValueError("Invalid input. Expected JSON data.")
-        if config.verbose:
-            logger.info(make_bar("[chat] input"))
-            logger.info(json.dumps(sanitize_data_for_logging(data), indent=4))
-            logger.info(make_bar())
+
+        # Log original request
+        log_original_request(data, verbose=config.verbose)
 
         # Use the shared HTTP session from app context for connection pooling
         session = request.app["http_session"]
@@ -719,9 +719,8 @@ async def proxy_request(
         # Apply username passthrough if enabled
         apply_username_passthrough(data, request, config.user)
 
-        logger.warning(
-            f"[chat] data: {json.dumps(sanitize_data_for_logging(data), indent=4)}"
-        )
+        # Log converted request
+        log_converted_request(data, verbose=config.verbose)
 
         if stream:
             return await send_streaming_request(

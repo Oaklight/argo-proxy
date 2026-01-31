@@ -17,7 +17,8 @@ from ..config import ArgoConfig
 from ..models import ModelRegistry
 from ..tool_calls.input_handle import handle_tools
 from ..utils.image_processing import process_chat_images
-from ..utils.misc import apply_username_passthrough, make_bar
+from ..utils.logging import log_original_request, log_converted_request
+from ..utils.misc import apply_username_passthrough
 from ..utils.models import determine_model_family
 
 
@@ -45,10 +46,8 @@ async def proxy_native_openai_request(
         # Get the incoming request data
         data = await request.json()
 
-        if config.verbose:
-            logger.info(make_bar(f"[native-openai/{endpoint_path}] input"))
-            logger.info(json.dumps(data, indent=4))
-            logger.info(make_bar())
+        # Log original request
+        log_original_request(data, verbose=config.verbose)
 
         # Use the shared HTTP session from app context
         session = request.app["http_session"]
@@ -97,9 +96,11 @@ async def proxy_native_openai_request(
         if "Authorization" in request.headers:
             headers["Authorization"] = request.headers["Authorization"]
 
+        # Log converted request
+        log_converted_request(data, verbose=config.verbose)
+
         if config.verbose:
-            logger.info(f"Forwarding to: {upstream_url}")
-            logger.info(f"Stream mode: {stream}")
+            logger.debug(f"Forwarding to: {upstream_url}, stream={stream}")
 
         if stream:
             # Handle streaming response
