@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from tqdm.asyncio import tqdm_asyncio
 
 from .config import ArgoConfig, _get_yes_no_input_with_timeout
-from .utils.logging import log_error, log_info, log_warning
+from .utils.logging import log_debug, log_error, log_info, log_warning
 from .utils.transports import validate_api_async
 
 DEFAULT_TIMEOUT = 30
@@ -279,48 +279,48 @@ def get_upstream_model_list(url: str) -> Dict[str, str]:
         A dictionary containing the list of available models mapping
         argo model names to internal IDs.
     """
-    log_info(f"Starting model list fetch from: {url}", context="models")
+    log_debug(f"Starting model list fetch from: {url}", context="models")
 
     try:
         # Create request object
         req = urllib.request.Request(url)
         req.add_header("User-Agent", "argo-proxy/1.0")
 
-        log_info(f"Sending request to: {url}", context="models")
+        log_debug(f"Sending request to: {url}", context="models")
 
         # Use detailed parameters
         with urllib.request.urlopen(req, timeout=30) as response:
             status_code = response.getcode()
-            log_info(
+            log_debug(
                 f"Received response with status code: {status_code}", context="models"
             )
 
             raw_data = response.read().decode()
-            log_info(
+            log_debug(
                 f"Response data length: {len(raw_data)} characters", context="models"
             )
 
             # Parse JSON
             data = json.loads(raw_data)
             model_count = len(data.get("data", []))
-            log_info(f"Parsed {model_count} models", context="models")
+            log_debug(f"Parsed {model_count} models from API", context="models")
 
-            # Detect API format
+            # Detect API format (debug level)
             if data.get("data") and len(data["data"]) > 0:
                 sample_model = data["data"][0]
                 if "model_name" in sample_model:
-                    log_info(
+                    log_debug(
                         "Detected old format API (contains model_name field)",
                         context="models",
                     )
                 elif "internal_id" in sample_model:
-                    log_info(
+                    log_debug(
                         "Detected new format API (contains internal_id field)",
                         context="models",
                     )
                 else:
                     log_warning("Detected unknown format API", context="models")
-                log_info(f"Sample model data: {sample_model}", context="models")
+                log_debug(f"Sample model data: {sample_model}", context="models")
 
             models = (
                 [Model(**model) for model in data.get("data", [])]
@@ -329,15 +329,11 @@ def get_upstream_model_list(url: str) -> Dict[str, str]:
             )
 
             argo_models = produce_argo_model_list(models)
-            log_info(
-                f"Successfully fetched model list with {len(argo_models)} models",
-                context="models",
-            )
 
-            # Show first few model mappings for verification
+            # Show first few model mappings for verification (debug level)
             if argo_models:
                 sample_mappings = list(argo_models.items())[:3]
-                log_info(f"Sample model mappings: {sample_mappings}", context="models")
+                log_debug(f"Sample model mappings: {sample_mappings}", context="models")
 
             return argo_models
 
@@ -540,17 +536,16 @@ class ModelRegistry:
             raise ValueError("Failed to load valid configuration")
 
         # Initial model list fetch
-        log_info(
-            f"Starting model registry initialization, URL: {self._config.argo_model_url}",
+        log_debug(
+            f"Fetching models from: {self._config.argo_model_url}",
             context="ModelRegistry",
         )
         self._chat_models = get_upstream_model_list(self._config.argo_model_url)
+
+        # Log summary at info level
+        source = "upstream API" if len(self._chat_models) > 32 else "built-in list"
         log_info(
-            f"Model registry initialization completed with {len(self._chat_models)} models",
-            context="ModelRegistry",
-        )
-        log_info(
-            f"Model registry initialization mode: {'Upstream API' if len(self._chat_models) > 32 else 'Built-in list'}",
+            f"Model registry initialized: {len(self._chat_models)} models from {source}",
             context="ModelRegistry",
         )
 
@@ -593,7 +588,7 @@ class ModelRegistry:
                 self.available_chat_models, NATIVE_TOOL_CALL_PATTERNS
             )
 
-            log_info(
+            log_debug(
                 "Model availability refreshed successfully", context="ModelRegistry"
             )
         except Exception as e:
