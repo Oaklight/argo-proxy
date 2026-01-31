@@ -109,7 +109,7 @@ class ColoredFormatter(logging.Formatter):
         if self.use_colors:
             level_color = LEVEL_COLORS.get(record.levelno, Colors.WHITE)
             formatted = (
-                f"{Colors.GREEN}{timestamp}{Colors.RESET} | "
+                f"{Colors.BLUE}{timestamp}{Colors.RESET} | "
                 f"{level_color}{record.getMessage()}{Colors.RESET}"
             )
         else:
