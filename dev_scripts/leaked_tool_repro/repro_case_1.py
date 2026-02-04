@@ -20,8 +20,9 @@ import httpx
 
 # Configuration
 ARGO_PROXY_URL = os.getenv("ARGO_PROXY_URL", "http://localhost:8000")
+# Note: The ARGO API URL should end with /chat for the chat endpoint
 ARGO_DIRECT_URL = os.getenv(
-    "ARGO_DIRECT_URL", "https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/chat"
+    "ARGO_DIRECT_URL", "https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/chat/"
 )
 
 # Load the original request from the log file (in the same directory)
@@ -47,7 +48,8 @@ def send_request(url: str, request_body: dict, via_proxy: bool = True) -> dict:
     print(f"Messages count: {len(request_body.get('messages', []))}")
     print(f"{'='*60}\n")
     
-    with httpx.Client(timeout=120.0) as client:
+    # Use follow_redirects=True to handle 307 redirects
+    with httpx.Client(timeout=120.0, follow_redirects=True) as client:
         response = client.post(
             endpoint,
             json=request_body,
