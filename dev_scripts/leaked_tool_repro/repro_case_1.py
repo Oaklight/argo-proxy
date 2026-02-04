@@ -9,6 +9,9 @@ Model: claudeopus45
 This script sends the exact same request body that was logged when the leaked
 tool call was detected. The goal is to reproduce the issue where Claude returns
 tool calls embedded in text content instead of the tool_calls array.
+
+NOTE: This script tests directly against the ARGO Gateway API to reproduce
+the upstream issue. The problem is in the gateway, not in argo-proxy.
 """
 
 import json
@@ -18,11 +21,9 @@ from pathlib import Path
 
 import httpx
 
-# Configuration
-ARGO_PROXY_URL = os.getenv("ARGO_PROXY_URL", "http://localhost:8000")
-# Note: The ARGO API URL should end with /chat for the chat endpoint
-ARGO_DIRECT_URL = os.getenv(
-    "ARGO_DIRECT_URL", "https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/chat/"
+# Configuration - Direct ARGO Gateway API endpoint
+ARGO_API_URL = os.getenv(
+    "ARGO_API_URL", "https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/chat/"
 )
 
 # Load the original request from the log file (in the same directory)
@@ -36,12 +37,10 @@ def load_request_body() -> dict:
     return log_data["request"]
 
 
-def send_request(url: str, request_body: dict, via_proxy: bool = True) -> dict:
+def send_request(url: str, request_body: dict) -> dict:
     """Send the request and return the response."""
-    endpoint = f"{url}/v1/chat/completions" if via_proxy else url
-
     print(f"\n{'=' * 60}")
-    print(f"Sending request to: {endpoint}")
+    print(f"Sending request to: {url}")
     print(f"Model: {request_body.get('model')}")
     print(f"Stream: {request_body.get('stream')}")
     print(f"Tools count: {len(request_body.get('tools', []))}")
@@ -51,7 +50,7 @@ def send_request(url: str, request_body: dict, via_proxy: bool = True) -> dict:
     # Use follow_redirects=True to handle 307 redirects
     with httpx.Client(timeout=120.0, follow_redirects=True) as client:
         response = client.post(
-            endpoint,
+            url,
             json=request_body,
             headers={"Content-Type": "application/json"},
         )
@@ -72,6 +71,7 @@ def main():
     """Main entry point."""
     print("=" * 60)
     print("LEAKED TOOL CALL REPRODUCTION - CASE 1")
+    print("Testing directly against ARGO Gateway API")
     print("=" * 60)
 
     # Load request body
@@ -85,35 +85,20 @@ def main():
         print(f"\n✗ Failed to parse log file: {e}")
         sys.exit(1)
 
-    # Test via argo-proxy
+    # Test direct to ARGO Gateway API
     print("\n" + "-" * 60)
-    print("TEST 1: Via argo-proxy")
+    print("Direct to ARGO Gateway API")
     print("-" * 60)
 
     try:
-        response = send_request(ARGO_PROXY_URL, request_body, via_proxy=True)
+        response = send_request(ARGO_API_URL, request_body)
         print_raw_response(response)
     except httpx.HTTPStatusError as e:
         print(f"\n✗ HTTP error: {e.response.status_code}")
         print(f"Response: {e.response.text[:500]}")
     except httpx.RequestError as e:
         print(f"\n✗ Request error: {e}")
-        print("Make sure argo-proxy is running on the configured URL")
-
-    # Optionally test direct to ARGO API
-    if os.getenv("TEST_DIRECT", "").lower() == "true":
-        print("\n" + "-" * 60)
-        print("TEST 2: Direct to ARGO API")
-        print("-" * 60)
-
-        try:
-            response = send_request(ARGO_DIRECT_URL, request_body, via_proxy=False)
-            print_raw_response(response)
-        except httpx.HTTPStatusError as e:
-            print(f"\n✗ HTTP error: {e.response.status_code}")
-            print(f"Response: {e.response.text[:500]}")
-        except httpx.RequestError as e:
-            print(f"\n✗ Request error: {e}")
+        print("Make sure you have network access to the ARGO API")
 
 
 if __name__ == "__main__":
