@@ -1,34 +1,34 @@
-# Claude 泄漏工具调用问题调查报告
+# Claude Leaked Tool Call Investigation Report
 
-> **状态**: 🔄 进行中 - 日志分析完成，待进一步验证
-> **最后更新**: 2026-02-04
-> **调查分支**: `investigation/leaked-tool-calls`
+> **Status**: 🔄 In Progress - Log analysis complete, pending further verification
+> **Last Updated**: 2026-02-04
+> **Investigation Branch**: `investigation/leaked-tool-calls`
 
-## 背景
+## Background
 
-在使用 Claude 模型进行工具调用时，发现了一个问题：Claude 有时会将工具调用信息"泄漏"到文本内容中，而不是通过正常的 `tool_calls` 字段返回。这导致工具调用无法被正确识别和处理。
+When using Claude models for tool calling, an issue was discovered: Claude sometimes "leaks" tool call information into text content instead of returning it through the proper `tool_calls` field. This causes tool calls to not be correctly identified and processed.
 
-### 问题现象
+### Problem Symptoms
 
-Claude 返回的响应中，`tool_calls` 字段为空，但 `content` 字段包含类似以下格式的文本：
+In Claude's response, the `tool_calls` field is empty, but the `content` field contains text in a format like:
 
 ```python
 {'id': 'toolu_vrtx_01X1tcW6qR1uUoUkfpZMiXnH', 'input': {'ticker': 'MSFT'}, 'name': 'get_stock_price', 'type': 'tool_use'}
 ```
 
-## 版本演进
+## Version Evolution
 
-### 1. fix/neil-fixes 分支（基础版本）
+### 1. fix/neil-fixes Branch (Base Version)
 
-Neil 首先实现了一个简单直接的修复方案：
+Neil first implemented a simple and direct fix:
 
-**核心逻辑**（[`_process_anthropic_native()`](src/argoproxy/tool_calls/output_handle.py:322-422)）：
+**Core Logic** ([`_process_anthropic_native()`](src/argoproxy/tool_calls/output_handle.py:322-422)):
 
 ```python
 import ast
 if not claude_tool_calls and "{'id': 'toolu_" in text_content:
     try:
-        # 查找平衡的字典
+        # Find balanced dictionary
         start_idx = text_content.find("{'id': 'toolu_")
         balance = 0
         end_idx = -1
@@ -44,24 +44,24 @@ if not claude_tool_calls and "{'id': 'toolu_" in text_content:
             logger.warning(f"Found leaked tool string: {leaked_str}")
             leaked_dict = ast.literal_eval(leaked_str)
             claude_tool_calls = [leaked_dict]
-            # 从文本中移除
+            # Remove from text
             text_content = text_content[:start_idx] + text_content[end_idx:]
     except Exception as e:
         logger.warning(f"Failed to parse leaked tool: {e}")
 ```
 
-**特点**：
+**Characteristics**:
 
-- 简单直接，发现问题就修复
-- 无配置开关，始终启用
-- 无日志记录，不收集数据
-- 代码简洁，约 20 行核心逻辑
+- Simple and direct, fixes the problem when detected
+- No configuration switch, always enabled
+- No logging, no data collection
+- Concise code, about 20 lines of core logic
 
-### 2. master 分支（增强版本）
+### 2. master Branch (Enhanced Version)
 
-在 Neil 的基础上，master 分支添加了以下功能：
+Building on Neil's work, the master branch added the following features:
 
-#### 2.1 配置开关
+#### 2.1 Configuration Switch
 
 ```python
 # config.py
@@ -72,20 +72,20 @@ def enable_leaked_tool_fix(self):
     """Check if leaked tool call fix is enabled."""
     return self._enable_leaked_tool_fix
 
-# 环境变量支持
+# Environment variable support
 if env_enable_leaked_tool_fix := os.getenv("ENABLE_LEAKED_TOOL_FIX"):
     config_data._enable_leaked_tool_fix = str_to_bool(env_enable_leaked_tool_fix)
 ```
 
-**设计意图**：
+**Design Intent**:
 
-- 默认禁用修复，保守策略
-- 可通过配置或环境变量启用
-- 便于在生产环境中控制行为
+- Fix disabled by default, conservative strategy
+- Can be enabled via configuration or environment variable
+- Easy to control behavior in production environments
 
-#### 2.2 日志记录系统
+#### 2.2 Logging System
 
-添加了完整的日志记录功能，用于收集和分析泄漏案例：
+Added complete logging functionality for collecting and analyzing leak cases:
 
 ```python
 def _log_leaked_tool_case(
@@ -112,25 +112,25 @@ def _log_leaked_tool_case(
         json.dump(log_entry, f, indent=2, ensure_ascii=False)
 ```
 
-**设计意图**：
+**Design Intent**:
 
-- 收集泄漏案例用于分析
-- 记录完整上下文（请求、响应、前后文本）
-- 自动压缩日志（超过 50MB 时）
-- 便于后续改进修复逻辑
+- Collect leak cases for analysis
+- Record complete context (request, response, surrounding text)
+- Auto-compress logs (when exceeding 50MB)
+- Facilitate future improvements to fix logic
 
-#### 2.3 修改后的处理逻辑
+#### 2.3 Modified Processing Logic
 
 ```python
-# 检查配置是否启用修复
+# Check if fix is enabled in config
 config_data, _ = load_config(verbose=False)
 enable_fix = config_data.enable_leaked_tool_fix if config_data else False
 
 if not claude_tool_calls and "{'id': 'toolu_" in text_content:
     try:
-        # ... 查找泄漏的工具调用 ...
+        # ... find leaked tool call ...
 
-        # 总是记录（即使 enable_fix=False）
+        # Always log (even if enable_fix=False)
         _log_leaked_tool_case(
             text_content=text_content,
             leaked_str=leaked_str,
@@ -139,123 +139,123 @@ if not claude_tool_calls and "{'id': 'toolu_" in text_content:
         )
 
         if enable_fix:
-            # 启用修复时才解析和移除
+            # Parse and remove only when fix is enabled
             leaked_dict = ast.literal_eval(leaked_str)
             claude_tool_calls = [leaked_dict]
             text_content = text_content[:start_idx] + text_content[end_idx:]
         else:
-            # 仅记录，不修复
+            # Log only, don't fix
             logger.warning(f"[LEAKED TOOL FIX DISABLED] Found potential leaked tool call...")
     except Exception as e:
         logger.warning(f"Failed to process potential leaked tool: {e}")
 ```
 
-## 问题报告
+## Issue Report
 
-### 现象
+### Symptoms
 
-- **官方 OpenAI native 模式**：正常工作
-- **master 分支（启用 leaked tool fix）**：出现 `internal error, upstream error 500`
-- **fix/neil-fixes 分支**：没有此错误
+- **Official OpenAI native mode**: Works normally
+- **master branch (with leaked tool fix enabled)**: Shows `internal error, upstream error 500`
+- **fix/neil-fixes branch**: No such error
 
-### 根因分析
+### Root Cause Analysis
 
-master 分支新增的日志记录功能存在多个潜在风险点：
+The logging functionality added in the master branch has multiple potential risk points:
 
-#### 1. JSON 序列化失败（最可能）
+#### 1. JSON Serialization Failure (Most Likely)
 
 ```python
 if request_data:
-    log_entry["request"] = request_data  # 可能包含不可序列化的对象
+    log_entry["request"] = request_data  # May contain non-serializable objects
 if response_data:
-    log_entry["response"] = response_data  # 可能包含不可序列化的对象
+    log_entry["response"] = response_data  # May contain non-serializable objects
 
-json.dump(log_entry, f, indent=2, ensure_ascii=False)  # 可能失败
+json.dump(log_entry, f, indent=2, ensure_ascii=False)  # May fail
 ```
 
-**问题**：
+**Issues**:
 
-- `request_data` 或 `response_data` 可能包含不可 JSON 序列化的对象
-- 大对象序列化可能导致内存问题
-- 特殊字符编码问题
+- `request_data` or `response_data` may contain non-JSON-serializable objects
+- Large object serialization may cause memory issues
+- Special character encoding problems
 
-#### 2. 文件系统操作失败
+#### 2. File System Operation Failure
 
 ```python
-log_dir = _get_leaked_tool_log_dir()  # 可能失败
-dir_size = _get_log_dir_size(log_dir)  # 可能失败
+log_dir = _get_leaked_tool_log_dir()  # May fail
+dir_size = _get_log_dir_size(log_dir)  # May fail
 if dir_size > 50 * 1024 * 1024:
-    _compress_log_files(log_dir)  # 可能失败且耗时
+    _compress_log_files(log_dir)  # May fail and be time-consuming
 ```
 
-**问题**：
+**Issues**:
 
-- 磁盘空间不足
-- 权限问题（无法创建目录或写入文件）
-- 压缩操作耗时过长导致超时
+- Insufficient disk space
+- Permission issues (cannot create directory or write files)
+- Compression operation takes too long causing timeout
 
-#### 3. 关键问题：即使禁用修复也会记录
+#### 3. Critical Issue: Logging Occurs Even When Fix is Disabled
 
 ```python
-# 总是记录（即使 enable_fix=False）
+# Always log (even if enable_fix=False)
 _log_leaked_tool_case(...)
 
 if enable_fix:
-    # 修复逻辑
+    # Fix logic
 else:
-    # 仅记录，不修复
+    # Log only, don't fix
 ```
 
-这意味着只要检测到泄漏的工具调用，就会执行日志记录，无论是否启用修复功能。
+This means logging is executed whenever a leaked tool call is detected, regardless of whether the fix feature is enabled.
 
-## 代码差异对比
+## Code Comparison
 
-| 功能       | fix/neil-fixes       | master                            |
-| ---------- | -------------------- | --------------------------------- |
-| 泄漏检测   | ✅                   | ✅                                |
-| 自动修复   | ✅ 始终启用          | ⚙️ 可配置                         |
-| 日志记录   | ❌                   | ✅                                |
-| 日志压缩   | ❌                   | ✅                                |
-| 配置开关   | ❌                   | ✅                                |
-| 代码行数   | ~20 行               | ~150 行                           |
-| 依赖       | ast                  | ast, gzip, datetime, Path, config |
-| 文件 I/O   | ❌                   | ✅                                |
-| 潜在风险点 | 1 (ast.literal_eval) | 5+                                |
+| Feature | fix/neil-fixes | master |
+| --- | --- | --- |
+| Leak Detection | ✅ | ✅ |
+| Auto Fix | ✅ Always enabled | ⚙️ Configurable |
+| Logging | ❌ | ✅ |
+| Log Compression | ❌ | ✅ |
+| Config Switch | ❌ | ✅ |
+| Lines of Code | ~20 | ~150 |
+| Dependencies | ast | ast, gzip, datetime, Path, config |
+| File I/O | ❌ | ✅ |
+| Potential Risk Points | 1 (ast.literal_eval) | 5+ |
 
-## 建议方案
+## Proposed Solutions
 
-### 方案 1：回退到 fix/neil-fixes 的简单方案
+### Solution 1: Revert to fix/neil-fixes Simple Approach
 
-**优点**：
+**Pros**:
 
-- 简单可靠
-- 性能更好
-- 没有副作用
+- Simple and reliable
+- Better performance
+- No side effects
 
-**缺点**：
+**Cons**:
 
-- 失去数据收集能力
+- Loses data collection capability
 
-**实施**：
+**Implementation**:
 
 ```bash
 git checkout fix/neil-fixes -- src/argoproxy/tool_calls/output_handle.py
 git checkout fix/neil-fixes -- src/argoproxy/config.py
 ```
 
-### 方案 2：修复 master 分支的日志记录问题
+### Solution 2: Fix master Branch Logging Issues
 
-如果需要保留数据收集能力，建议：
+If data collection capability is needed, recommend:
 
-#### 2.1 使用安全的 JSON 序列化
+#### 2.1 Use Safe JSON Serialization
 
 ```python
 def _safe_serialize(obj):
-    """安全序列化，处理不可序列化的对象"""
+    """Safe serialization, handle non-serializable objects"""
     try:
         return json.dumps(obj, default=str)
     except Exception:
-        return str(obj)[:1000]  # 截断
+        return str(obj)[:1000]  # Truncate
 
 log_entry = {
     "timestamp": datetime.now().isoformat(),
@@ -264,13 +264,13 @@ log_entry = {
     "text_length": len(text_content),
 }
 
-# 只记录关键信息，不记录完整请求/响应
+# Only log key information, not full request/response
 if request_data:
     log_entry["request_model"] = request_data.get("model")
     log_entry["request_has_tools"] = "tools" in request_data
 ```
 
-#### 2.2 异步日志记录
+#### 2.2 Async Logging
 
 ```python
 from concurrent.futures import ThreadPoolExecutor
@@ -278,17 +278,17 @@ from concurrent.futures import ThreadPoolExecutor
 _log_executor = ThreadPoolExecutor(max_workers=1)
 
 def _log_leaked_tool_case_async(...):
-    """异步记录，不阻塞主流程"""
+    """Async logging, don't block main flow"""
     try:
         _log_executor.submit(_log_leaked_tool_case, ...)
     except Exception:
-        pass  # 静默失败
+        pass  # Silent failure
 ```
 
-#### 2.3 添加开关控制日志记录
+#### 2.3 Add Switch to Control Logging
 
 ```python
-# 只在启用修复时才记录
+# Only log when fix is enabled
 if enable_fix:
     _log_leaked_tool_case(...)
     leaked_dict = ast.literal_eval(leaked_str)
@@ -296,50 +296,50 @@ if enable_fix:
     text_content = text_content[:start_idx] + text_content[end_idx:]
 ```
 
-### 方案 3：混合方案（推荐）
+### Solution 3: Hybrid Approach (Recommended)
 
-1. **保留简单的修复逻辑**（来自 fix/neil-fixes）
-2. **添加可选的轻量级日志**：
-   - 仅在 `DEBUG_LEAKED_TOOLS=true` 时启用
-   - 只记录关键信息（泄漏字符串、时间戳、模型名）
-   - 使用异步写入
-3. **移除复杂的压缩逻辑**
+1. **Keep simple fix logic** (from fix/neil-fixes)
+2. **Add optional lightweight logging**:
+   - Only enable when `DEBUG_LEAKED_TOOLS=true`
+   - Only log key information (leaked string, timestamp, model name)
+   - Use async writing
+3. **Remove complex compression logic**
 
-## 验证步骤
+## Verification Steps
 
-1. **检查日志**：
+1. **Check logs**:
 
    ```bash
    grep "Failed to log leaked tool call case" /path/to/logs
    grep "Failed to compress" /path/to/logs
    ```
 
-2. **检查磁盘和权限**：
+2. **Check disk and permissions**:
 
    ```bash
    ls -la /path/to/leaked_tool_calls/
    du -sh /path/to/leaked_tool_calls/
    ```
 
-3. **测试 fix/neil-fixes**：
+3. **Test fix/neil-fixes**:
    ```bash
    git checkout fix/neil-fixes
-   # 运行相同的测试用例
+   # Run the same test cases
    ```
 
-## 新发现：上游 API 500 错误
+## New Finding: Upstream API 500 Error
 
-### 问题描述
+### Problem Description
 
-用户报告：
+User reported:
 
-- 直接使用 `https://apps-dev.inside.anl.gov/argoapi/v1` 正常工作
-- 通过 argo-proxy (`http://0.0.0.0:60475/v1`) 使用 Claude-4.5-opus 时出现 "Internal Server Error: Upstream API error: 500"
-- 使用 Gemini 模型时 argo-proxy 正常工作
+- Direct use of `https://apps-dev.inside.anl.gov/argoapi/v1` works normally
+- Using Claude-4.5-opus through argo-proxy (`http://0.0.0.0:60475/v1`) shows "Internal Server Error: Upstream API error: 500"
+- Using Gemini models through argo-proxy works normally
 
-### 错误来源分析
+### Error Source Analysis
 
-错误信息 "Upstream API error: 500" 来自 [`chat.py:608-616`](src/argoproxy/endpoints/chat.py:608-616)：
+The error message "Upstream API error: 500" comes from [`chat.py:608-616`](src/argoproxy/endpoints/chat.py:608-616):
 
 ```python
 async with session.post(api_url, headers=headers, json=data) as upstream_resp:
@@ -352,35 +352,35 @@ async with session.post(api_url, headers=headers, json=data) as upstream_resp:
         )
 ```
 
-这表明**上游 ARGO API 本身返回了 500 错误**，而不是 argo-proxy 内部产生的错误。
+This indicates **the upstream ARGO API itself returned a 500 error**, not an error generated internally by argo-proxy.
 
-### 可能的原因
+### Possible Causes
 
-#### 1. 请求数据转换问题
+#### 1. Request Data Transformation Issues
 
-argo-proxy 在发送请求前会对数据进行转换，可能导致上游 API 无法处理：
+argo-proxy transforms data before sending requests, which may cause the upstream API to fail:
 
-- **工具调用格式转换**：[`handle_tools()`](src/argoproxy/tool_calls/input_handle.py) 可能产生不兼容的格式
-- **消息格式处理**：[`scrutinize_message_entries()`](src/argoproxy/utils/input_handle.py) 可能修改了消息结构
-- **模型名称映射**：模型名称可能被错误映射
+- **Tool call format conversion**: [`handle_tools()`](src/argoproxy/tool_calls/input_handle.py) may produce incompatible formats
+- **Message format processing**: [`scrutinize_message_entries()`](src/argoproxy/utils/input_handle.py) may modify message structure
+- **Model name mapping**: Model names may be incorrectly mapped
 
-#### 2. Claude 特定的请求格式问题
+#### 2. Claude-Specific Request Format Issues
 
-Claude 模型可能对请求格式有特殊要求：
+Claude models may have special requirements for request format:
 
-- 系统消息处理
-- 工具定义格式
-- 消息角色顺序
+- System message handling
+- Tool definition format
+- Message role ordering
 
-#### 3. 日志记录的副作用（不太可能）
+#### 3. Logging Side Effects (Unlikely)
 
-虽然日志记录发生在**响应处理阶段**，但如果在请求准备阶段有任何副作用，可能会影响请求数据。
+Although logging occurs during **response processing**, if there are any side effects during request preparation, it may affect request data.
 
-### 调试建议
+### Debugging Recommendations
 
-#### 1. 对比请求数据
+#### 1. Compare Request Data
 
-在 [`chat.py:722-724`](src/argoproxy/endpoints/chat.py:722-724) 已有日志输出：
+There's already log output at [`chat.py:722-724`](src/argoproxy/endpoints/chat.py:722-724):
 
 ```python
 logger.warning(
@@ -388,15 +388,15 @@ logger.warning(
 )
 ```
 
-检查发送给上游 API 的实际请求数据。
+Check the actual request data sent to the upstream API.
 
-#### 2. 检查上游错误详情
+#### 2. Check Upstream Error Details
 
-错误信息中的 `error_text` 应该包含上游 API 返回的详细错误信息，需要查看完整日志。
+The `error_text` in the error message should contain detailed error information returned by the upstream API. Need to check complete logs.
 
-#### 3. 直接测试上游 API
+#### 3. Test Upstream API Directly
 
-使用相同的请求数据直接调用上游 API，确认是否是数据格式问题：
+Use the same request data to call the upstream API directly to confirm if it's a data format issue:
 
 ```bash
 curl -X POST https://apps-dev.inside.anl.gov/argoapi/v1/chat/completions \
@@ -404,71 +404,71 @@ curl -X POST https://apps-dev.inside.anl.gov/argoapi/v1/chat/completions \
   -d '{"model": "claude-4.5-opus", "messages": [...], "tools": [...]}'
 ```
 
-#### 4. 对比两个分支的请求处理
+#### 4. Compare Request Processing Between Branches
 
-虽然 `input_handle.py` 没有差异，但 master 分支的其他变化可能间接影响了请求处理。
+Although `input_handle.py` has no differences, other changes in the master branch may indirectly affect request processing.
 
-### 关键差异总结
+### Key Differences Summary
 
-| 组件     | fix/neil-fixes | master |
-| -------- | -------------- | ------ |
-| 版本     | 2.8.0          | 2.8.1  |
-| usage.py | 不存在         | 新增   |
-| 日志记录 | 无             | 有     |
-| 配置开关 | 无             | 有     |
-| 响应处理 | 简单           | 复杂   |
+| Component | fix/neil-fixes | master |
+| --- | --- | --- |
+| Version | 2.8.0 | 2.8.1 |
+| usage.py | Does not exist | New |
+| Logging | None | Yes |
+| Config Switch | None | Yes |
+| Response Processing | Simple | Complex |
 
-## 结论
+## Conclusion
 
-### 原始问题（日志记录导致的潜在问题）
+### Original Issue (Potential Problems from Logging)
 
-master 分支在 fix/neil-fixes 基础上添加的日志记录功能引入了多个潜在的故障点，最可能的原因是 JSON 序列化失败或文件系统操作问题。
+The logging functionality added in the master branch on top of fix/neil-fixes introduced multiple potential failure points. The most likely cause is JSON serialization failure or file system operation issues.
 
-### 新问题（上游 API 500 错误）
+### New Issue (Upstream API 500 Error)
 
-上游 ARGO API 返回 500 错误，需要进一步调查：
+The upstream ARGO API returns a 500 error, requiring further investigation:
 
-1. 检查发送给上游的请求数据
-2. 查看上游返回的详细错误信息
-3. 确认是否是 Claude 特定的格式问题
+1. Check request data sent to upstream
+2. View detailed error information returned by upstream
+3. Confirm if it's a Claude-specific format issue
 
-**推荐行动**：
+**Recommended Actions**:
 
-1. **立即**：查看完整的错误日志，获取上游 API 返回的详细错误信息
-2. **短期**：回退到 fix/neil-fixes 的简单方案，确认是否解决问题
-3. **长期**：如果需要数据收集，实现轻量级的异步日志记录方案
-
----
-
-## 待办事项
-
-- [ ] 等待同事发送完整的错误日志
-- [ ] 分析上游 API 返回的详细错误信息
-- [ ] 对比 master 和 fix/neil-fixes 发送的请求数据
-- [ ] 确认问题根因
-- [ ] 制定修复方案
+1. **Immediate**: View complete error logs to get detailed error information from upstream API
+2. **Short-term**: Revert to fix/neil-fixes simple approach to confirm if it resolves the issue
+3. **Long-term**: If data collection is needed, implement lightweight async logging solution
 
 ---
 
-## 日志分析区域
+## TODO
 
-### 收到的日志文件
+- [ ] Wait for colleague to send complete error logs
+- [ ] Analyze detailed error information returned by upstream API
+- [ ] Compare request data sent by master and fix/neil-fixes
+- [ ] Confirm root cause
+- [ ] Develop fix plan
 
-**来源**: `reference/bugs_report/leaked_tool_logs_20260128_171914.tar.gz`
+---
 
-**解压位置**: `reference/bugs_report/leaked_tool_logs/`
+## Log Analysis Section
 
-**文件列表**:
+### Received Log Files
+
+**Source**: `reference/bugs_report/leaked_tool_logs_20260128_171914.tar.gz`
+
+**Extracted Location**: `reference/bugs_report/leaked_tool_logs/`
+
+**File List**:
 - `leaked_tool_20260128_171422_165810.json` (83,269 bytes)
 - `leaked_tool_20260128_171653_513513.json` (89,432 bytes)
 
 ---
 
-### 日志 1: leaked_tool_20260128_171422_165810.json
+### Log 1: leaked_tool_20260128_171422_165810.json
 
-**时间戳**: 2026-01-28T17:14:22.166209
+**Timestamp**: 2026-01-28T17:14:22.166209
 
-**泄漏的工具调用**:
+**Leaked Tool Call**:
 ```python
 {
     'id': 'toolu_vrtx_01HxkqNiX9NvAXS6Aejq6Wph',
@@ -482,21 +482,21 @@ master 分支在 fix/neil-fixes 基础上添加的日志记录功能引入了多
 }
 ```
 
-**上下文**:
+**Context**:
 - **context_before**: "Let me check the GitHub sub-issues feature more directly - it looks like they might be using a newer GitHub feature:"
-- **context_after**: "" (空)
+- **context_after**: "" (empty)
 
-**请求信息**:
-| 字段 | 值 |
-|------|-----|
+**Request Information**:
+| Field | Value |
+|-------|-------|
 | model | `claudeopus45` |
 | max_tokens | 20999 |
 | stream | false |
 | user | luckierdodge |
 
-**客户端**: OpenCode (CLI 编码助手)
+**Client**: OpenCode (CLI coding assistant)
 
-**响应结构**:
+**Response Structure**:
 ```json
 {
   "content": "Let me check the GitHub sub-issues feature more directly - it looks like they might be using a newer GitHub feature:{'id': 'toolu_vrtx_01HxkqNiX9NvAXS6Aejq6Wph', ...}",
@@ -506,11 +506,11 @@ master 分支在 fix/neil-fixes 基础上添加的日志记录功能引入了多
 
 ---
 
-### 日志 2: leaked_tool_20260128_171653_513513.json
+### Log 2: leaked_tool_20260128_171653_513513.json
 
-**时间戳**: 2026-01-28T17:16:53.513590
+**Timestamp**: 2026-01-28T17:16:53.513590
 
-**泄漏的工具调用**:
+**Leaked Tool Call**:
 ```python
 {
     'id': 'toolu_vrtx_01DJaLx1tDTwxMoxLhcBqnMj',
@@ -525,21 +525,21 @@ master 分支在 fix/neil-fixes 基础上添加的日志记录功能引入了多
 }
 ```
 
-**上下文**:
+**Context**:
 - **context_before**: "Now let me explore the current EventClient and EventManager codebase to understand the existing implementation:"
-- **context_after**: "" (空)
+- **context_after**: "" (empty)
 
-**请求信息**:
-| 字段 | 值 |
-|------|-----|
+**Request Information**:
+| Field | Value |
+|-------|-------|
 | model | `claudeopus45` |
 | max_tokens | 20999 |
 | stream | false |
 | user | luckierdodge |
 
-**客户端**: OpenCode (CLI 编码助手)
+**Client**: OpenCode (CLI coding assistant)
 
-**响应结构**:
+**Response Structure**:
 ```json
 {
   "content": "Now let me explore the current EventClient and EventManager codebase to understand the existing implementation:{'id': 'toolu_vrtx_01DJaLx1tDTwxMoxLhcBqnMj', ...}",
@@ -549,33 +549,33 @@ master 分支在 fix/neil-fixes 基础上添加的日志记录功能引入了多
 
 ---
 
-### 版本与代码关联分析
+### Version and Code Correlation Analysis
 
-#### 使用的 argo-proxy 版本
+#### argo-proxy Version Used
 
-日志是由 argo-proxy 的 [`_log_leaked_tool_case()`](src/argoproxy/tool_calls/output_handle.py:109-167) 函数生成的。
+The logs were generated by argo-proxy's [`_log_leaked_tool_case()`](src/argoproxy/tool_calls/output_handle.py:109-167) function.
 
-**日志格式匹配验证**:
+**Log Format Verification**:
 
-| 日志字段 | 代码位置 | 匹配 |
-|----------|----------|------|
-| `timestamp` | 第 142 行 | ✓ |
-| `leaked_tool_string` | 第 143 行 | ✓ |
-| `full_text_content` | 第 144 行 | ✓ |
-| `context_before` | 第 145-147 行 | ✓ |
-| `context_after` | 第 148-152 行 | ✓ |
-| `request` | 第 155-156 行 | ✓ |
-| `response` | 第 157-158 行 | ✓ |
+| Log Field | Code Location | Match |
+|-----------|---------------|-------|
+| `timestamp` | Line 142 | ✓ |
+| `leaked_tool_string` | Line 143 | ✓ |
+| `full_text_content` | Line 144 | ✓ |
+| `context_before` | Lines 145-147 | ✓ |
+| `context_after` | Lines 148-152 | ✓ |
+| `request` | Lines 155-156 | ✓ |
+| `response` | Lines 157-158 | ✓ |
 
-**文件名格式**: `leaked_tool_{timestamp}.json` (第 139 行)
+**Filename Format**: `leaked_tool_{timestamp}.json` (Line 139)
 
-**结论**: 日志由 **master 分支** (版本 2.8.1+) 生成，因为：
-1. 日志记录功能是 master 分支新增的
-2. fix/neil-fixes 分支 (2.8.0) 没有日志记录功能
+**Conclusion**: Logs were generated by **master branch** (version 2.8.1+) because:
+1. Logging functionality is new in master branch
+2. fix/neil-fixes branch (2.8.0) does not have logging functionality
 
-#### 重要发现：请求格式异常
+#### Important Finding: Abnormal Request Format
 
-日志中的工具定义使用 **Anthropic 原生格式**：
+The tool definitions in the logs use **Anthropic native format**:
 
 ```json
 {
@@ -590,7 +590,7 @@ master 分支在 fix/neil-fixes 基础上添加的日志记录功能引入了多
 }
 ```
 
-而非 OpenAI 格式（argo-proxy 期望的输入格式）：
+Instead of OpenAI format (the input format argo-proxy expects):
 
 ```json
 {
@@ -602,43 +602,43 @@ master 分支在 fix/neil-fixes 基础上添加的日志记录功能引入了多
 }
 ```
 
-**这意味着**：
-1. 客户端（OpenCode）直接发送 Anthropic 格式的工具定义
-2. 请求可能绕过了 argo-proxy 的工具格式转换逻辑
-3. 或者 argo-proxy 的输入处理没有正确转换这种格式
+**This means**:
+1. The client (OpenCode) directly sends Anthropic format tool definitions
+2. The request may bypass argo-proxy's tool format conversion logic
+3. Or argo-proxy's input handling doesn't correctly convert this format
 
 ---
 
-### 关键发现
+### Key Findings
 
-#### 1. 模型信息
-- 两个案例都使用 **`claudeopus45`** 模型（Claude 4.5 Opus）
-- 这是 Anthropic 的最新模型
+#### 1. Model Information
+- Both cases use **`claudeopus45`** model (Claude 4.5 Opus)
+- This is Anthropic's latest model
 
-#### 2. 泄漏模式特征
+#### 2. Leak Pattern Characteristics
 
-| 特征 | 描述 |
-|------|------|
-| 格式 | Python 字典格式（非 JSON） |
-| ID 前缀 | `toolu_vrtx_` (Anthropic 原生格式) |
-| 位置 | 紧跟解释性文本，无分隔符 |
-| cache_control | 包含 `None` 值（Python 特有） |
+| Characteristic | Description |
+|----------------|-------------|
+| Format | Python dict format (not JSON) |
+| ID Prefix | `toolu_vrtx_` (Anthropic native format) |
+| Position | Immediately follows explanatory text, no separator |
+| cache_control | Contains `None` value (Python-specific) |
 
-#### 3. 响应结构异常
+#### 3. Abnormal Response Structure
 
 ```
-正常情况:
-  response.content = "文本内容"
+Normal case:
+  response.content = "text content"
   response.tool_calls = [{"id": "...", "function": {...}}]
 
-泄漏情况:
-  response.content = "文本内容{'id': 'toolu_vrtx_...', ...}"
+Leak case:
+  response.content = "text content{'id': 'toolu_vrtx_...', ...}"
   response.tool_calls = []
 ```
 
-#### 4. 工具定义格式
+#### 4. Tool Definition Format
 
-请求中的工具使用 **Anthropic 原生格式**：
+Tools in the request use **Anthropic native format**:
 ```json
 {
   "input_schema": {
@@ -652,7 +652,7 @@ master 分支在 fix/neil-fixes 基础上添加的日志记录功能引入了多
 }
 ```
 
-而非 OpenAI 格式：
+Instead of OpenAI format:
 ```json
 {
   "type": "function",
@@ -663,30 +663,30 @@ master 分支在 fix/neil-fixes 基础上添加的日志记录功能引入了多
 }
 ```
 
-#### 5. 客户端信息
+#### 5. Client Information
 
-- **客户端**: OpenCode (https://github.com/anomalyco/opencode)
-- **类型**: CLI 编码助手
-- **用户**: luckierdodge
-- **工作目录**: /Users/luckierdodge/AD-SDL/MADSci
+- **Client**: OpenCode (https://github.com/anomalyco/opencode)
+- **Type**: CLI coding assistant
+- **User**: luckierdodge
+- **Working Directory**: /Users/luckierdodge/AD-SDL/MADSci
 
 ---
 
-### 问题根因分析
+### Root Cause Analysis
 
-基于日志分析，问题的根因可能是：
+Based on log analysis, the root cause may be:
 
-#### 假设 1: 上游 ARGO API 响应格式问题 ⭐ 最可能
+#### Hypothesis 1: Upstream ARGO API Response Format Issue ⭐ Most Likely
 
-Claude 模型返回的 `tool_use` 块没有被正确解析为结构化的 `tool_calls`，而是被序列化为 Python 字典格式并嵌入到文本内容中。
+Claude model's `tool_use` blocks are not correctly parsed into structured `tool_calls`, but are serialized as Python dict format and embedded in text content.
 
-**证据**:
-- 泄漏的格式是 Python 字典（使用单引号、`None` 而非 `null`）
-- 这表明某处代码使用了 `str()` 或 `repr()` 而非 `json.dumps()`
-- 上游 ARGO API 可能在处理 Claude 4.5 Opus 响应时存在 bug
+**Evidence**:
+- Leaked format is Python dict (uses single quotes, `None` instead of `null`)
+- This indicates some code used `str()` or `repr()` instead of `json.dumps()`
+- Upstream ARGO API may have a bug when processing Claude 4.5 Opus responses
 
-**代码关联**:
-- [`_process_anthropic_native()`](src/argoproxy/tool_calls/output_handle.py:342-464) 期望响应格式为：
+**Code Correlation**:
+- [`_process_anthropic_native()`](src/argoproxy/tool_calls/output_handle.py:342-464) expects response format:
   ```json
   {
     "response": {
@@ -695,238 +695,238 @@ Claude 模型返回的 `tool_use` 块没有被正确解析为结构化的 `tool_
     }
   }
   ```
-- 但实际收到的是 `tool_calls: []` 且工具调用嵌入在 `content` 中
+- But actually receives `tool_calls: []` with tool calls embedded in `content`
 
-#### 假设 2: 模型行为异常
+#### Hypothesis 2: Model Behavior Anomaly
 
-Claude 4.5 Opus 在某些情况下可能会将工具调用"泄漏"到文本输出中，而不是通过正常的工具调用机制返回。
+Claude 4.5 Opus may "leak" tool calls into text output in certain situations instead of returning them through the normal tool call mechanism.
 
-**证据**:
-- 两个案例都发生在 Claude 4.5 Opus 上
-- 工具调用紧跟在解释性文本之后，没有换行或分隔
+**Evidence**:
+- Both cases occurred with Claude 4.5 Opus
+- Tool calls immediately follow explanatory text without line breaks or separators
 
-#### 假设 3: 请求格式不兼容
+#### Hypothesis 3: Request Format Incompatibility
 
-OpenCode 客户端发送的工具定义格式可能与上游 API 期望的格式不完全兼容。
+The tool definition format sent by OpenCode client may not be fully compatible with what the upstream API expects.
 
-**证据**:
-- 工具定义使用了 `type: "custom"` 字段（非标准）
-- 包含 `cache_control` 字段（Anthropic 特有）
-- 工具格式是 Anthropic 原生格式，而非 OpenAI 格式
+**Evidence**:
+- Tool definitions use `type: "custom"` field (non-standard)
+- Contains `cache_control` field (Anthropic-specific)
+- Tool format is Anthropic native format, not OpenAI format
 
-**代码关联**:
-- argo-proxy 的 [`handle_tools_native()`](src/argoproxy/tool_calls/input_handle.py:247-475) 负责工具格式转换
-- 如果输入已经是 Anthropic 格式，转换逻辑可能不会正确处理
+**Code Correlation**:
+- argo-proxy's [`handle_tools_native()`](src/argoproxy/tool_calls/input_handle.py:247-475) handles tool format conversion
+- If input is already in Anthropic format, conversion logic may not handle it correctly
 
 ---
 
-### 与现有修复的关联
+### Correlation with Existing Fixes
 
-| 分支 | 处理方式 |
-|------|----------|
-| fix/neil-fixes | 检测 `{'id': 'toolu_` 模式并解析修复 |
-| master | 添加日志记录 + 可选修复 |
+| Branch | Handling Method |
+|--------|-----------------|
+| fix/neil-fixes | Detect `{'id': 'toolu_` pattern and parse to fix |
+| master | Add logging + optional fix |
 
-**Neil 的修复逻辑**可以正确处理这种情况：
+**Neil's fix logic** can correctly handle this situation:
 ```python
 if not claude_tool_calls and "{'id': 'toolu_" in text_content:
-    # 查找并解析泄漏的工具调用
+    # Find and parse leaked tool call
     leaked_dict = ast.literal_eval(leaked_str)
     claude_tool_calls = [leaked_dict]
 ```
 
 ---
 
-### 下一步行动
+### Next Steps
 
-1. **确认修复有效性**
-   - [ ] 在 fix/neil-fixes 分支上测试相同的请求
-   - [ ] 验证工具调用是否被正确提取
+1. **Confirm Fix Effectiveness**
+   - [ ] Test the same request on fix/neil-fixes branch
+   - [ ] Verify tool calls are correctly extracted
 
-2. **调查上游 API**
-   - [ ] 检查 ARGO API 对 Claude 4.5 Opus 的支持情况
-   - [ ] 确认是否是已知问题
-   - [ ] 联系上游团队报告此问题
+2. **Investigate Upstream API**
+   - [ ] Check ARGO API support for Claude 4.5 Opus
+   - [ ] Confirm if this is a known issue
+   - [ ] Contact upstream team to report this issue
 
-3. **优化修复方案**
-   - [ ] 考虑添加对 `cache_control: None` 的处理
-   - [ ] 确保修复逻辑能处理多个连续的工具调用
-   - [ ] 添加对 Anthropic 原生工具格式输入的兼容处理
+3. **Optimize Fix Solution**
+   - [ ] Consider adding handling for `cache_control: None`
+   - [ ] Ensure fix logic can handle multiple consecutive tool calls
+   - [ ] Add compatibility handling for Anthropic native tool format input
 
-4. **长期方案**
-   - [ ] 向上游报告此问题
-   - [ ] 考虑添加更健壮的工具调用解析逻辑
-   - [ ] 评估是否需要支持 Anthropic 原生格式的直接透传
+4. **Long-term Solution**
+   - [ ] Report this issue to upstream
+   - [ ] Consider adding more robust tool call parsing logic
+   - [ ] Evaluate whether to support direct passthrough of Anthropic native format
 
 ---
 
-## 代码参考
+## Code Reference
 
-### 关键文件
+### Key Files
 
-| 文件 | 功能 |
-|------|------|
-| [`output_handle.py`](src/argoproxy/tool_calls/output_handle.py) | 响应处理和泄漏检测 |
-| [`input_handle.py`](src/argoproxy/tool_calls/input_handle.py) | 请求工具格式转换 |
-| [`config.py`](src/argoproxy/config.py) | 配置管理（`enable_leaked_tool_fix`） |
+| File | Function |
+|------|----------|
+| [`output_handle.py`](src/argoproxy/tool_calls/output_handle.py) | Response processing and leak detection |
+| [`input_handle.py`](src/argoproxy/tool_calls/input_handle.py) | Request tool format conversion |
+| [`config.py`](src/argoproxy/config.py) | Configuration management (`enable_leaked_tool_fix`) |
 
-### 泄漏检测逻辑
+### Leak Detection Logic
 
 ```python
 # output_handle.py:400-445
 if not claude_tool_calls and "{'id': 'toolu_" in text_content:
-    # 查找平衡的字典
+    # Find balanced dictionary
     start_idx = text_content.find("{'id': 'toolu_")
-    # ... 平衡括号查找 ...
+    # ... balanced bracket finding ...
     
     if end_idx != -1:
         leaked_str = text_content[start_idx:end_idx]
         
-        # 总是记录日志
+        # Always log
         _log_leaked_tool_case(...)
         
         if enable_fix:
-            # 解析并修复
+            # Parse and fix
             leaked_dict = ast.literal_eval(leaked_str)
             claude_tool_calls = [leaked_dict]
             text_content = text_content[:start_idx] + text_content[end_idx:]
 ```
 
-### 版本信息
+### Version Information
 
-| 分支 | 版本 | 泄漏修复 | 日志记录 |
-|------|------|----------|----------|
-| fix/neil-fixes | 2.8.0 | ✅ 始终启用 | ❌ |
-| master | 2.8.1+ | ⚙️ 可配置 | ✅ |
-| 当前 | 2.8.2 | ⚙️ 可配置 | ✅ |
+| Branch | Version | Leak Fix | Logging |
+|--------|---------|----------|---------|
+| fix/neil-fixes | 2.8.0 | ✅ Always enabled | ❌ |
+| master | 2.8.1+ | ⚙️ Configurable | ✅ |
+| Current | 2.8.2 | ⚙️ Configurable | ✅ |
 
 ---
 
-## 请求处理流程分析
+## Request Processing Flow Analysis
 
-### 请求处理链路
+### Request Processing Chain
 
 ```
-客户端请求 → argo-proxy → 上游 ARGO API → Claude 模型
+Client Request → argo-proxy → Upstream ARGO API → Claude Model
 ```
 
-### 关键处理步骤
+### Key Processing Steps
 
-1. **接收请求** ([`chat.py:694`](src/argoproxy/endpoints/chat.py:694))
+1. **Receive Request** ([`chat.py:694`](src/argoproxy/endpoints/chat.py:694))
    ```python
    data = await request.json()
    ```
 
-2. **图片处理** ([`chat.py:712`](src/argoproxy/endpoints/chat.py:712))
+2. **Image Processing** ([`chat.py:712`](src/argoproxy/endpoints/chat.py:712))
    ```python
    data = await process_chat_images(session, data, config)
    ```
 
-3. **请求数据准备** ([`chat.py:715-717`](src/argoproxy/endpoints/chat.py:715-717))
+3. **Request Data Preparation** ([`chat.py:715-717`](src/argoproxy/endpoints/chat.py:715-717))
    ```python
    data = prepare_chat_request_data(
        data, config, model_registry, enable_tools=True
    )
    ```
 
-4. **工具调用处理** ([`input_handle.py:483-528`](src/argoproxy/tool_calls/input_handle.py:483-528))
-   - 检测模型类型：`determine_model_family(data.get("model", "gpt4o"))`
-   - Claude 模型 → `model_type = "anthropic"`
-   - 转换工具格式：OpenAI → Anthropic
+4. **Tool Call Processing** ([`input_handle.py:483-528`](src/argoproxy/tool_calls/input_handle.py:483-528))
+   - Detect model type: `determine_model_family(data.get("model", "gpt4o"))`
+   - Claude model → `model_type = "anthropic"`
+   - Convert tool format: OpenAI → Anthropic
 
-5. **发送请求** ([`chat.py:607`](src/argoproxy/endpoints/chat.py:607))
+5. **Send Request** ([`chat.py:607`](src/argoproxy/endpoints/chat.py:607))
    ```python
    async with session.post(api_url, headers=headers, json=data) as upstream_resp:
    ```
 
-### Claude 特定的格式转换
+### Claude-Specific Format Conversion
 
-当检测到 Claude 模型时，[`handle_tools_native()`](src/argoproxy/tool_calls/input_handle.py:247-475) 会进行以下转换：
+When Claude model is detected, [`handle_tools_native()`](src/argoproxy/tool_calls/input_handle.py:247-475) performs the following conversions:
 
-#### 1. 工具定义转换
+#### 1. Tool Definition Conversion
 ```python
-# OpenAI 格式
+# OpenAI format
 {"type": "function", "function": {"name": "...", "parameters": {...}}}
 
-# 转换为 Anthropic 格式
+# Converted to Anthropic format
 {"name": "...", "input_schema": {...}}
 ```
 
-#### 2. 工具调用消息转换
+#### 2. Tool Call Message Conversion
 ```python
-# OpenAI 格式 (assistant message with tool_calls)
+# OpenAI format (assistant message with tool_calls)
 {"role": "assistant", "tool_calls": [{"id": "...", "function": {...}}]}
 
-# 转换为 Anthropic 格式 (content array with tool_use blocks)
+# Converted to Anthropic format (content array with tool_use blocks)
 {"role": "assistant", "content": [{"type": "tool_use", "id": "...", "name": "...", "input": {...}}]}
 ```
 
-#### 3. 工具结果消息转换
+#### 3. Tool Result Message Conversion
 ```python
-# OpenAI 格式
+# OpenAI format
 {"role": "tool", "tool_call_id": "...", "content": "..."}
 
-# 转换为 Anthropic 格式
+# Converted to Anthropic format
 {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "...", "content": "..."}]}
 ```
 
-### 潜在问题点
+### Potential Problem Points
 
-1. **格式转换错误**
-   - 工具定义转换可能丢失必要字段
-   - 消息格式转换可能不完整
+1. **Format Conversion Errors**
+   - Tool definition conversion may lose required fields
+   - Message format conversion may be incomplete
 
-2. **上游 API 不兼容**
-   - 上游 ARGO API 可能期望特定格式
-   - 转换后的格式可能不被接受
+2. **Upstream API Incompatibility**
+   - Upstream ARGO API may expect specific format
+   - Converted format may not be accepted
 
-3. **两个分支的差异**
-   - 虽然 `input_handle.py` 没有差异
-   - 但 master 分支的其他变化可能间接影响了请求处理
+3. **Differences Between Branches**
+   - Although `input_handle.py` has no differences
+   - Other changes in master branch may indirectly affect request processing
 
-### 验证方法
+### Verification Methods
 
-1. **对比请求数据**
-   - 在两个分支上运行相同的请求
-   - 对比 `[chat] data:` 日志输出
+1. **Compare Request Data**
+   - Run the same request on both branches
+   - Compare `[chat] data:` log output
 
-2. **直接测试上游 API**
-   - 使用 argo-proxy 转换后的数据直接调用上游 API
-   - 确认是否是格式问题
+2. **Test Upstream API Directly**
+   - Use argo-proxy converted data to call upstream API directly
+   - Confirm if it's a format issue
 
-3. **检查工具转换日志**
-   - 查看 `[Input Handle]` 开头的日志
-   - 确认工具格式转换是否正确
+3. **Check Tool Conversion Logs**
+   - View logs starting with `[Input Handle]`
+   - Confirm tool format conversion is correct
 
 ---
 
-## OpenCode 客户端分析
+## OpenCode Client Analysis
 
-### 客户端信息
+### Client Information
 
-| 属性 | 值 |
-|------|-----|
-| 名称 | OpenCode |
-| 仓库 | https://github.com/anomalyco/opencode |
-| 版本 | v1.1.51 |
-| 类型 | CLI 编码助手 |
-| 本地代码 | `reference/opencode/` |
+| Property | Value |
+|----------|-------|
+| Name | OpenCode |
+| Repository | https://github.com/anomalyco/opencode |
+| Version | v1.1.51 |
+| Type | CLI coding assistant |
+| Local Code | `reference/opencode/` |
 
-### 技术栈
+### Tech Stack
 
-OpenCode 使用 **Vercel AI SDK** (`@ai-sdk/*`) 来处理不同的 LLM 提供商：
+OpenCode uses **Vercel AI SDK** (`@ai-sdk/*`) to handle different LLM providers:
 
 ```typescript
-// provider.ts - 支持的 SDK 包
+// provider.ts - Supported SDK packages
 import { createAnthropic } from "@ai-sdk/anthropic"
 import { createOpenAI } from "@ai-sdk/openai"
 import { createGoogleGenerativeAI } from "@ai-sdk/google"
-// ... 更多提供商
+// ... more providers
 ```
 
-### Anthropic 特殊处理
+### Anthropic Special Handling
 
-OpenCode 对 Anthropic/Claude 模型有特殊配置：
+OpenCode has special configuration for Anthropic/Claude models:
 
 ```typescript
 // provider.ts:91-99
@@ -943,9 +943,9 @@ async anthropic() {
 }
 ```
 
-### 工具调用 ID 规范化
+### Tool Call ID Normalization
 
-OpenCode 对 Claude 的 `toolCallId` 进行规范化处理：
+OpenCode normalizes Claude's `toolCallId`:
 
 ```typescript
 // transform.ts:71-86
@@ -956,7 +956,7 @@ if (model.api.id.includes("claude")) {
         if ((part.type === "tool-call" || part.type === "tool-result") && "toolCallId" in part) {
           return {
             ...part,
-            // 只保留字母数字和 _-
+            // Keep only alphanumeric and _-
             toolCallId: part.toolCallId.replace(/[^a-zA-Z0-9_-]/g, "_"),
           }
         }
@@ -968,63 +968,63 @@ if (model.api.id.includes("claude")) {
 }
 ```
 
-### 关键发现
+### Key Findings
 
-1. **工具格式**: OpenCode 使用 AI SDK 的标准格式，工具调用通过 `tool-call` 和 `tool-result` 类型处理
+1. **Tool Format**: OpenCode uses AI SDK's standard format, tool calls are handled through `tool-call` and `tool-result` types
 
-2. **日志中的格式异常**: 日志中看到的工具格式是 **Anthropic 原生 API 格式**：
+2. **Format Anomaly in Logs**: The tool format seen in logs is **Anthropic native API format**:
    ```python
    {'id': 'toolu_vrtx_01HxkqNiX9NvAXS6Aejq6Wph', 'input': {...}, 'name': 'bash', 'type': 'tool_use', 'cache_control': None}
    ```
-   而不是 AI SDK 的格式，这表明问题发生在 **上游 ARGO API** 层面
+   Not AI SDK format, indicating the problem occurs at the **upstream ARGO API** level
 
-3. **Python 字典格式**: 泄漏的工具调用使用 Python 字典格式（单引号、`None`），而非 JSON 格式（双引号、`null`），说明某处代码使用了 `str()` 或 `repr()` 而非 `json.dumps()`
-
----
-
-## 相关案例：LangChain 泄漏问题
-
-### 背景
-
-同事在使用 LangChain 时也遇到过类似的工具调用泄漏问题。
-
-### 共同特征
-
-| 特征 | OpenCode 案例 | LangChain 案例 |
-|------|---------------|----------------|
-| 模型 | Claude 4.5 Opus | Claude 系列 |
-| 泄漏格式 | Python 字典 | 待确认 |
-| tool_calls 字段 | 空数组 | 待确认 |
-| 上游 API | ARGO API | ARGO API |
-
-### 推断
-
-这两个案例的共同点表明问题可能出在：
-
-1. **上游 ARGO API** 对 Claude 模型响应的处理
-2. Claude 模型在某些情况下的特殊行为
-3. 工具调用格式转换过程中的 bug
+3. **Python Dict Format**: Leaked tool calls use Python dict format (single quotes, `None`), not JSON format (double quotes, `null`), indicating some code used `str()` or `repr()` instead of `json.dumps()`
 
 ---
 
-## 日志中 request 字段的格式说明
+## Related Case: LangChain Leak Issue
 
-### 问题
+### Background
 
-日志中的 `request` 字段是已经转换成 ARGO gateway API 格式的，还是原始接收到的 raw 请求？
+A colleague also encountered similar tool call leak issues when using LangChain.
 
-### 答案
+### Common Characteristics
 
-**日志中的 `request` 是已经转换后的 ARGO gateway API 格式**，而不是原始请求。
+| Characteristic | OpenCode Case | LangChain Case |
+|----------------|---------------|----------------|
+| Model | Claude 4.5 Opus | Claude series |
+| Leak Format | Python dict | To be confirmed |
+| tool_calls Field | Empty array | To be confirmed |
+| Upstream API | ARGO API | ARGO API |
 
-### 代码追踪
+### Inference
 
-1. **请求接收** ([`chat.py:787`](src/argoproxy/endpoints/chat.py:787))
+The common points of these two cases suggest the problem may be in:
+
+1. **Upstream ARGO API** handling of Claude model responses
+2. Claude model's special behavior in certain situations
+3. Bug in tool call format conversion process
+
+---
+
+## Request Field Format in Logs
+
+### Question
+
+Is the `request` field in the logs already converted to ARGO gateway API format, or is it the raw request as received?
+
+### Answer
+
+**The `request` in logs is the converted ARGO gateway API format**, not the original request.
+
+### Code Trace
+
+1. **Receive Request** ([`chat.py:787`](src/argoproxy/endpoints/chat.py:787))
    ```python
-   data = await request.json()  # 原始请求
+   data = await request.json()  # Original request
    ```
 
-2. **请求转换** ([`chat.py:807-809`](src/argoproxy/endpoints/chat.py:807-809))
+2. **Request Conversion** ([`chat.py:807-809`](src/argoproxy/endpoints/chat.py:807-809))
    ```python
    # Prepare the request data (includes message scrutinization and normalization)
    data = prepare_chat_request_data(
@@ -1032,37 +1032,37 @@ if (model.api.id.includes("claude")) {
    )
    ```
 
-3. **传递给 ToolInterceptor** ([`chat.py:336-340`](src/argoproxy/endpoints/chat.py:336-340))
+3. **Pass to ToolInterceptor** ([`chat.py:336-340`](src/argoproxy/endpoints/chat.py:336-340))
    ```python
    tool_calls, clean_text = cs.process(
        response_content,
        determine_model_family(data["model"]),
-       request_data=data,  # <-- 传入的是转换后的 data
+       request_data=data,  # <-- Converted data is passed
    )
    ```
 
-4. **记录到日志** ([`output_handle.py:419-424`](src/argoproxy/tool_calls/output_handle.py:419-424))
+4. **Log to File** ([`output_handle.py:419-424`](src/argoproxy/tool_calls/output_handle.py:419-424))
    ```python
    _log_leaked_tool_case(
        text_content=text_content,
        leaked_str=leaked_str,
-       request_data=request_data,  # <-- 这是转换后的数据
+       request_data=request_data,  # <-- This is converted data
        response_data=response_data,
    )
    ```
 
-### 转换过程
+### Conversion Process
 
-`prepare_chat_request_data()` 函数会进行以下转换：
+The `prepare_chat_request_data()` function performs the following conversions:
 
-1. **用户信息替换**: `data["user"] = config.user`
-2. **模型名称映射**: `model_registry.resolve_model_name()`
-3. **消息格式规范化**: `scrutinize_message_entries()`
-4. **工具格式转换**: `handle_tools()` - 将 OpenAI 格式转换为目标模型格式
+1. **User Info Replacement**: `data["user"] = config.user`
+2. **Model Name Mapping**: `model_registry.resolve_model_name()`
+3. **Message Format Normalization**: `scrutinize_message_entries()`
+4. **Tool Format Conversion**: `handle_tools()` - Convert OpenAI format to target model format
 
-### 日志中的证据
+### Evidence in Logs
 
-从日志文件可以看到工具定义使用的是 **Anthropic 原生格式**：
+From the log files, we can see tool definitions use **Anthropic native format**:
 
 ```json
 {
@@ -1077,46 +1077,46 @@ if (model.api.id.includes("claude")) {
 }
 ```
 
-这表明：
-1. 工具格式已经从 OpenAI 格式转换为 Anthropic 格式
-2. 或者客户端（OpenCode）直接发送了 Anthropic 格式，argo-proxy 没有进行转换
+This indicates:
+1. Tool format has been converted from OpenAI format to Anthropic format
+2. Or the client (OpenCode) directly sent Anthropic format, and argo-proxy didn't convert
 
-### 影响
+### Impact
 
-由于日志记录的是转换后的请求，我们无法直接看到客户端发送的原始请求格式。如果需要调试原始请求，需要：
+Since logs record the converted request, we cannot directly see the original request format from the client. If debugging the original request is needed:
 
-1. 在 `prepare_chat_request_data()` 之前添加日志
-2. 或者使用 `log_original_request()` 的输出（第 798 行）
+1. Add logging before `prepare_chat_request_data()`
+2. Or use the output from `log_original_request()` (line 798)
 
 ---
 
-## 综合结论
+## Comprehensive Conclusion
 
-### 问题根因（按可能性排序）
+### Root Cause (Ranked by Likelihood)
 
-1. **上游 ARGO API 响应处理 bug** ⭐⭐⭐
-   - Claude 的 `tool_use` 块没有被正确解析
-   - 被序列化为 Python 字典格式嵌入到文本内容中
-   - 证据：泄漏格式是 Python 字典（单引号、`None`）
+1. **Upstream ARGO API Response Processing Bug** ⭐⭐⭐
+   - Claude's `tool_use` blocks are not correctly parsed
+   - Serialized as Python dict format embedded in text content
+   - Evidence: Leaked format is Python dict (single quotes, `None`)
 
-2. **Claude 4.5 Opus 模型行为异常** ⭐⭐
-   - 模型在某些情况下将工具调用"泄漏"到文本输出
-   - 可能与特定的 prompt 或工具定义格式有关
+2. **Claude 4.5 Opus Model Behavior Anomaly** ⭐⭐
+   - Model "leaks" tool calls into text output in certain situations
+   - May be related to specific prompts or tool definition formats
 
-3. **请求格式不兼容** ⭐
-   - OpenCode 发送的 Anthropic 原生格式工具定义
-   - 可能与上游 API 期望的格式不完全兼容
+3. **Request Format Incompatibility** ⭐
+   - OpenCode sends Anthropic native format tool definitions
+   - May not be fully compatible with what upstream API expects
 
-### 修复方案评估
+### Fix Solution Evaluation
 
-| 方案 | 优点 | 缺点 | 推荐度 |
-|------|------|------|--------|
-| fix/neil-fixes 简单修复 | 简单可靠、无副作用 | 无数据收集 | ⭐⭐⭐⭐⭐ |
-| master 分支日志记录 | 可收集数据分析 | 复杂、有潜在风险 | ⭐⭐⭐ |
-| 向上游报告问题 | 根本解决 | 依赖上游响应 | ⭐⭐⭐⭐ |
+| Solution | Pros | Cons | Recommendation |
+|----------|------|------|----------------|
+| fix/neil-fixes Simple Fix | Simple, reliable, no side effects | No data collection | ⭐⭐⭐⭐⭐ |
+| master Branch Logging | Can collect data for analysis | Complex, has potential risks | ⭐⭐⭐ |
+| Report to Upstream | Root cause fix | Depends on upstream response | ⭐⭐⭐⭐ |
 
-### 建议行动
+### Recommended Actions
 
-1. **立即**: 启用 `ENABLE_LEAKED_TOOL_FIX=true` 或使用 fix/neil-fixes 分支
-2. **短期**: 向上游 ARGO API 团队报告此问题
-3. **长期**: 优化日志记录功能，使用异步写入和安全序列化
+1. **Immediate**: Enable `ENABLE_LEAKED_TOOL_FIX=true` or use fix/neil-fixes branch
+2. **Short-term**: Report this issue to upstream ARGO API team
+3. **Long-term**: Optimize logging functionality with async writing and safe serialization
