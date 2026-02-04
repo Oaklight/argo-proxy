@@ -45,6 +45,7 @@ from ..utils.tokens import (
     calculate_prompt_tokens_async,
     count_tokens_async,
 )
+from ..utils.stream_decoder import StreamDecoder
 from ..utils.transports import pseudo_chunk_generator, send_off_sse
 from ..utils.usage import (
     calculate_completion_tokens_async,
@@ -542,10 +543,14 @@ async def _handle_real_stream(
         total_response_content = ""
         chunk_iterator = upstream_resp.content.iter_any()
         is_first_chunk = True
+        # Use StreamDecoder for safe UTF-8 decoding
+        decoder = StreamDecoder()
 
         async for chunk_bytes in chunk_iterator:
             if chunk_bytes:
-                chunk_text = chunk_bytes.decode()
+                chunk_text, _ = decoder.decode(chunk_bytes)
+                if not chunk_text:
+                    continue
                 total_response_content += chunk_text
                 if asyncio.iscoroutinefunction(openai_compat_fn):
                     chunk_json = await openai_compat_fn(
@@ -574,6 +579,36 @@ async def _handle_real_stream(
                 await send_off_sse(response, cast(Dict[str, Any], chunk_json))
                 is_first_chunk = False  # Only the first chunk gets role: assistant
 
+        # Handle any remaining pending bytes at the end of stream
+        remaining = decoder.flush()
+        if remaining:
+            total_response_content += remaining
+            if asyncio.iscoroutinefunction(openai_compat_fn):
+                chunk_json = await openai_compat_fn(
+                    remaining,
+                    model_name=data["model"],
+                    create_timestamp=created_timestamp,
+                    prompt_tokens=prompt_tokens,
+                    is_streaming=True,
+                    finish_reason=None,
+                    tool_calls=None,
+                    is_first_chunk=is_first_chunk,
+                    chunk_id=shared_id,
+                )
+            else:
+                chunk_json = openai_compat_fn(
+                    remaining,
+                    model_name=data["model"],
+                    create_timestamp=created_timestamp,
+                    prompt_tokens=prompt_tokens,
+                    is_streaming=True,
+                    finish_reason=None,
+                    tool_calls=None,
+                    is_first_chunk=is_first_chunk,
+                    chunk_id=shared_id,
+                )
+            await send_off_sse(response, cast(Dict[str, Any], chunk_json))
+
         # Count completion tokens and send usage
         completion_tokens = await count_tokens_async(
             total_response_content, data["model"]
@@ -588,10 +623,18 @@ async def _handle_real_stream(
         )
         await send_off_sse(response, usage_chunk)
     else:
-        # For non-OpenAI conversion, forward chunks directly
+        # For non-OpenAI conversion, forward chunks directly with safe UTF-8 handling
         chunk_iterator = upstream_resp.content.iter_any()
+        decoder = StreamDecoder()
         async for chunk_bytes in chunk_iterator:
-            await send_off_sse(response, chunk_bytes)
+            chunk_text, _ = decoder.decode(chunk_bytes)
+            if chunk_text:
+                await send_off_sse(response, chunk_text.encode("utf-8"))
+
+        # Send any remaining bytes at the end
+        remaining = decoder.flush()
+        if remaining:
+            await send_off_sse(response, remaining.encode("utf-8"))
 
 
 async def send_streaming_request(

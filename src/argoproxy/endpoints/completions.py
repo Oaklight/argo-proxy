@@ -19,6 +19,7 @@ from ..utils.logging import (
 )
 from ..utils.misc import apply_username_passthrough
 from ..utils.models import apply_claude_max_tokens_limit
+from ..utils.stream_decoder import StreamDecoder
 from ..utils.tokens import count_tokens, count_tokens_async
 from ..utils.transports import pseudo_chunk_generator, send_off_sse
 from ..utils.usage import create_usage, generate_usage_chunk
@@ -213,9 +214,14 @@ async def _handle_real_stream_completions(
     """Handles real streaming for completions by processing chunks from the upstream response."""
     total_response_content = ""
     chunk_iterator = upstream_resp.content.iter_any()
+    # Use StreamDecoder for safe UTF-8 decoding
+    decoder = StreamDecoder()
+
     async for chunk_bytes in chunk_iterator:
         if chunk_bytes:
-            chunk_text = chunk_bytes.decode()
+            chunk_text, _ = decoder.decode(chunk_bytes)
+            if not chunk_text:
+                continue
             total_response_content += chunk_text
             if asyncio.iscoroutinefunction(openai_compat_fn):
                 chunk_json = await openai_compat_fn(
@@ -236,6 +242,30 @@ async def _handle_real_stream_completions(
                     finish_reason=None,
                 )
             await send_off_sse(response, cast(Dict[str, Any], chunk_json))
+
+    # Handle any remaining pending bytes at the end of stream
+    remaining = decoder.flush()
+    if remaining:
+        total_response_content += remaining
+        if asyncio.iscoroutinefunction(openai_compat_fn):
+            chunk_json = await openai_compat_fn(
+                remaining,
+                model_name=data["model"],
+                create_timestamp=created_timestamp,
+                prompt_tokens=prompt_tokens,
+                is_streaming=True,
+                finish_reason=None,
+            )
+        else:
+            chunk_json = openai_compat_fn(
+                remaining,
+                model_name=data["model"],
+                create_timestamp=created_timestamp,
+                prompt_tokens=prompt_tokens,
+                is_streaming=True,
+                finish_reason=None,
+            )
+        await send_off_sse(response, cast(Dict[str, Any], chunk_json))
 
     # Send usage chunk
     completion_tokens = await count_tokens_async(total_response_content, data["model"])
