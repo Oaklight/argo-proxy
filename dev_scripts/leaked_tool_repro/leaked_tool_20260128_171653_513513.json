@@ -1,0 +1,662 @@
+{
+  "timestamp": "2026-01-28T17:16:53.513590",
+  "leaked_tool_string": "{'id': 'toolu_vrtx_01DJaLx1tDTwxMoxLhcBqnMj', 'input': {'description': 'Explore EventClient/EventManager', 'prompt': 'Explore the EventClient and EventManager implementation in this codebase. I need to understand:\\n\\n1. Where is the EventClient defined and how does it work?\\n2. Where is the EventManager defined and how does it work?\\n3. What logging mechanisms are currently in place?\\n4. How are events stored (MongoDB)?\\n5. What configuration options exist for the EventClient and EventManager?\\n\\nProvide file paths with line numbers for key components. Be thorough - this is for planning feature work.', 'subagent_type': 'explore'}, 'name': 'task', 'type': 'tool_use', 'cache_control': None}",
+  "full_text_content": "Now let me explore the current EventClient and EventManager codebase to understand the existing implementation:{'id': 'toolu_vrtx_01DJaLx1tDTwxMoxLhcBqnMj', 'input': {'description': 'Explore EventClient/EventManager', 'prompt': 'Explore the EventClient and EventManager implementation in this codebase. I need to understand:\\n\\n1. Where is the EventClient defined and how does it work?\\n2. Where is the EventManager defined and how does it work?\\n3. What logging mechanisms are currently in place?\\n4. How are events stored (MongoDB)?\\n5. What configuration options exist for the EventClient and EventManager?\\n\\nProvide file paths with line numbers for key components. Be thorough - this is for planning feature work.', 'subagent_type': 'explore'}, 'name': 'task', 'type': 'tool_use', 'cache_control': None}",
+  "context_before": "Now let me explore the current EventClient and EventManager codebase to understand the existing implementation:",
+  "context_after": "",
+  "request": {
+    "model": "claudeopus45",
+    "max_tokens": 20999,
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are OpenCode, the best coding agent on the planet.\n\nYou are an interactive CLI tool that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user.\n\nIMPORTANT: You must NEVER generate or guess URLs for the user unless you are confident that the URLs are for helping the user with programming. You may use URLs provided by the user in their messages or local files.\n\nIf the user asks for help or wants to give feedback inform them of the following:\n- ctrl+p to list available actions\n- To give feedback, users should report the issue at\n  https://github.com/anomalyco/opencode\n\nWhen the user directly asks about OpenCode (eg. \"can OpenCode do...\", \"does OpenCode have...\"), or asks in second person (eg. \"are you able...\", \"can you do...\"), or asks how to use a specific OpenCode feature (eg. implement a hook, write a slash command, or install an MCP server), use the WebFetch tool to gather information to answer the question from OpenCode docs. The list of available docs is available at https://opencode.ai/docs\n\n# Tone and style\n- Only use emojis if the user explicitly requests it. Avoid using emojis in all communication unless asked.\n- Your output will be displayed on a command line interface. Your responses should be short and concise. You can use Github-flavored markdown for formatting, and will be rendered in a monospace font using the CommonMark specification.\n- Output text to communicate with the user; all text you output outside of tool use is displayed to the user. Only use tools to complete tasks. Never use tools like Bash or code comments as means to communicate with the user during the session.\n- NEVER create files unless they're absolutely necessary for achieving your goal. ALWAYS prefer editing an existing file to creating a new one. This includes markdown files.\n\n# Professional objectivity\nPrioritize technical accuracy and truthfulness over validating the user's beliefs. Focus on facts and problem-solving, providing direct, objective technical info without any unnecessary superlatives, praise, or emotional validation. It is best for the user if OpenCode honestly applies the same rigorous standards to all ideas and disagrees when necessary, even if it may not be what the user wants to hear. Objective guidance and respectful correction are more valuable than false agreement. Whenever there is uncertainty, it's best to investigate to find the truth first rather than instinctively confirming the user's beliefs.\n\n# Task Management\nYou have access to the TodoWrite tools to help you manage and plan tasks. Use these tools VERY frequently to ensure that you are tracking your tasks and giving the user visibility into your progress.\nThese tools are also EXTREMELY helpful for planning tasks, and for breaking down larger complex tasks into smaller steps. If you do not use this tool when planning, you may forget to do important tasks - and that is unacceptable.\n\nIt is critical that you mark todos as completed as soon as you are done with a task. Do not batch up multiple tasks before marking them as completed.\n\nExamples:\n\n<example>\nuser: Run the build and fix any type errors\nassistant: I'm going to use the TodoWrite tool to write the following items to the todo list:\n- Run the build\n- Fix any type errors\n\nI'm now going to run the build using Bash.\n\nLooks like I found 10 type errors. I'm going to use the TodoWrite tool to write 10 items to the todo list.\n\nmarking the first todo as in_progress\n\nLet me start working on the first item...\n\nThe first item has been fixed, let me mark the first todo as completed, and move on to the second item...\n..\n..\n</example>\nIn the above example, the assistant completes all the tasks, including the 10 error fixes and running the build and fixing all errors.\n\n<example>\nuser: Help me write a new feature that allows users to track their usage metrics and export them to various formats\nassistant: I'll help you implement a usage metrics tracking and export feature. Let me first use the TodoWrite tool to plan this task.\nAdding the following todos to the todo list:\n1. Research existing metrics tracking in the codebase\n2. Design the metrics collection system\n3. Implement core metrics tracking functionality\n4. Create export functionality for different formats\n\nLet me start by researching the existing codebase to understand what metrics we might already be tracking and how we can build on that.\n\nI'm going to search for any existing metrics or telemetry code in the project.\n\nI've found some existing telemetry code. Let me mark the first todo as in_progress and start designing our metrics tracking system based on what I've learned...\n\n[Assistant continues implementing the feature step by step, marking todos as in_progress and completed as they go]\n</example>\n\n\n# Doing tasks\nThe user will primarily request you perform software engineering tasks. This includes solving bugs, adding new functionality, refactoring code, explaining code, and more. For these tasks the following steps are recommended:\n- \n- Use the TodoWrite tool to plan the task if required\n\n- Tool results and user messages may include <system-reminder> tags. <system-reminder> tags contain useful information and reminders. They are automatically added by the system, and bear no direct relation to the specific tool results or user messages in which they appear.\n\n\n# Tool usage policy\n- When doing file search, prefer to use the Task tool in order to reduce context usage.\n- You should proactively use the Task tool with specialized agents when the task at hand matches the agent's description.\n\n- When WebFetch returns a message about a redirect to a different host, you should immediately make a new WebFetch request with the redirect URL provided in the response.\n- You can call multiple tools in a single response. If you intend to call multiple tools and there are no dependencies between them, make all independent tool calls in parallel. Maximize use of parallel tool calls where possible to increase efficiency. However, if some tool calls depend on previous calls to inform dependent values, do NOT call these tools in parallel and instead call them sequentially. For instance, if one operation must complete before another starts, run these operations sequentially instead. Never use placeholders or guess missing parameters in tool calls.\n- If the user specifies that they want you to run tools \"in parallel\", you MUST send a single message with multiple tool use content blocks. For example, if you need to launch multiple agents in parallel, send a single message with multiple Task tool calls.\n- Use specialized tools instead of bash commands when possible, as this provides a better user experience. For file operations, use dedicated tools: Read for reading files instead of cat/head/tail, Edit for editing instead of sed/awk, and Write for creating files instead of cat with heredoc or echo redirection. Reserve bash tools exclusively for actual system commands and terminal operations that require shell execution. NEVER use bash echo or other command-line tools to communicate thoughts, explanations, or instructions to the user. Output all communication directly in your response text instead.\n- VERY IMPORTANT: When exploring the codebase to gather context or to answer a question that is not a needle query for a specific file/class/function, it is CRITICAL that you use the Task tool instead of running search commands directly.\n<example>\nuser: Where are errors from the client handled?\nassistant: [Uses the Task tool to find the files that handle client errors instead of using Glob or Grep directly]\n</example>\n<example>\nuser: What is the codebase structure?\nassistant: [Uses the Task tool]\n</example>\n\nIMPORTANT: Always use the TodoWrite tool to plan and track tasks throughout the conversation.\n\n# Code References\n\nWhen referencing specific functions or pieces of code include the pattern `file_path:line_number` to allow the user to easily navigate to the source code location.\n\n<example>\nuser: Where are errors from the client handled?\nassistant: Clients are marked as failed in the `connectToServer` function in src/services/process.ts:712.\n</example>\n\nHere is some useful information about the environment you are running in:\n<env>\n  Working directory: /Users/luckierdodge/AD-SDL/MADSci\n  Is directory a git repo: yes\n  Platform: darwin\n  Today's date: Wed Jan 28 2026\n</env>\n<files>\n  \n</files>\nInstructions from: /Users/luckierdodge/AD-SDL/MADSci/AGENTS.md\n# MADSci Agents Guidelines\n\nThis file provides guidance to coding agents when working with code in this repository.\n\n## Repository Overview\n\nMADSci (Modular Autonomous Discovery for Science) is a Python-based framework for scientific laboratory automation and experimentation. The codebase is organized as a monorepo with multiple packages under the `src/` directory, each providing different components of the MADSci ecosystem.\n\n## Key Concepts\n\n### ULID (Universally Unique Lexicographically Sortable Identifier)\nMADSci uses **ULID** for all ID generation throughout the system instead of traditional UUIDs. ULIDs provide:\n- Better performance than UUIDs\n- Lexicographical sorting capability\n- Timestamp-based ordering\n- Universally unique identification\n\nWhen generating new IDs in MADSci code, always use `new_ulid_str()` from `madsci.common.utils`.\n\n## Architecture\n\nThe system follows a microservices architecture with the following main components:\n\n### Core Components\n- **madsci_common**: Shared types, utilities, and base classes used across all components\n- **madsci_client**: Client libraries for interacting with MADSci services\n- **madsci_squid**: Central lab configuration manager and dashboard provider (Lab Manager)\n- **madsci_node_module**: Framework for creating laboratory instrument nodes\n- **madsci_experiment_application**: Provides a class for managing automated and autonomous experiments using MADSci-powered labs.\n\n### Manager Services\n- **madsci_event_manager**: Distributed event logging and querying (Port 8001)\n- **madsci_experiment_manager**: Experimental runs and campaigns management (Port 8002)\n- **madsci_resource_manager**: Laboratory resource and inventory tracking (Port 8003)\n- **madsci_data_manager**: Data capture, storage, and querying (Port 8004)\n- **madsci_workcell_manager**: Workflow coordination and scheduling (Port 8005)\n- **madsci_location_manager**: Laboratory location management, resource attachments, and node-specific references (Port 8006)\n\n### Frontend\n- **ui/**: Vue 3 + Vuetify dashboard for lab management and monitoring\n\n## Development Commands\n\nThis project uses PDM for Python dependency management and `just` for task running.\n\n**When to use PDM vs pip:**\n- **PDM**: Use for development work on the MADSci codebase itself (modifying source code, running tests, contributing)\n- **pip**: Use for installing released MADSci packages in your own projects or when using MADSci components as dependencies\n\n### Setup\n```bash\njust init                    # Initialize project and install all dependencies\n```\n\n### Testing\n```bash\npytest                       # Run all tests\njust test                    # Alternative way to run tests\njust coverage                # Run tests with coverage report\njust coverage-html           # Generate HTML coverage report\njust coverage-xml            # Generate XML coverage report (for CI)\n```\n\n### Code Quality\n```bash\njust checks                  # Run pre-commit checks (ruff, formatting, etc.)\nruff check                   # Run linter manually\nruff format                  # Format code manually\n```\n\n### Docker & Services\n```bash\njust build                   # Build docker images\njust up                      # Start example lab services\njust down                    # Stop services and remove containers\n```\n\n### Frontend Development\n```bash\ncd ui/\nyarn dev                     # Start Vue development server\nyarn build                   # Build for production\n```\n\n### Python Package Management\n```bash\npdm install                  # Install default dependencies\npdm install -G:all           # Install all dependency groups\npdm build                    # Build python packages\n```\n\n## Configuration\n\nConfiguration is handled through environment variables with a hierarchical precedence system. See `Configuration.md` for comprehensive configuration options. Note that this file is automatically generated, and shouldn't be edited directly.\n\nKey configuration patterns:\n- Each manager has its own settings class with environment prefix (e.g., `WORKCELL_`, `EVENT_`, `LOCATION_`)\n- Server URLs default to localhost with specific ports\n- Database connections default to MongoDB/PostgreSQL on localhost\n- File storage paths default to `~/.madsci/` subdirectories\n\n## Development Patterns\n\n### Manager Implementation\nEach manager service follows this pattern:\n1. Settings class inheriting from `MadsciBaseSettings`\n2. Server class inheriting from `AbstractManagerBase` with FastAPI endpoints\n3. Client class for programmatic interaction\n4. Database models (SQLModel for PostgreSQL, Pydantic for MongoDB)\n\nThe `AbstractManagerBase` class provides:\n- Common functionality for all managers (settings, logging, CORS middleware)\n- Standard endpoints (definition, health)\n- FastAPI app configuration and server lifecycle management\n- Generic typing for settings and definition classes\n\n### Type System\n- All types are defined in `madsci_common/types/`\n- Uses Pydantic v2 for data validation and serialization\n- SQLModel for database ORM with PostgreSQL\n- Enum types for status and state management\n\n### ID Generation\n- **ULID (Universally Unique Lexicographically Sortable Identifier)** is used for all IDs throughout MADSci\n- ULIDs provide better performance than UUIDs while maintaining uniqueness and sortability\n- When generating new IDs, use `new_ulid_str()` from `madsci.common.utils`\n- Example usage: `resource_id = new_ulid_str()`\n\n### Database Patterns\n\nMADSci uses two database systems optimized for different use cases:\n\n#### Database Types\n- **PostgreSQL**: Used by Resource Manager for relational data with strict schemas\n- **MongoDB**: Used by Event, Data, Experiment, and Workcell Managers for flexible document storage\n\n#### Backup and Restore\n\nAll backup tools are centralized in `madsci_common` for maximum reusability:\n\n```python\n# PostgreSQL backups\nfrom madsci.common.backup_tools import PostgreSQLBackupTool\nfrom madsci.common.types.backup_types import PostgreSQLBackupSettings\n\nsettings = PostgreSQLBackupSettings(\n    db_url=\"postgresql://localhost/resources\",\n    backup_dir=Path(\"./backups\"),\n    max_backups=10,\n    validate_integrity=True\n)\nbackup_tool = PostgreSQLBackupTool(settings)\nbackup_path = backup_tool.create_backup(\"pre_migration\")\n\n# MongoDB backups\nfrom madsci.common.backup_tools import MongoDBBackupTool\nfrom madsci.common.types.backup_types import MongoDBBackupSettings\n\nsettings = MongoDBBackupSettings(\n    mongo_db_url=AnyUrl(\"mongodb://localhost:27017\"),\n    database=\"events\",\n    backup_dir=Path(\"./backups\"),\n    max_backups=10\n)\nbackup_tool = MongoDBBackupTool(settings)\nbackup_path = backup_tool.create_backup(\"hourly\")\n```\n\n**CLI Usage:**\n```bash\n# Unified CLI (auto-detects database type)\nmadsci-backup create --db-url postgresql://localhost/resources\nmadsci-backup create --db-url mongodb://localhost:27017/events\n\n# Database-specific CLIs\nmadsci-postgres-backup create --db-url postgresql://localhost/resources\nmadsci-mongodb-backup create --mongo-url mongodb://localhost:27017 --database events\n```\n\n#### Database Connections\n\n**PostgreSQL** (using SQLModel):\n```python\nfrom sqlmodel import Session, create_engine\n\nengine = create_engine(\n    db_url,\n    pool_size=20,        # Connection pool size\n    pool_pre_ping=True   # Verify connections before use\n)\n\nwith Session(engine) as session:\n    # Perform operations\n    session.commit()\n```\n\n**MongoDB** (using pymongo):\n```python\nfrom pymongo import MongoClient\n\nwith MongoClient(mongo_url) as client:\n    db = client[database_name]\n    collection = db[collection_name]\n    # Perform operations\n```\n\n#### Database Migrations\n\n**PostgreSQL migrations** (Resource Manager):\n- Uses Alembic for schema version management\n- Automatic backups before migrations\n- Auto-restore on migration failure\n```bash\npython -m madsci.resource_manager.migration_tool --db-url postgresql://localhost/resources\n```\n\n**MongoDB migrations** (per manager):\n- Handle index creation and schema validation\n- Manager-specific migration tools\n- Automatic pre-migration backups\n\n#### Best Practices\n\n1. **Always use ULID for IDs**: `resource_id = new_ulid_str()`\n2. **Backup before migrations**: Automatic with migration tools\n3. **Use connection pooling**: Configure appropriate pool sizes\n4. **Environment variables for config**: Never hardcode connection strings\n5. **Validate backups**: Use `validate_backup_integrity()` for critical backups\n6. **Test migrations first**: Always test in development before production\n\n\n### Node Development\nLaboratory instruments implement the Node interface:\n1. Inherit from `AbstractNodeModule`\n2. Implement required action methods\n3. Define node configuration in YAML\n4. Use REST endpoints for communication\n\n### Testing\n- Uses pytest with docker containers for integration tests\n- Mock resources for database testing\n- Component tests are located in each package's `tests/` directory\n- **IMPORTANT**: Use `pytest` directly instead of `python -m pytest` for running tests\n\n## File Structure Conventions\n\n```\nsrc/madsci_*/\n├── madsci/package_name/     # Python package code\n│   └── *_server.py           # FastAPI server (for managers)\n├── tests/                  # Package-specific tests\n├── README.md               # Package documentation\n└── pyproject.toml          # Package dependencies\nsrc/madsci_client/\n└── madsci/client/*_client.py     # Client implementation\nsrc/madsci_common/\n└── madsci/common/types/*_types.py     # Pydantic Data Models and Enums\n```\n\n## Important Notes\n\n- Python 3.9+ required\n- Docker required for running services and some tests\n- Pre-commit hooks enforce code quality standards\n- The project is currently in beta with potential breaking changes\n- Each package can be used independently or composed together\n- Use PDM virtual environments for development isolation\n- **IMPORTANT**: if you try to run python commands and see missing modules, ensure that the correct virtual environment is activated.\n- **IMPORTANT**: Use `yarn` for managing Node.js dependencies in the `ui/` directory, not npm\n- Try using ruff's autofix/autoformatting before attempting to manually fix linter errors, especially related to things like whitespace.\n- Always use pydantic's `AnyUrl` to store URL's, and note that AnyUrl always ensures a trailing forward slash\n- Imports should generally be done at the top of the file, unless there are circular dependencies or other factors which require localized importing.\n- **IMPORTANT**: do not use noqa's or modify the configuration of linters or checks to bypass linter errors without the users _EXPLICIT_ permission.\n",
+        "cache_control": {
+          "type": "ephemeral"
+        }
+      },
+      {
+        "role": "user",
+        "content": "I'd like to develop a plan to start working on this collection of issues related to MADSci's EventClient and EventManager: https://github.com/AD-SDL/MADSci/issues/218. Before we start, please review the issues."
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I'll fetch the GitHub issue to review the details and understand what needs to be done."
+          },
+          {
+            "id": "toolu_vrtx_01QCUKSbWLAZD7z8vPJsEmwy",
+            "input": {
+              "url": "https://github.com/AD-SDL/MADSci/issues/218",
+              "format": "markdown"
+            },
+            "name": "webfetch",
+            "type": "tool_use",
+            "cache_control": null
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "toolu_vrtx_01QCUKSbWLAZD7z8vPJsEmwy",
+            "content": "                    Meta: Event Client/Manager Improvments · Issue #218 · AD-SDL/MADSci · GitHub                                             \n\n[Skip to content](#start-of-content)  \n\n## Navigation Menu\n\nToggle navigation\n\n[](/)\n\n[Sign in](/login?return_to=https%3A%2F%2Fgithub.com%2FAD-SDL%2FMADSci%2Fissues%2F218)\n\nAppearance settings\n\n \n\n-   Platform\n    \n    -   AI CODE CREATION\n        \n        -   [\n            \n            GitHub CopilotWrite better code with AI\n            \n            ](https://github.com/features/copilot)\n        -   [\n            \n            GitHub SparkBuild and deploy intelligent apps\n            \n            ](https://github.com/features/spark)\n        -   [\n            \n            GitHub ModelsManage and compare prompts\n            \n            ](https://github.com/features/models)\n        -   [\n            \n            MCP RegistryNewIntegrate external tools\n            \n            ](https://github.com/mcp)\n        \n    -   DEVELOPER WORKFLOWS\n        \n        -   [\n            \n            ActionsAutomate any workflow\n            \n            ](https://github.com/features/actions)\n        -   [\n            \n            CodespacesInstant dev environments\n            \n            ](https://github.com/features/codespaces)\n        -   [\n            \n            IssuesPlan and track work\n            \n            ](https://github.com/features/issues)\n        -   [\n            \n            Code ReviewManage code changes\n            \n            ](https://github.com/features/code-review)\n        \n    -   APPLICATION SECURITY\n        \n        -   [\n            \n            GitHub Advanced SecurityFind and fix vulnerabilities\n            \n            ](https://github.com/security/advanced-security)\n        -   [\n            \n            Code securitySecure your code as you build\n            \n            ](https://github.com/security/advanced-security/code-security)\n        -   [\n            \n            Secret protectionStop leaks before they start\n            \n            ](https://github.com/security/advanced-security/secret-protection)\n        \n    -   EXPLORE\n        \n        -   [Why GitHub](https://github.com/why-github)\n        -   [Documentation](https://docs.github.com)\n        -   [Blog](https://github.blog)\n        -   [Changelog](https://github.blog/changelog)\n        -   [Marketplace](https://github.com/marketplace)\n        \n    \n    [View all features](https://github.com/features)\n    \n-   Solutions\n    \n    -   BY COMPANY SIZE\n        \n        -   [Enterprises](https://github.com/enterprise)\n        -   [Small and medium teams](https://github.com/team)\n        -   [Startups](https://github.com/enterprise/startups)\n        -   [Nonprofits](https://github.com/solutions/industry/nonprofits)\n        \n    -   BY USE CASE\n        \n        -   [App Modernization](https://github.com/solutions/use-case/app-modernization)\n        -   [DevSecOps](https://github.com/solutions/use-case/devsecops)\n        -   [DevOps](https://github.com/solutions/use-case/devops)\n        -   [CI/CD](https://github.com/solutions/use-case/ci-cd)\n        -   [View all use cases](https://github.com/solutions/use-case)\n        \n    -   BY INDUSTRY\n        \n        -   [Healthcare](https://github.com/solutions/industry/healthcare)\n        -   [Financial services](https://github.com/solutions/industry/financial-services)\n        -   [Manufacturing](https://github.com/solutions/industry/manufacturing)\n        -   [Government](https://github.com/solutions/industry/government)\n        -   [View all industries](https://github.com/solutions/industry)\n        \n    \n    [View all solutions](https://github.com/solutions)\n    \n-   Resources\n    \n    -   EXPLORE BY TOPIC\n        \n        -   [AI](https://github.com/resources/articles?topic=ai)\n        -   [Software Development](https://github.com/resources/articles?topic=software-development)\n        -   [DevOps](https://github.com/resources/articles?topic=devops)\n        -   [Security](https://github.com/resources/articles?topic=security)\n        -   [View all topics](https://github.com/resources/articles)\n        \n    -   EXPLORE BY TYPE\n        \n        -   [Customer stories](https://github.com/customer-stories)\n        -   [Events & webinars](https://github.com/resources/events)\n        -   [Ebooks & reports](https://github.com/resources/whitepapers)\n        -   [Business insights](https://github.com/solutions/executive-insights)\n        -   [GitHub Skills](https://skills.github.com)\n        \n    -   SUPPORT & SERVICES\n        \n        -   [Documentation](https://docs.github.com)\n        -   [Customer support](https://support.github.com)\n        -   [Community forum](https://github.com/orgs/community/discussions)\n        -   [Trust center](https://github.com/trust-center)\n        -   [Partners](https://github.com/partners)\n        \n    \n-   Open Source\n    \n    -   COMMUNITY\n        \n        -   [\n            \n            GitHub SponsorsFund open source developers\n            \n            ](https://github.com/sponsors)\n        \n    -   PROGRAMS\n        \n        -   [Security Lab](https://securitylab.github.com)\n        -   [Maintainer Community](https://maintainers.github.com)\n        -   [Accelerator](https://github.com/accelerator)\n        -   [Archive Program](https://archiveprogram.github.com)\n        \n    -   REPOSITORIES\n        \n        -   [Topics](https://github.com/topics)\n        -   [Trending](https://github.com/trending)\n        -   [Collections](https://github.com/collections)\n        \n    \n-   Enterprise\n    \n    -   ENTERPRISE SOLUTIONS\n        \n        -   [\n            \n            Enterprise platformAI-powered developer platform\n            \n            ](https://github.com/enterprise)\n        \n    -   AVAILABLE ADD-ONS\n        \n        -   [\n            \n            GitHub Advanced SecurityEnterprise-grade security features\n            \n            ](https://github.com/security/advanced-security)\n        -   [\n            \n            Copilot for BusinessEnterprise-grade AI features\n            \n            ](https://github.com/features/copilot/copilot-business)\n        -   [\n            \n            Premium SupportEnterprise-grade 24/7 support\n            \n            ](https://github.com/premium-support)\n        \n    \n-   [Pricing](https://github.com/pricing)\n\nSearch or jump to...\n\n# Search code, repositories, users, issues, pull requests...\n\nSearch\n\nClear\n\n[Search syntax tips](https://docs.github.com/search-github/github-code-search/understanding-github-code-search-syntax)\n\n# Provide feedback\n\nWe read every piece of feedback, and take your input very seriously.\n\n Include my email address so I can be contacted\n\nCancel Submit feedback\n\n# Saved searches\n\n## Use saved searches to filter your results more quickly\n\nName  \n\nQuery \n\nTo see all available qualifiers, see our [documentation](https://docs.github.com/search-github/github-code-search/understanding-github-code-search-syntax).\n\nCancel Create saved search\n\n[Sign in](/login?return_to=https%3A%2F%2Fgithub.com%2FAD-SDL%2FMADSci%2Fissues%2F218)\n\n[Sign up](/signup?ref_cta=Sign+up&ref_loc=header+logged+out&ref_page=%2F%3Cuser-name%3E%2F%3Crepo-name%3E%2Fvoltron%2Fissues_fragments%2Fissue_layout&source=header-repo&source_repo=AD-SDL%2FMADSci)\n\nAppearance settings\n\nResetting focus\n\nYou signed in with another tab or window. Reload to refresh your session. You signed out in another tab or window. Reload to refresh your session. You switched accounts on another tab or window. Reload to refresh your session. Dismiss alert\n\n[AD-SDL](/AD-SDL) / **[MADSci](/AD-SDL/MADSci)** Public\n\n-   [Notifications](/login?return_to=%2FAD-SDL%2FMADSci) You must be signed in to change notification settings\n-   [Fork 7](/login?return_to=%2FAD-SDL%2FMADSci)\n-   [Star 42](/login?return_to=%2FAD-SDL%2FMADSci)\n    \n\n-   [Code](/AD-SDL/MADSci)\n-   [Issues 47](/AD-SDL/MADSci/issues)\n-   [Pull requests 0](/AD-SDL/MADSci/pulls)\n-   [Discussions](/AD-SDL/MADSci/discussions)\n-   [Actions](/AD-SDL/MADSci/actions)\n-   [Projects 0](/AD-SDL/MADSci/projects)\n-   [Wiki](/AD-SDL/MADSci/wiki)\n-   [Security 0](/AD-SDL/MADSci/security)\n-   [Insights](/AD-SDL/MADSci/pulse)\n\nAdditional navigation options\n\n-   [Code](/AD-SDL/MADSci)\n-   [Issues](/AD-SDL/MADSci/issues)\n-   [Pull requests](/AD-SDL/MADSci/pulls)\n-   [Discussions](/AD-SDL/MADSci/discussions)\n-   [Actions](/AD-SDL/MADSci/actions)\n-   [Projects](/AD-SDL/MADSci/projects)\n-   [Wiki](/AD-SDL/MADSci/wiki)\n-   [Security](/AD-SDL/MADSci/security)\n-   [Insights](/AD-SDL/MADSci/pulse)\n\n \n\n# Meta: Event Client/Manager Improvments #218\n\n[New issue](/login?return_to=https://github.com/AD-SDL/MADSci/issues/218)\n\nCopy link\n\n[New issue](/login?return_to=https://github.com/AD-SDL/MADSci/issues/218)\n\nCopy link\n\nOpen\n\n0 / 40 of 4 issues completed\n\nOpen\n\n[Meta: Event Client/Manager Improvments](#top)#218\n\n0 / 40 of 4 issues completed\n\nCopy link\n\nAssignees\n\n[![RyanTheRobothead](https://avatars.githubusercontent.com/u/15006408?s=64&u=8ada6b99698f27ae4190f5746e771fd4869d657d&v=4)](/RyanTheRobothead)\n\nLabels\n\n[enhancementNew feature or request](https://github.com/AD-SDL/MADSci/issues?q=state%3Aopen%20label%3A%22enhancement%22)New feature or request[researchExplore options for a possible future feature, enhancement, or fix](https://github.com/AD-SDL/MADSci/issues?q=state%3Aopen%20label%3A%22research%22)Explore options for a possible future feature, enhancement, or fix\n\n[![@RyanTheRobothead](https://avatars.githubusercontent.com/u/15006408?u=8ada6b99698f27ae4190f5746e771fd4869d657d&v=4&size=80)](https://github.com/RyanTheRobothead)\n\n## Description\n\n[![@RyanTheRobothead](https://avatars.githubusercontent.com/u/15006408?u=8ada6b99698f27ae4190f5746e771fd4869d657d&v=4&size=48)](https://github.com/RyanTheRobothead)\n\n[RyanTheRobothead](https://github.com/RyanTheRobothead)\n\nopened [on Jan 28, 2026](https://github.com/AD-SDL/MADSci/issues/218#issue-3867832629)\n\nIssue body actions\n\nNo description provided.\n\n### Sub-issues\n\n## Metadata\n\n## Metadata\n\n### Assignees\n\n-   [![@RyanTheRobothead](https://avatars.githubusercontent.com/u/15006408?s=64&u=8ada6b99698f27ae4190f5746e771fd4869d657d&v=4)\n    \n    RyanTheRobothead\n    \n    ](/RyanTheRobothead)\n\n### Labels\n\n[enhancementNew feature or request](https://github.com/AD-SDL/MADSci/issues?q=state%3Aopen%20label%3A%22enhancement%22)New feature or request[researchExplore options for a possible future feature, enhancement, or fix](https://github.com/AD-SDL/MADSci/issues?q=state%3Aopen%20label%3A%22research%22)Explore options for a possible future feature, enhancement, or fix\n\n### Type\n\nNo type\n\n### Projects\n\nNo projects\n\n### Milestone\n\nNo milestone\n\n### Relationships\n\nNone yet\n\n### Development\n\nNo branches or pull requests\n\n## Issue actions\n\n## Footer\n\n[](https://github.com)© 2026 GitHub, Inc.\n\n### Footer navigation\n\n-   [Terms](https://docs.github.com/site-policy/github-terms/github-terms-of-service)\n-   [Privacy](https://docs.github.com/site-policy/privacy-policies/github-privacy-statement)\n-   [Security](https://github.com/security)\n-   [Status](https://www.githubstatus.com/)\n-   [Community](https://github.community/)\n-   [Docs](https://docs.github.com/)\n-   [Contact](https://support.github.com?tags=dotcom-footer)\n-   Manage cookies\n-   Do not share my personal information\n\nYou can’t perform that action at this time."
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I can see this is a meta issue with sub-issues, but the main page doesn't show the details of the sub-issues. Let me use the GitHub CLI to get more detailed information about this issue and its linked sub-issues."
+          },
+          {
+            "id": "toolu_vrtx_01FsAyEH43DRrx6YkRWgzX28",
+            "input": {
+              "command": "gh issue view 218 --repo AD-SDL/MADSci --json title,body,labels,state,assignees",
+              "description": "Get issue 218 details via gh CLI"
+            },
+            "name": "bash",
+            "type": "tool_use",
+            "cache_control": null
+          },
+          {
+            "id": "toolu_vrtx_01GtGtAxFA2sQxLJZVfwzCqM",
+            "input": {
+              "command": "gh api repos/AD-SDL/MADSci/issues/218 --jq '.body_html // .body // \"No body\"'",
+              "description": "Get issue body with sub-issues"
+            },
+            "name": "bash",
+            "type": "tool_use",
+            "cache_control": null
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "toolu_vrtx_01FsAyEH43DRrx6YkRWgzX28",
+            "content": "{\"assignees\":[{\"id\":\"MDQ6VXNlcjE1MDA2NDA4\",\"login\":\"RyanTheRobothead\",\"name\":\"Ryan D. Lewis\",\"databaseId\":0}],\"body\":\"\",\"labels\":[{\"id\":\"LA_kwDONJOks88AAAABylLM6g\",\"name\":\"enhancement\",\"description\":\"New feature or request\",\"color\":\"a2eeef\"},{\"id\":\"LA_kwDONJOks88AAAACHnOUWA\",\"name\":\"research\",\"description\":\"Explore options for a possible future feature, enhancement, or fix\",\"color\":\"f7caa1\"}],\"state\":\"OPEN\",\"title\":\"Meta: Event Client/Manager Improvments\"}\n"
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "toolu_vrtx_01GtGtAxFA2sQxLJZVfwzCqM",
+            "content": "No body\n"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "The meta issue has no body text, but it mentions \"0 / 40 of 4 issues completed\" in the web view, meaning there are sub-issues. Let me fetch the sub-issues directly."
+          },
+          {
+            "id": "toolu_vrtx_01JfGvvjbUALakMQsut7nRvh",
+            "input": {
+              "command": "gh api graphql -f query='\n{\n  repository(owner: \"AD-SDL\", name: \"MADSci\") {\n    issue(number: 218) {\n      title\n      body\n      trackedIssues(first: 20) {\n        nodes {\n          number\n          title\n          state\n          body\n        }\n      }\n    }\n  }\n}'",
+              "description": "Get sub-issues via GraphQL API"
+            },
+            "name": "bash",
+            "type": "tool_use",
+            "cache_control": null
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "toolu_vrtx_01JfGvvjbUALakMQsut7nRvh",
+            "content": "{\"data\":{\"repository\":{\"issue\":{\"title\":\"Meta: Event Client/Manager Improvments\",\"body\":\"\",\"trackedIssues\":{\"nodes\":[]}}}}}"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Let me try a different approach - searching for issues that reference this meta issue or are related to EventClient/EventManager:"
+          },
+          {
+            "id": "toolu_vrtx_01LUktjJ28x8EJmwz6pHfVGi",
+            "input": {
+              "command": "gh search issues --repo AD-SDL/MADSci \"Event\" --state open --json number,title,body --limit 20",
+              "description": "Search for Event-related open issues"
+            },
+            "name": "bash",
+            "type": "tool_use",
+            "cache_control": null
+          },
+          {
+            "id": "toolu_vrtx_01LqPbs7iFAWzFHqnWZMYNNb",
+            "input": {
+              "command": "gh api repos/AD-SDL/MADSci/issues/218 --jq '.body_html'",
+              "description": "Get HTML body of issue 218"
+            },
+            "name": "bash",
+            "type": "tool_use",
+            "cache_control": null
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "toolu_vrtx_01LUktjJ28x8EJmwz6pHfVGi",
+            "content": "[{\"body\":\"\",\"number\":218,\"title\":\"Meta: Event Client/Manager Improvments\"},{\"body\":\"## Python Logging\\n\\n- Add support and default policies for log retention and rotation using python's native logger functionality.\\n- This should be implemented in the EventClient\\n- For rotation, should use https://docs.python.org/3/library/logging.handlers.html#rotatingfilehandler or https://docs.python.org/3/library/logging.handlers.html#timedrotatingfilehandler\\n- Can we support log compression?\\n\\n## MongoDB Event Storage\\n\\n- Should support a maximum retention length for events (default to unlimited)\\n- Should support one-time or regular event backup/export functionality (native mongo functionality?)\\n- Improve client query options\\n\",\"number\":80,\"title\":\"Enhancement: Event/Log Rotation, Retention, and Backup\"},{\"body\":\"The Event Client should automatically log some details the first time it's initialized, with some useful details about the current configuration; most pressingly, the current MADSci version would be very useful to know.\",\"number\":217,\"title\":\"Feature: Automatic Logging Info\"},{\"body\":\"- [ ] Event Manager should support sending automatic notifications when events meeting certain criteria are received\\n- [ ] Should be configurable via event manager configuration\\n- [ ] Should at minimum support\\n    - [ ] Node Loss/Errors\\n    - [ ] Workflow Errors\\n    - [ ] Manager Errors\\n    - [ ] Lab Health Degraded (Node or Manager goes down, for instance)\",\"number\":122,\"title\":\"Feature: Error Notifications\"},{\"body\":\"Add dashboard tab for viewing usage analysis generated by event manager\",\"number\":85,\"title\":\"Feature: Usage Analytics Dashboard\"},{\"body\":\"- [ ] Create `ExperimentRun` and `ExperimentCampaign` Vue components (and `Modals`?) for displaying details of individual experiment campaigns/runs\\n- [ ] Create `ExperimentCampaignTable` Vue components for browsing existing campaigns\\n- [ ] Should be able to easily view all data/events/workflows per experiment and per campaign in single view on dashboard\\n- [ ] Should support sending Experiment Admin Actions\\n\",\"number\":123,\"title\":\"Feature: Dashboard Experiment Views\"},{\"body\":\"- [ ] Port Events Table component from WEI\\n- [ ] Port Workflow Admin Actions from WEI\\n- [ ] Datapoint Table Component and Dashboard Tab\\n\",\"number\":81,\"title\":\"Enhancement: Dashboard Improvements\"},{\"body\":\"- [ ] Workcell should independently manage querying node status/state/about, and querying should be non-blocking, to prevent workcell lockups due to one or more misbehaving nodes\\n- [ ] Workcell engine should have some capacity for proactively reacting to node action status changes (callback, websocket, event monitoring?)\\n- [ ] Workcell should run a scheduler iteration immediately after any change to the workflow queue, to prevent long dwell intervals between steps/workflows\",\"number\":49,\"title\":\"Improvements: Workcell Engine Performance and Robustness\"}]\n"
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "toolu_vrtx_01LqPbs7iFAWzFHqnWZMYNNb",
+            "content": "\n"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": "Let me check the GitHub sub-issues feature more directly - it looks like they might be using a newer GitHub feature:{'id': 'toolu_vrtx_01HxkqNiX9NvAXS6Aejq6Wph', 'input': {'command': 'gh api repos/AD-SDL/MADSci/issues/218/sub_issues 2>/dev/null || gh api graphql -f query=\\'{\\n  repository(owner: \"AD-SDL\", name: \"MADSci\") {\\n    issue(number: 218) {\\n      title\\n      subIssues(first: 20) {\\n        nodes {\\n          number\\n          title\\n          state\\n          body\\n        }\\n      }\\n    }\\n  }\\n}\\' 2>/dev/null || echo \"Sub-issues API not available\"', 'description': 'Try sub_issues API endpoint'}, 'name': 'bash', 'type': 'tool_use', 'cache_control': None}"
+      },
+      {
+        "role": "user",
+        "content": "The issues in question are https://github.com/AD-SDL/MADSci/issues/217, https://github.com/AD-SDL/MADSci/issues/216, https://github.com/AD-SDL/MADSci/issues/215, https://github.com/AD-SDL/MADSci/issues/80"
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Let me fetch all four of these issues to understand the full scope of work:"
+          },
+          {
+            "id": "toolu_vrtx_01WZtqeLk2i3exxyZ9dkT7m1",
+            "input": {
+              "command": "gh issue view 217 --repo AD-SDL/MADSci --json number,title,body,state,labels",
+              "description": "Get issue 217 details"
+            },
+            "name": "bash",
+            "type": "tool_use",
+            "cache_control": null
+          },
+          {
+            "id": "toolu_vrtx_01BWxdrX1WCNVRvbYA7rctz4",
+            "input": {
+              "command": "gh issue view 216 --repo AD-SDL/MADSci --json number,title,body,state,labels",
+              "description": "Get issue 216 details"
+            },
+            "name": "bash",
+            "type": "tool_use",
+            "cache_control": null
+          },
+          {
+            "id": "toolu_vrtx_01X9YyVQ3cKjFQdDGEs8UJ6C",
+            "input": {
+              "command": "gh issue view 215 --repo AD-SDL/MADSci --json number,title,body,state,labels",
+              "description": "Get issue 215 details"
+            },
+            "name": "bash",
+            "type": "tool_use",
+            "cache_control": null
+          },
+          {
+            "id": "toolu_vrtx_01EiS2E31JgfsqirxYxY9x4J",
+            "input": {
+              "command": "gh issue view 80 --repo AD-SDL/MADSci --json number,title,body,state,labels",
+              "description": "Get issue 80 details"
+            },
+            "name": "bash",
+            "type": "tool_use",
+            "cache_control": null
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "toolu_vrtx_01WZtqeLk2i3exxyZ9dkT7m1",
+            "content": "{\"body\":\"The Event Client should automatically log some details the first time it's initialized, with some useful details about the current configuration; most pressingly, the current MADSci version would be very useful to know.\",\"labels\":[{\"id\":\"LA_kwDONJOks88AAAABylLM6g\",\"name\":\"enhancement\",\"description\":\"New feature or request\",\"color\":\"a2eeef\"}],\"number\":217,\"state\":\"OPEN\",\"title\":\"Feature: Automatic Logging Info\"}\n"
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "toolu_vrtx_01BWxdrX1WCNVRvbYA7rctz4",
+            "content": "{\"body\":\"- Switch to the `structlog` python library as a python logging backend for the EventClient.\\n- https://www.structlog.org/en/stable/\",\"labels\":[{\"id\":\"LA_kwDONJOks88AAAABylLM6g\",\"name\":\"enhancement\",\"description\":\"New feature or request\",\"color\":\"a2eeef\"}],\"number\":216,\"state\":\"OPEN\",\"title\":\"Feature: StructLog Support\"}\n"
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "toolu_vrtx_01X9YyVQ3cKjFQdDGEs8UJ6C",
+            "content": "{\"body\":\"- We should explore how the EventClient and EventManager can integrate with/leverage OpenTelemetry.\\n- https://opentelemetry.io/docs/\",\"labels\":[{\"id\":\"LA_kwDONJOks88AAAACHnOUWA\",\"name\":\"research\",\"description\":\"Explore options for a possible future feature, enhancement, or fix\",\"color\":\"f7caa1\"}],\"number\":215,\"state\":\"OPEN\",\"title\":\"Research: OpenTelemetry and the EventManager\"}\n"
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "toolu_vrtx_01EiS2E31JgfsqirxYxY9x4J",
+            "content": "{\"body\":\"## Python Logging\\n\\n- Add support and default policies for log retention and rotation using python's native logger functionality.\\n- This should be implemented in the EventClient\\n- For rotation, should use https://docs.python.org/3/library/logging.handlers.html#rotatingfilehandler or https://docs.python.org/3/library/logging.handlers.html#timedrotatingfilehandler\\n- Can we support log compression?\\n\\n## MongoDB Event Storage\\n\\n- Should support a maximum retention length for events (default to unlimited)\\n- Should support one-time or regular event backup/export functionality (native mongo functionality?)\\n- Improve client query options\\n\",\"labels\":[{\"id\":\"LA_kwDONJOks88AAAABylLM6g\",\"name\":\"enhancement\",\"description\":\"New feature or request\",\"color\":\"a2eeef\"}],\"number\":80,\"state\":\"OPEN\",\"title\":\"Enhancement: Event/Log Rotation, Retention, and Backup\"}\n"
+          }
+        ]
+      }
+    ],
+    "tools": [
+      {
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "questions": {
+              "description": "Questions to ask",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "question": {
+                    "description": "Complete question",
+                    "type": "string"
+                  },
+                  "header": {
+                    "description": "Very short label (max 30 chars)",
+                    "type": "string",
+                    "maxLength": 30
+                  },
+                  "options": {
+                    "description": "Available choices",
+                    "type": "array",
+                    "items": {
+                      "ref": "QuestionOption",
+                      "type": "object",
+                      "properties": {
+                        "label": {
+                          "description": "Display text (1-5 words, concise)",
+                          "type": "string",
+                          "maxLength": 30
+                        },
+                        "description": {
+                          "description": "Explanation of choice",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "label",
+                        "description"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "multiple": {
+                    "description": "Allow selecting multiple choices",
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "question",
+                  "header",
+                  "options"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "questions"
+          ]
+        },
+        "name": "question",
+        "cache_control": null,
+        "description": "Use this tool when you need to ask the user questions during execution. This allows you to:\n1. Gather user preferences or requirements\n2. Clarify ambiguous instructions\n3. Get decisions on implementation choices as you work\n4. Offer choices to the user about what direction to take.\n\nUsage notes:\n- When `custom` is enabled (default), a \"Type your own answer\" option is added automatically; don't include \"Other\" or catch-all options\n- Answers are returned as arrays of labels; set `multiple: true` to allow selecting more than one\n- If you recommend a specific option, make that the first option in the list and add \"(Recommended)\" at the end of the label\n",
+        "type": "custom"
+      },
+      {
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "description": "The command to execute",
+              "type": "string"
+            },
+            "timeout": {
+              "description": "Optional timeout in milliseconds",
+              "type": "number"
+            },
+            "workdir": {
+              "description": "The working directory to run the command in. Defaults to /Users/luckierdodge/AD-SDL/MADSci. Use this instead of 'cd' commands.",
+              "type": "string"
+            },
+            "description": {
+              "description": "Clear, concise description of what this command does in 5-10 words. Examples:\nInput: ls\nOutput: Lists files in current directory\n\nInput: git status\nOutput: Shows working tree status\n\nInput: npm install\nOutput: Installs package dependencies\n\nInput: mkdir foo\nOutput: Creates directory 'foo'",
+              "type": "string"
+            }
+          },
+          "required": [
+            "command",
+            "description"
+          ]
+        },
+        "name": "bash",
+        "cache_control": null,
+        "description": "Executes a given bash command in a persistent shell session with optional timeout, ensuring proper handling and security measures.\n\nAll commands run in /Users/luckierdodge/AD-SDL/MADSci by default. Use the `workdir` parameter if you need to run a command in a different directory. AVOID using `cd <directory> && <command>` patterns - use `workdir` instead.\n\nIMPORTANT: This tool is for terminal operations like git, npm, docker, etc. DO NOT use it for file operations (reading, writing, editing, searching, finding files) - use the specialized tools for this instead.\n\nBefore executing the command, please follow these steps:\n\n1. Directory Verification:\n   - If the command will create new directories or files, first use `ls` to verify the parent directory exists and is the correct location\n   - For example, before running \"mkdir foo/bar\", first use `ls foo` to check that \"foo\" exists and is the intended parent directory\n\n2. Command Execution:\n   - Always quote file paths that contain spaces with double quotes (e.g., rm \"path with spaces/file.txt\")\n   - Examples of proper quoting:\n     - mkdir \"/Users/name/My Documents\" (correct)\n     - mkdir /Users/name/My Documents (incorrect - will fail)\n     - python \"/path/with spaces/script.py\" (correct)\n     - python /path/with spaces/script.py (incorrect - will fail)\n   - After ensuring proper quoting, execute the command.\n   - Capture the output of the command.\n\nUsage notes:\n  - The command argument is required.\n  - You can specify an optional timeout in milliseconds. If not specified, commands will time out after 120000ms (2 minutes).\n  - It is very helpful if you write a clear, concise description of what this command does in 5-10 words.\n  - If the output exceeds 2000 lines or 51200 bytes, it will be truncated and the full output will be written to a file. You can use Read with offset/limit to read specific sections or Grep to search the full content. Because of this, you do NOT need to use `head`, `tail`, or other truncation commands to limit output - just run the command directly.\n\n  - Avoid using Bash with the `find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands, unless explicitly instructed or when these commands are truly necessary for the task. Instead, always prefer using the dedicated tools for these commands:\n    - File search: Use Glob (NOT find or ls)\n    - Content search: Use Grep (NOT grep or rg)\n    - Read files: Use Read (NOT cat/head/tail)\n    - Edit files: Use Edit (NOT sed/awk)\n    - Write files: Use Write (NOT echo >/cat <<EOF)\n    - Communication: Output text directly (NOT echo/printf)\n  - When issuing multiple commands:\n    - If the commands are independent and can run in parallel, make multiple Bash tool calls in a single message. For example, if you need to run \"git status\" and \"git diff\", send a single message with two Bash tool calls in parallel.\n    - If the commands depend on each other and must run sequentially, use a single Bash call with '&&' to chain them together (e.g., `git add . && git commit -m \"message\" && git push`). For instance, if one operation must complete before another starts (like mkdir before cp, Write before Bash for git operations, or git add before git commit), run these operations sequentially instead.\n    - Use ';' only when you need to run commands sequentially but don't care if earlier commands fail\n    - DO NOT use newlines to separate commands (newlines are ok in quoted strings)\n  - AVOID using `cd <directory> && <command>`. Use the `workdir` parameter to change directories instead.\n    <good-example>\n    Use workdir=\"/foo/bar\" with command: pytest tests\n    </good-example>\n    <bad-example>\n    cd /foo/bar && pytest tests\n    </bad-example>\n\n# Committing changes with git\n\nOnly create commits when requested by the user. If unclear, ask first. When the user asks you to create a new git commit, follow these steps carefully:\n\nGit Safety Protocol:\n- NEVER update the git config\n- NEVER run destructive/irreversible git commands (like push --force, hard reset, etc) unless the user explicitly requests them\n- NEVER skip hooks (--no-verify, --no-gpg-sign, etc) unless the user explicitly requests it\n- NEVER run force push to main/master, warn the user if they request it\n- Avoid git commit --amend. ONLY use --amend when ALL conditions are met:\n  (1) User explicitly requested amend, OR commit SUCCEEDED but pre-commit hook auto-modified files that need including\n  (2) HEAD commit was created by you in this conversation (verify: git log -1 --format='%an %ae')\n  (3) Commit has NOT been pushed to remote (verify: git status shows \"Your branch is ahead\")\n- CRITICAL: If commit FAILED or was REJECTED by hook, NEVER amend - fix the issue and create a NEW commit\n- CRITICAL: If you already pushed to remote, NEVER amend unless user explicitly requests it (requires force push)\n- NEVER commit changes unless the user explicitly asks you to. It is VERY IMPORTANT to only commit when explicitly asked, otherwise the user will feel that you are being too proactive.\n\n1. You can call multiple tools in a single response. When multiple independent pieces of information are requested and all commands are likely to succeed, run multiple tool calls in parallel for optimal performance. run the following bash commands in parallel, each using the Bash tool:\n  - Run a git status command to see all untracked files.\n  - Run a git diff command to see both staged and unstaged changes that will be committed.\n  - Run a git log command to see recent commit messages, so that you can follow this repository's commit message style.\n2. Analyze all staged changes (both previously staged and newly added) and draft a commit message:\n  - Summarize the nature of the changes (eg. new feature, enhancement to an existing feature, bug fix, refactoring, test, docs, etc.). Ensure the message accurately reflects the changes and their purpose (i.e. \"add\" means a wholly new feature, \"update\" means an enhancement to an existing feature, \"fix\" means a bug fix, etc.).\n  - Do not commit files that likely contain secrets (.env, credentials.json, etc.). Warn the user if they specifically request to commit those files\n  - Draft a concise (1-2 sentences) commit message that focuses on the \"why\" rather than the \"what\"\n  - Ensure it accurately reflects the changes and their purpose\n3. You can call multiple tools in a single response. When multiple independent pieces of information are requested and all commands are likely to succeed, run multiple tool calls in parallel for optimal performance. run the following commands:\n   - Add relevant untracked files to the staging area.\n   - Create the commit with a message\n   - Run git status after the commit completes to verify success.\n   Note: git status depends on the commit completing, so run it sequentially after the commit.\n4. If the commit fails due to pre-commit hook, fix the issue and create a NEW commit (see amend rules above)\n\nImportant notes:\n- NEVER run additional commands to read or explore code, besides git bash commands\n- NEVER use the TodoWrite or Task tools\n- DO NOT push to the remote repository unless the user explicitly asks you to do so\n- IMPORTANT: Never use git commands with the -i flag (like git rebase -i or git add -i) since they require interactive input which is not supported.\n- If there are no changes to commit (i.e., no untracked files and no modifications), do not create an empty commit\n\n# Creating pull requests\nUse the gh command via the Bash tool for ALL GitHub-related tasks including working with issues, pull requests, checks, and releases. If given a Github URL use the gh command to get the information needed.\n\nIMPORTANT: When the user asks you to create a pull request, follow these steps carefully:\n\n1. You can call multiple tools in a single response. When multiple independent pieces of information are requested and all commands are likely to succeed, run multiple tool calls in parallel for optimal performance. run the following bash commands in parallel using the Bash tool, in order to understand the current state of the branch since it diverged from the main branch:\n   - Run a git status command to see all untracked files\n   - Run a git diff command to see both staged and unstaged changes that will be committed\n   - Check if the current branch tracks a remote branch and is up to date with the remote, so you know if you need to push to the remote\n   - Run a git log command and `git diff [base-branch]...HEAD` to understand the full commit history for the current branch (from the time it diverged from the base branch)\n2. Analyze all changes that will be included in the pull request, making sure to look at all relevant commits (NOT just the latest commit, but ALL commits that will be included in the pull request!!!), and draft a pull request summary\n3. You can call multiple tools in a single response. When multiple independent pieces of information are requested and all commands are likely to succeed, run multiple tool calls in parallel for optimal performance. run the following commands in parallel:\n   - Create new branch if needed\n   - Push to remote with -u flag if needed\n   - Create PR using gh pr create with the format below. Use a HEREDOC to pass the body to ensure correct formatting.\n<example>\ngh pr create --title \"the pr title\" --body \"$(cat <<'EOF'\n## Summary\n<1-3 bullet points>\n</example>\n\nImportant:\n- DO NOT use the TodoWrite or Task tools\n- Return the PR URL when you're done, so the user can see it\n\n# Other common operations\n- View comments on a Github PR: gh api repos/foo/bar/pulls/123/comments\n",
+        "type": "custom"
+      },
+      {
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "filePath": {
+              "description": "The path to the file to read",
+              "type": "string"
+            },
+            "offset": {
+              "description": "The line number to start reading from (0-based)",
+              "type": "number"
+            },
+            "limit": {
+              "description": "The number of lines to read (defaults to 2000)",
+              "type": "number"
+            }
+          },
+          "required": [
+            "filePath"
+          ]
+        },
+        "name": "read",
+        "cache_control": null,
+        "description": "Reads a file from the local filesystem. You can access any file directly by using this tool.\nAssume this tool is able to read all files on the machine. If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.\n\nUsage:\n- The filePath parameter must be an absolute path, not a relative path\n- By default, it reads up to 2000 lines starting from the beginning of the file\n- You can optionally specify a line offset and limit (especially handy for long files), but it's recommended to read the whole file by not providing these parameters\n- Any lines longer than 2000 characters will be truncated\n- Results are returned using cat -n format, with line numbers starting at 1\n- You have the capability to call multiple tools in a single response. It is always better to speculatively read multiple files as a batch that are potentially useful.\n- If you read a file that exists but has empty contents you will receive a system reminder warning in place of file contents.\n- You can read image files using this tool.\n",
+        "type": "custom"
+      },
+      {
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "pattern": {
+              "description": "The glob pattern to match files against",
+              "type": "string"
+            },
+            "path": {
+              "description": "The directory to search in. If not specified, the current working directory will be used. IMPORTANT: Omit this field to use the default directory. DO NOT enter \"undefined\" or \"null\" - simply omit it for the default behavior. Must be a valid directory path if provided.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "pattern"
+          ]
+        },
+        "name": "glob",
+        "cache_control": null,
+        "description": "- Fast file pattern matching tool that works with any codebase size\n- Supports glob patterns like \"**/*.js\" or \"src/**/*.ts\"\n- Returns matching file paths sorted by modification time\n- Use this tool when you need to find files by name patterns\n- When you are doing an open-ended search that may require multiple rounds of globbing and grepping, use the Task tool instead\n- You have the capability to call multiple tools in a single response. It is always better to speculatively perform multiple searches as a batch that are potentially useful.\n",
+        "type": "custom"
+      },
+      {
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "pattern": {
+              "description": "The regex pattern to search for in file contents",
+              "type": "string"
+            },
+            "path": {
+              "description": "The directory to search in. Defaults to the current working directory.",
+              "type": "string"
+            },
+            "include": {
+              "description": "File pattern to include in the search (e.g. \"*.js\", \"*.{ts,tsx}\")",
+              "type": "string"
+            }
+          },
+          "required": [
+            "pattern"
+          ]
+        },
+        "name": "grep",
+        "cache_control": null,
+        "description": "- Fast content search tool that works with any codebase size\n- Searches file contents using regular expressions\n- Supports full regex syntax (eg. \"log.*Error\", \"function\\s+\\w+\", etc.)\n- Filter files by pattern with the include parameter (eg. \"*.js\", \"*.{ts,tsx}\")\n- Returns file paths and line numbers with at least one match sorted by modification time\n- Use this tool when you need to find files containing specific patterns\n- If you need to identify/count the number of matches within files, use the Bash tool with `rg` (ripgrep) directly. Do NOT use `grep`.\n- When you are doing an open-ended search that may require multiple rounds of globbing and grepping, use the Task tool instead\n",
+        "type": "custom"
+      },
+      {
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "filePath": {
+              "description": "The absolute path to the file to modify",
+              "type": "string"
+            },
+            "oldString": {
+              "description": "The text to replace",
+              "type": "string"
+            },
+            "newString": {
+              "description": "The text to replace it with (must be different from oldString)",
+              "type": "string"
+            },
+            "replaceAll": {
+              "description": "Replace all occurrences of oldString (default false)",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "filePath",
+            "oldString",
+            "newString"
+          ]
+        },
+        "name": "edit",
+        "cache_control": null,
+        "description": "Performs exact string replacements in files. \n\nUsage:\n- You must use your `Read` tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file. \n- When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix. The line number prefix format is: spaces + line number + tab. Everything after that tab is the actual file content to match. Never include any part of the line number prefix in the oldString or newString.\n- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.\n- Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked.\n- The edit will FAIL if `oldString` is not found in the file with an error \"oldString not found in content\".\n- The edit will FAIL if `oldString` is found multiple times in the file with an error \"oldString found multiple times and requires more code context to uniquely identify the intended match\". Either provide a larger string with more surrounding context to make it unique or use `replaceAll` to change every instance of `oldString`. \n- Use `replaceAll` for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance.\n",
+        "type": "custom"
+      },
+      {
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "content": {
+              "description": "The content to write to the file",
+              "type": "string"
+            },
+            "filePath": {
+              "description": "The absolute path to the file to write (must be absolute, not relative)",
+              "type": "string"
+            }
+          },
+          "required": [
+            "content",
+            "filePath"
+          ]
+        },
+        "name": "write",
+        "cache_control": null,
+        "description": "Writes a file to the local filesystem.\n\nUsage:\n- This tool will overwrite the existing file if there is one at the provided path.\n- If this is an existing file, you MUST use the Read tool first to read the file's contents. This tool will fail if you did not read the file first.\n- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.\n- NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.\n- Only use emojis if the user explicitly requests it. Avoid writing emojis to files unless asked.\n",
+        "type": "custom"
+      },
+      {
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "description": {
+              "description": "A short (3-5 words) description of the task",
+              "type": "string"
+            },
+            "prompt": {
+              "description": "The task for the agent to perform",
+              "type": "string"
+            },
+            "subagent_type": {
+              "description": "The type of specialized agent to use for this task",
+              "type": "string"
+            },
+            "session_id": {
+              "description": "Existing Task session to continue",
+              "type": "string"
+            },
+            "command": {
+              "description": "The command that triggered this task",
+              "type": "string"
+            }
+          },
+          "required": [
+            "description",
+            "prompt",
+            "subagent_type"
+          ]
+        },
+        "name": "task",
+        "cache_control": null,
+        "description": "Launch a new agent to handle complex, multistep tasks autonomously.\n\nAvailable agent types and the tools they have access to:\n- general: General-purpose agent for researching complex questions and executing multi-step tasks. Use this agent to execute multiple units of work in parallel.\n- explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/components/**/*.tsx\"), search code for keywords (eg. \"API endpoints\"), or answer questions about the codebase (eg. \"how do API endpoints work?\"). When calling this agent, specify the desired thoroughness level: \"quick\" for basic searches, \"medium\" for moderate exploration, or \"very thorough\" for comprehensive analysis across multiple locations and naming conventions.\n\nWhen using the Task tool, you must specify a subagent_type parameter to select which agent type to use.\n\nWhen to use the Task tool:\n- When you are instructed to execute custom slash commands. Use the Task tool with the slash command invocation as the entire prompt. The slash command can take arguments. For example: Task(description=\"Check the file\", prompt=\"/check-file path/to/file.py\")\n\nWhen NOT to use the Task tool:\n- If you want to read a specific file path, use the Read or Glob tool instead of the Task tool, to find the match more quickly\n- If you are searching for a specific class definition like \"class Foo\", use the Glob tool instead, to find the match more quickly\n- If you are searching for code within a specific file or set of 2-3 files, use the Read tool instead of the Task tool, to find the match more quickly\n- Other tasks that are not related to the agent descriptions above\n\n\nUsage notes:\n1. Launch multiple agents concurrently whenever possible, to maximize performance; to do that, use a single message with multiple tool uses\n2. When the agent is done, it will return a single message back to you. The result returned by the agent is not visible to the user. To show the user the result, you should send a text message back to the user with a concise summary of the result.\n3. Each agent invocation is stateless unless you provide a session_id. Your prompt should contain a highly detailed task description for the agent to perform autonomously and you should specify exactly what information the agent should return back to you in its final and only message to you.\n4. The agent's outputs should generally be trusted\n5. Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches, etc.), since it is not aware of the user's intent\n6. If the agent description mentions that it should be used proactively, then you should try your best to use it without the user having to ask for it first. Use your judgement.\n\nExample usage (NOTE: The agents below are fictional examples for illustration only - use the actual agents listed above):\n\n<example_agent_descriptions>\n\"code-reviewer\": use this agent after you are done writing a significant piece of code\n\"greeting-responder\": use this agent when to respond to user greetings with a friendly joke\n</example_agent_description>\n\n<example>\nuser: \"Please write a function that checks if a number is prime\"\nassistant: Sure let me write a function that checks if a number is prime\nassistant: First let me use the Write tool to write a function that checks if a number is prime\nassistant: I'm going to use the Write tool to write the following code:\n<code>\nfunction isPrime(n) {\n  if (n <= 1) return false\n  for (let i = 2; i * i <= n; i++) {\n    if (n % i === 0) return false\n  }\n  return true\n}\n</code>\n<commentary>\nSince a significant piece of code was written and the task was completed, now use the code-reviewer agent to review the code\n</commentary>\nassistant: Now let me use the code-reviewer agent to review the code\nassistant: Uses the Task tool to launch the code-reviewer agent\n</example>\n\n<example>\nuser: \"Hello\"\n<commentary>\nSince the user is greeting, use the greeting-responder agent to respond with a friendly joke\n</commentary>\nassistant: \"I'm going to use the Task tool to launch the with the greeting-responder agent\"\n</example>\n",
+        "type": "custom"
+      },
+      {
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "description": "The URL to fetch content from",
+              "type": "string"
+            },
+            "format": {
+              "description": "The format to return the content in (text, markdown, or html). Defaults to markdown.",
+              "default": "markdown",
+              "type": "string",
+              "enum": [
+                "text",
+                "markdown",
+                "html"
+              ]
+            },
+            "timeout": {
+              "description": "Optional timeout in seconds (max 120)",
+              "type": "number"
+            }
+          },
+          "required": [
+            "url",
+            "format"
+          ]
+        },
+        "name": "webfetch",
+        "cache_control": null,
+        "description": "- Fetches content from a specified URL\n- Takes a URL and optional format as input\n- Fetches the URL content, converts to requested format (markdown by default)\n- Returns the content in the specified format\n- Use this tool when you need to retrieve and analyze web content\n\nUsage notes:\n  - IMPORTANT: if another tool is present that offers better web fetching capabilities, is more targeted to the task, or has fewer restrictions, prefer using that tool instead of this one.\n  - The URL must be a fully-formed valid URL\n  - HTTP URLs will be automatically upgraded to HTTPS\n  - Format options: \"markdown\" (default), \"text\", or \"html\"\n  - This tool is read-only and does not modify any files\n  - Results may be summarized if the content is very large\n",
+        "type": "custom"
+      },
+      {
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "todos": {
+              "description": "The updated todo list",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "description": "Brief description of the task",
+                    "type": "string"
+                  },
+                  "status": {
+                    "description": "Current status of the task: pending, in_progress, completed, cancelled",
+                    "type": "string"
+                  },
+                  "priority": {
+                    "description": "Priority level of the task: high, medium, low",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "Unique identifier for the todo item",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "content",
+                  "status",
+                  "priority",
+                  "id"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "todos"
+          ]
+        },
+        "name": "todowrite",
+        "cache_control": null,
+        "description": "Use this tool to create and manage a structured task list for your current coding session. This helps you track progress, organize complex tasks, and demonstrate thoroughness to the user.\nIt also helps the user understand the progress of the task and overall progress of their requests.\n\n## When to Use This Tool\nUse this tool proactively in these scenarios:\n\n1. Complex multistep tasks - When a task requires 3 or more distinct steps or actions\n2. Non-trivial and complex tasks - Tasks that require careful planning or multiple operations\n3. User explicitly requests todo list - When the user directly asks you to use the todo list\n4. User provides multiple tasks - When users provide a list of things to be done (numbered or comma-separated)\n5. After receiving new instructions - Immediately capture user requirements as todos. Feel free to edit the todo list based on new information.\n6. After completing a task - Mark it complete and add any new follow-up tasks\n7. When you start working on a new task, mark the todo as in_progress. Ideally you should only have one todo as in_progress at a time. Complete existing tasks before starting new ones.\n\n## When NOT to Use This Tool\n\nSkip using this tool when:\n1. There is only a single, straightforward task\n2. The task is trivial and tracking it provides no organizational benefit\n3. The task can be completed in less than 3 trivial steps\n4. The task is purely conversational or informational\n\nNOTE that you should not use this tool if there is only one trivial task to do. In this case you are better off just doing the task directly.\n\n## Examples of When to Use the Todo List\n\n<example>\nUser: I want to add a dark mode toggle to the application settings. Make sure you run the tests and build when you're done!\nAssistant: I'll help add a dark mode toggle to your application settings. Let me create a todo list to track this implementation.\n*Creates todo list with the following items:*\n1. Create dark mode toggle component in Settings page\n2. Add dark mode state management (context/store)\n3. Implement CSS-in-JS styles for dark theme\n4. Update existing components to support theme switching\n5. Run tests and build process, addressing any failures or errors that occur\n*Begins working on the first task*\n\n<reasoning>\nThe assistant used the todo list because:\n1. Adding dark mode is a multi-step feature requiring UI, state management, and styling changes\n2. The user explicitly requested tests and build be run afterward\n3. The assistant inferred that tests and build need to pass by adding \"Ensure tests and build succeed\" as the final task\n</reasoning>\n</example>\n\n<example>\nUser: Help me rename the function getCwd to getCurrentWorkingDirectory across my project\nAssistant: Let me first search through your codebase to find all occurrences of 'getCwd'.\n*Uses grep or search tools to locate all instances of getCwd in the codebase*\nAssistant: I've found 15 instances of 'getCwd' across 8 different files. Let me create a todo list to track these changes.\n*Creates todo list with specific items for each file that needs updating*\n\n<reasoning>\nThe assistant used the todo list because:\n1. First, the assistant searched to understand the scope of the task\n2. Upon finding multiple occurrences across different files, it determined this was a complex task with multiple steps\n3. The todo list helps ensure every instance is tracked and updated systematically\n4. This approach prevents missing any occurrences and maintains code consistency\n</reasoning>\n</example>\n\n\n<example>\nUser: I need to implement these features for my e-commerce site: user registration, product catalog, shopping cart, and checkout flow.\nAssistant: I'll help implement these features. First, let's add all the features to the todo list.\n*Creates a todo list breaking down each feature into specific tasks based on the project architecture*\nAssistant: Let's start with user registration. This will involve creating database models, API endpoints, and frontend forms that integrate with your existing authentication system.\n\n<reasoning>\nThe assistant used the todo list because:\n1. The user provided multiple complex features to implement in a comma separated list\n2. The todo list helps organize these large features into manageable tasks\n3. This approach allows for tracking progress across the entire implementation\n</reasoning>\n</example>\n\n<example>\nUser: Can you help optimize my React application? It's rendering slowly and has performance issues.</user>\nAssistant: I'll help optimize your React application. First, let me examine your codebase to identify potential performance bottlenecks.\n*Reviews component structure, render patterns, state management, and data fetching*\nAssistant: After analyzing your codebase, I've identified several performance issues. Let me create a todo list to track our optimization efforts.\n*Creates todo list with items like: 1) Implement memoization for expensive calculations in ProductList, 2) Add virtualization for long lists in Dashboard, 3) Optimize image loading in Gallery component, 4) Fix state update loops in ShoppingCart, 5) Review bundle size and implement code splitting*\nLet's start by implementing memoization for the expensive calculations in your ProductList component.</assistant>\n\n<reasoning>\nThe assistant used the todo list because:\n1. First, the assistant examined the codebase to identify specific performance issues\n2. Based on this analysis, it identified multiple optimization opportunities\n3. Performance optimization is a non-trivial task requiring multiple steps\n4. The todo list helps methodically track improvements across different components\n5. This systematic approach ensures all performance bottlenecks are addressed\n</reasoning>\n</example>\n\n## Examples of When NOT to Use the Todo List\n\n<example>\nUser: How do I print 'Hello World' in Python?\nAssistant: In Python, you can print \"Hello World\" with this simple code:\n\npython\nprint(\"Hello World\")\n\nThis will output the text \"Hello World\" to the console when executed.</assistant>\n\n<reasoning>\nThe assistant did not use the todo list because this is a single, trivial task that can be completed in one step. There's no need to track multiple tasks or steps for such a straightforward request.\n</reasoning>\n</example>\n\n<example>\nUser: What does the git status command do?\nAssistant: The git status command shows the current state of your working directory and staging area. It displays which changes have been staged, which haven't, and which files aren't being tracked by Git. This is a fundamental command for understanding the current state of your repository before making commits.\n\n<reasoning>\nThe assistant did not use the todo list because this is an informational request with no actual coding task to complete. The user is simply asking for an explanation, not for the assistant to perform multiple steps or tasks.\n</reasoning>\n</example>\n\n<example>\nUser: Can you add a comment to the calculateTotal function to explain what it does?\nAssistant: Sure, let me add a comment to the calculateTotal function to explain what it does.\n* Uses the Edit tool to add a comment to the calculateTotal function *\n\n<reasoning>\nThe assistant did not use the todo list because this is a single, straightforward task confined to one location in the code. Adding a comment doesn't require tracking multiple steps or systematic organization.\n</reasoning>\n</example>\n\n<example>\nUser: Run npm install for me and tell me what happens.\nAssistant: I'll run the npm install command for you.\n\n*Executes: npm install*\n\nThe command completed successfully. Here's the output:\n[Output of npm install command]\n\nAll dependencies have been installed according to your package.json file.\n\n<reasoning>\nThe assistant did not use the todo list because this is a single command execution with immediate results. There are no multiple steps to track or organize, making the todo list unnecessary for this straightforward task.\n</reasoning>\n</example>\n\n## Task States and Management\n\n1. **Task States**: Use these states to track progress:\n   - pending: Task not yet started\n   - in_progress: Currently working on (limit to ONE task at a time)\n   - completed: Task finished successfully\n   - cancelled: Task no longer needed\n\n2. **Task Management**:\n   - Update task status in real-time as you work\n   - Mark tasks complete IMMEDIATELY after finishing (don't batch completions)\n   - Only have ONE task in_progress at any time\n   - Complete current tasks before starting new ones\n   - Cancel tasks that become irrelevant\n\n3. **Task Breakdown**:\n   - Create specific, actionable items\n   - Break complex tasks into smaller, manageable steps\n   - Use clear, descriptive task names\n\nWhen in doubt, use this tool. Being proactive with task management demonstrates attentiveness and ensures you complete all requirements successfully.\n\n",
+        "type": "custom"
+      },
+      {
+        "input_schema": {
+          "type": "object",
+          "properties": {},
+          "required": null
+        },
+        "name": "todoread",
+        "cache_control": null,
+        "description": "Use this tool to read your todo list",
+        "type": "custom"
+      },
+      {
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "description": "The skill identifier from available_skills",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ]
+        },
+        "name": "skill",
+        "cache_control": null,
+        "description": "Load a skill to get detailed instructions for a specific task. No skills are currently available.",
+        "type": "custom"
+      }
+    ],
+    "tool_choice": {
+      "disable_parallel_tool_use": false,
+      "type": "auto"
+    },
+    "stream": false,
+    "stream_options": {
+      "include_usage": true
+    },
+    "user": "luckierdodge"
+  },
+  "response": {
+    "content": "Now let me explore the current EventClient and EventManager codebase to understand the existing implementation:{'id': 'toolu_vrtx_01DJaLx1tDTwxMoxLhcBqnMj', 'input': {'description': 'Explore EventClient/EventManager', 'prompt': 'Explore the EventClient and EventManager implementation in this codebase. I need to understand:\\n\\n1. Where is the EventClient defined and how does it work?\\n2. Where is the EventManager defined and how does it work?\\n3. What logging mechanisms are currently in place?\\n4. How are events stored (MongoDB)?\\n5. What configuration options exist for the EventClient and EventManager?\\n\\nProvide file paths with line numbers for key components. Be thorough - this is for planning feature work.', 'subagent_type': 'explore'}, 'name': 'task', 'type': 'tool_use', 'cache_control': None}",
+    "tool_calls": []
+  }
+}
