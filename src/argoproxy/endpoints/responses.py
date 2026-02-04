@@ -38,6 +38,7 @@ from ..utils.tokens import (
     count_tokens,
     count_tokens_async,
 )
+from ..utils.stream_decoder import StreamDecoder
 from ..utils.transports import send_off_sse
 from ..utils.usage import calculate_completion_tokens_async, create_usage
 from .chat import (
@@ -353,9 +354,14 @@ async def _handle_real_stream_events(
         A tuple containing the updated sequence number and the cumulated response text.
     """
     cumulated_response = ""
+    # Use StreamDecoder for safe UTF-8 decoding
+    decoder = StreamDecoder()
+
     async for chunk in upstream_resp.content.iter_any():
+        chunk_text, _ = decoder.decode(chunk)
+        if not chunk_text:
+            continue
         sequence_number += 1
-        chunk_text = chunk.decode()
         cumulated_response += chunk_text
         text_delta = transform_streaming_response(
             json.dumps({"response": chunk_text}),
@@ -365,6 +371,21 @@ async def _handle_real_stream_events(
             id=output_msg.id,
         )
         await send_off_sse(response, text_delta)
+
+    # Handle any remaining pending bytes at the end of stream
+    remaining = decoder.flush()
+    if remaining:
+        sequence_number += 1
+        cumulated_response += remaining
+        text_delta = transform_streaming_response(
+            json.dumps({"response": remaining}),
+            content_index=content_part.content_index,
+            output_index=output_item.output_index,
+            sequence_number=sequence_number,
+            id=output_msg.id,
+        )
+        await send_off_sse(response, text_delta)
+
     return sequence_number, cumulated_response
 
 
