@@ -454,6 +454,8 @@ The upstream ARGO API returns a 500 error, requiring further investigation:
 
 ### Received Log Files
 
+#### Batch 1 (2026-01-28)
+
 **Source**: `reference/bugs_report/leaked_tool_logs_20260128_171914.tar.gz`
 
 **Extracted Location**: `reference/bugs_report/leaked_tool_logs/`
@@ -462,9 +464,22 @@ The upstream ARGO API returns a 500 error, requiring further investigation:
 - `leaked_tool_20260128_171422_165810.json` (83,269 bytes)
 - `leaked_tool_20260128_171653_513513.json` (89,432 bytes)
 
+#### Batch 2 (2026-01-31)
+
+**Source**: `reference/bugs_report/leaked_tool_logs_20260204_101152.tar.gz`
+
+**Extracted Location**: `reference/bugs_report/`
+
+**File List**:
+- `leaked_tool_20260131_114729_223329.json` (101,537 bytes)
+- `leaked_tool_20260131_114941_897350.json` (174,287 bytes)
+- `leaked_tool_20260131_115028_795330.json` (97,595 bytes)
+
 ---
 
-### Log 1: leaked_tool_20260128_171422_165810.json
+### Batch 1 Logs (2026-01-28)
+
+#### Log 1: leaked_tool_20260128_171422_165810.json
 
 **Timestamp**: 2026-01-28T17:14:22.166209
 
@@ -506,7 +521,7 @@ The upstream ARGO API returns a 500 error, requiring further investigation:
 
 ---
 
-### Log 2: leaked_tool_20260128_171653_513513.json
+#### Log 2: leaked_tool_20260128_171653_513513.json
 
 **Timestamp**: 2026-01-28T17:16:53.513590
 
@@ -546,6 +561,115 @@ The upstream ARGO API returns a 500 error, requiring further investigation:
   "tool_calls": []
 }
 ```
+
+---
+
+### Batch 2 Logs (2026-01-31)
+
+These logs were captured from a different session, also using Claude 4.5 Opus model.
+
+#### Log 3: leaked_tool_20260131_114729_223329.json
+
+**Timestamp**: 2026-01-31T11:47:29.223401
+
+**Leaked Tool Calls** (3 tool calls leaked):
+```python
+{'id': 'toolu_vrtx_01QBgH1sXNz5D1RKAncMnqmY', 'input': {'filePath': '/home/pding/projects/argo-proxy/src/argoproxy/utils/transports.py'}, 'name': 'read', 'type': 'tool_use', 'cache_control': None}
+{'id': 'toolu_vrtx_01PUHXQxDodSPZpkPn3zNqN9', 'input': {'filePath': '/home/pding/projects/argo-proxy/src/argoproxy/performance.py'}, 'name': 'read', 'type': 'tool_use', 'cache_control': None}
+{'id': 'toolu_vrtx_01RZT2mNxNZnawt4uFNgb8B1', 'input': {'filePath': '/home/pding/projects/argo-proxy/src/argoproxy/app.py'}, 'name': 'read', 'type': 'tool_use', 'cache_control': None}
+```
+
+**Context**:
+- **context_before**: "Now let me look at the key files for HTTP client usage and transport layer:"
+- **context_after**: Contains the other 2 leaked tool calls
+
+**Request Information**:
+| Field | Value |
+|-------|-------|
+| model | `claudeopus45` |
+| max_tokens | 21000 |
+| stream | false |
+| user | pding |
+
+**Client**: OpenCode (file search specialist agent)
+
+**Key Observation**: Multiple tool calls leaked in sequence, all `read` tool calls for different files.
+
+---
+
+#### Log 4: leaked_tool_20260131_114941_897350.json
+
+**Timestamp**: 2026-01-31T11:49:41.897416
+
+**Leaked Tool Call** (1 tool call leaked):
+```python
+{'id': 'toolu_vrtx_01ABEDxNrBmguwfMHr63qXJq', 'input': {'filePath': '/home/pding/projects/argo-proxy/src/argoproxy/models.py'}, 'name': 'read', 'type': 'tool_use', 'cache_control': None}
+```
+
+**Context**:
+- **context_before**: "" (empty - pure tool call, no preceding text)
+- **context_after**: "" (empty)
+
+**Request Information**:
+| Field | Value |
+|-------|-------|
+| model | `claudeopus45` |
+| max_tokens | 21000 |
+| stream | false |
+| user | pding |
+
+**Client**: OpenCode (file search specialist agent)
+
+**Key Observation**: Pure tool call with no surrounding text - the entire response content is just the leaked tool call.
+
+---
+
+#### Log 5: leaked_tool_20260131_115028_795330.json
+
+**Timestamp**: 2026-01-31T11:50:28.795400
+
+**Leaked Tool Calls** (4 tool calls leaked):
+```python
+{'id': 'toolu_vrtx_011gCGBBVaHLMxJSyMxB5fST', 'input': {'filePath': '/home/pding/projects/argo-proxy/src/argoproxy/app.py'}, 'name': 'read', 'type': 'tool_use', 'cache_control': None}
+{'id': 'toolu_vrtx_014hEH2AVktrT7mcJqbCXmrR', 'input': {'filePath': '/home/pding/projects/argo-proxy/config.sample.yaml'}, 'name': 'read', 'type': 'tool_use', 'cache_control': None}
+{'id': 'toolu_vrtx_01H6o62uZ4TQTxffn8EJP2E3', 'input': {'pattern': '**/*.yaml', 'path': '/home/pding/projects/argo-proxy'}, 'name': 'glob', 'type': 'tool_use', 'cache_control': None}
+{'id': 'toolu_vrtx_01GJ5VxKruvFejdaUftHQe19', 'input': {'pattern': 'ARGO|argo_url|apps.inside.anl.gov', 'path': '/home/pding/projects/argo-proxy', 'include': '*.py'}, 'name': 'grep', 'type': 'tool_use', 'cache_control': None}
+```
+
+**Context**:
+- **context_before**: "Let me look at the main app.py and config files to understand the architecture better, and also check the .env file for any Google-related configs:"
+- **context_after**: Contains the other 3 leaked tool calls
+
+**Request Information**:
+| Field | Value |
+|-------|-------|
+| model | `claudeopus45` |
+| max_tokens | 21000 |
+| stream | false |
+| user | pding |
+
+**Client**: OpenCode (file search specialist agent)
+
+**Key Observation**: Multiple different tool types leaked (`read`, `glob`, `grep`), all in the same response.
+
+---
+
+### Batch 2 Summary
+
+| Log | Timestamp | Leaked Tools | Tool Types | Has Context |
+|-----|-----------|--------------|------------|-------------|
+| Log 3 | 11:47:29 | 3 | read (x3) | Yes |
+| Log 4 | 11:49:41 | 1 | read | No (pure tool call) |
+| Log 5 | 11:50:28 | 4 | read (x2), glob, grep | Yes |
+
+**Common Characteristics**:
+1. All use `claudeopus45` model (Claude 4.5 Opus)
+2. All have `stream: false` (non-streaming mode)
+3. All from the same user session (pding)
+4. All within a 3-minute window (11:47 - 11:50)
+5. All use OpenCode's file search specialist agent
+
+**New Finding**: Log 4 shows a case where the **entire response is just the leaked tool call** with no surrounding text. This is different from other cases where tool calls are embedded within explanatory text.
 
 ---
 
@@ -1120,3 +1244,32 @@ Since logs record the converted request, we cannot directly see the original req
 1. **Immediate**: Enable `ENABLE_LEAKED_TOOL_FIX=true` or use fix/neil-fixes branch
 2. **Short-term**: Report this issue to upstream ARGO API team
 3. **Long-term**: Optimize logging functionality with async writing and safe serialization
+
+---
+
+## Reproduction Scripts
+
+Reproduction scripts have been created in `dev_scripts/leaked_tool_repro/`:
+
+| Script | Log File | Description |
+|--------|----------|-------------|
+| `repro_case_1.py` | `leaked_tool_20260128_171422_165810.json` | Batch 1, Case 1 |
+| `repro_case_2.py` | `leaked_tool_20260128_171653_513513.json` | Batch 1, Case 2 |
+
+### Usage
+
+```bash
+cd dev_scripts/leaked_tool_repro
+
+# Test via argo-proxy (default)
+python repro_case_1.py
+
+# Test directly against ARGO API
+TEST_DIRECT=true python repro_case_1.py
+```
+
+### Notes
+
+- Scripts load request data from the corresponding JSON log files
+- Direct ARGO API testing requires network access to ANL internal network
+- The scripts output raw JSON responses for analysis
