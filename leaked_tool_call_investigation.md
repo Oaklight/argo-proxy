@@ -1,7 +1,8 @@
 # Claude 泄漏工具调用问题调查报告
 
-> **状态**: 🔄 进行中 - 等待同事日志
-> **最后更新**: 2026-01-26
+> **状态**: 🔄 进行中 - 日志分析完成，待进一步验证
+> **最后更新**: 2026-02-04
+> **调查分支**: `investigation/leaked-tool-calls`
 
 ## 背景
 
@@ -896,3 +897,143 @@ if not claude_tool_calls and "{'id': 'toolu_" in text_content:
 3. **检查工具转换日志**
    - 查看 `[Input Handle]` 开头的日志
    - 确认工具格式转换是否正确
+
+---
+
+## OpenCode 客户端分析
+
+### 客户端信息
+
+| 属性 | 值 |
+|------|-----|
+| 名称 | OpenCode |
+| 仓库 | https://github.com/anomalyco/opencode |
+| 版本 | v1.1.51 |
+| 类型 | CLI 编码助手 |
+| 本地代码 | `reference/opencode/` |
+
+### 技术栈
+
+OpenCode 使用 **Vercel AI SDK** (`@ai-sdk/*`) 来处理不同的 LLM 提供商：
+
+```typescript
+// provider.ts - 支持的 SDK 包
+import { createAnthropic } from "@ai-sdk/anthropic"
+import { createOpenAI } from "@ai-sdk/openai"
+import { createGoogleGenerativeAI } from "@ai-sdk/google"
+// ... 更多提供商
+```
+
+### Anthropic 特殊处理
+
+OpenCode 对 Anthropic/Claude 模型有特殊配置：
+
+```typescript
+// provider.ts:91-99
+async anthropic() {
+  return {
+    autoload: false,
+    options: {
+      headers: {
+        "anthropic-beta":
+          "claude-code-20250219,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14",
+      },
+    },
+  }
+}
+```
+
+### 工具调用 ID 规范化
+
+OpenCode 对 Claude 的 `toolCallId` 进行规范化处理：
+
+```typescript
+// transform.ts:71-86
+if (model.api.id.includes("claude")) {
+  return msgs.map((msg) => {
+    if ((msg.role === "assistant" || msg.role === "tool") && Array.isArray(msg.content)) {
+      msg.content = msg.content.map((part) => {
+        if ((part.type === "tool-call" || part.type === "tool-result") && "toolCallId" in part) {
+          return {
+            ...part,
+            // 只保留字母数字和 _-
+            toolCallId: part.toolCallId.replace(/[^a-zA-Z0-9_-]/g, "_"),
+          }
+        }
+        return part
+      })
+    }
+    return msg
+  })
+}
+```
+
+### 关键发现
+
+1. **工具格式**: OpenCode 使用 AI SDK 的标准格式，工具调用通过 `tool-call` 和 `tool-result` 类型处理
+
+2. **日志中的格式异常**: 日志中看到的工具格式是 **Anthropic 原生 API 格式**：
+   ```python
+   {'id': 'toolu_vrtx_01HxkqNiX9NvAXS6Aejq6Wph', 'input': {...}, 'name': 'bash', 'type': 'tool_use', 'cache_control': None}
+   ```
+   而不是 AI SDK 的格式，这表明问题发生在 **上游 ARGO API** 层面
+
+3. **Python 字典格式**: 泄漏的工具调用使用 Python 字典格式（单引号、`None`），而非 JSON 格式（双引号、`null`），说明某处代码使用了 `str()` 或 `repr()` 而非 `json.dumps()`
+
+---
+
+## 相关案例：LangChain 泄漏问题
+
+### 背景
+
+同事在使用 LangChain 时也遇到过类似的工具调用泄漏问题。
+
+### 共同特征
+
+| 特征 | OpenCode 案例 | LangChain 案例 |
+|------|---------------|----------------|
+| 模型 | Claude 4.5 Opus | Claude 系列 |
+| 泄漏格式 | Python 字典 | 待确认 |
+| tool_calls 字段 | 空数组 | 待确认 |
+| 上游 API | ARGO API | ARGO API |
+
+### 推断
+
+这两个案例的共同点表明问题可能出在：
+
+1. **上游 ARGO API** 对 Claude 模型响应的处理
+2. Claude 模型在某些情况下的特殊行为
+3. 工具调用格式转换过程中的 bug
+
+---
+
+## 综合结论
+
+### 问题根因（按可能性排序）
+
+1. **上游 ARGO API 响应处理 bug** ⭐⭐⭐
+   - Claude 的 `tool_use` 块没有被正确解析
+   - 被序列化为 Python 字典格式嵌入到文本内容中
+   - 证据：泄漏格式是 Python 字典（单引号、`None`）
+
+2. **Claude 4.5 Opus 模型行为异常** ⭐⭐
+   - 模型在某些情况下将工具调用"泄漏"到文本输出
+   - 可能与特定的 prompt 或工具定义格式有关
+
+3. **请求格式不兼容** ⭐
+   - OpenCode 发送的 Anthropic 原生格式工具定义
+   - 可能与上游 API 期望的格式不完全兼容
+
+### 修复方案评估
+
+| 方案 | 优点 | 缺点 | 推荐度 |
+|------|------|------|--------|
+| fix/neil-fixes 简单修复 | 简单可靠、无副作用 | 无数据收集 | ⭐⭐⭐⭐⭐ |
+| master 分支日志记录 | 可收集数据分析 | 复杂、有潜在风险 | ⭐⭐⭐ |
+| 向上游报告问题 | 根本解决 | 依赖上游响应 | ⭐⭐⭐⭐ |
+
+### 建议行动
+
+1. **立即**: 启用 `ENABLE_LEAKED_TOOL_FIX=true` 或使用 fix/neil-fixes 分支
+2. **短期**: 向上游 ARGO API 团队报告此问题
+3. **长期**: 优化日志记录功能，使用异步写入和安全序列化
