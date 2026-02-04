@@ -1007,6 +1007,89 @@ if (model.api.id.includes("claude")) {
 
 ---
 
+## 日志中 request 字段的格式说明
+
+### 问题
+
+日志中的 `request` 字段是已经转换成 ARGO gateway API 格式的，还是原始接收到的 raw 请求？
+
+### 答案
+
+**日志中的 `request` 是已经转换后的 ARGO gateway API 格式**，而不是原始请求。
+
+### 代码追踪
+
+1. **请求接收** ([`chat.py:787`](src/argoproxy/endpoints/chat.py:787))
+   ```python
+   data = await request.json()  # 原始请求
+   ```
+
+2. **请求转换** ([`chat.py:807-809`](src/argoproxy/endpoints/chat.py:807-809))
+   ```python
+   # Prepare the request data (includes message scrutinization and normalization)
+   data = prepare_chat_request_data(
+       data, config, model_registry, enable_tools=True
+   )
+   ```
+
+3. **传递给 ToolInterceptor** ([`chat.py:336-340`](src/argoproxy/endpoints/chat.py:336-340))
+   ```python
+   tool_calls, clean_text = cs.process(
+       response_content,
+       determine_model_family(data["model"]),
+       request_data=data,  # <-- 传入的是转换后的 data
+   )
+   ```
+
+4. **记录到日志** ([`output_handle.py:419-424`](src/argoproxy/tool_calls/output_handle.py:419-424))
+   ```python
+   _log_leaked_tool_case(
+       text_content=text_content,
+       leaked_str=leaked_str,
+       request_data=request_data,  # <-- 这是转换后的数据
+       response_data=response_data,
+   )
+   ```
+
+### 转换过程
+
+`prepare_chat_request_data()` 函数会进行以下转换：
+
+1. **用户信息替换**: `data["user"] = config.user`
+2. **模型名称映射**: `model_registry.resolve_model_name()`
+3. **消息格式规范化**: `scrutinize_message_entries()`
+4. **工具格式转换**: `handle_tools()` - 将 OpenAI 格式转换为目标模型格式
+
+### 日志中的证据
+
+从日志文件可以看到工具定义使用的是 **Anthropic 原生格式**：
+
+```json
+{
+  "input_schema": {
+    "type": "object",
+    "properties": {...}
+  },
+  "name": "bash",
+  "cache_control": null,
+  "description": "...",
+  "type": "custom"
+}
+```
+
+这表明：
+1. 工具格式已经从 OpenAI 格式转换为 Anthropic 格式
+2. 或者客户端（OpenCode）直接发送了 Anthropic 格式，argo-proxy 没有进行转换
+
+### 影响
+
+由于日志记录的是转换后的请求，我们无法直接看到客户端发送的原始请求格式。如果需要调试原始请求，需要：
+
+1. 在 `prepare_chat_request_data()` 之前添加日志
+2. 或者使用 `log_original_request()` 的输出（第 798 行）
+
+---
+
 ## 综合结论
 
 ### 问题根因（按可能性排序）
