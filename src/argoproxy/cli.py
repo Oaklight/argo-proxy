@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 from argparse import RawTextHelpFormatter
+from pathlib import Path
 from typing import Optional
 
 from packaging import version
@@ -14,76 +15,51 @@ from .__init__ import __version__
 from .app import run
 from .config import PATHS_TO_TRY, validate_config
 from .endpoints.extras import get_latest_pypi_version
+from .utils.attack_logger import get_attack_logger, setup_attack_logging
 from .utils.logging import (
     log_error,
     log_info,
     log_warning,
+)
+from .utils.logging import (
     setup_logging as setup_app_logging,
 )
 
 
-class HTTPAttackFilter(logging.Filter):
-    """Filter to suppress logging of known HTTP attack patterns."""
+def setup_logging(verbose: bool = False, config_path: Optional[str] = None):
+    """Setup logging with attack filter.
 
-    ATTACK_PATTERNS = [
-        # Apache Struts2 OGNL injection patterns
-        "xwork.MethodAccessor.denyMethodExecution",
-        "_memberAccess",
-        "allowStaticMethodAccess",
-        "org.apache.commons.io.IOUtils",
-        "org.apache.struts2.ServletActionContext",
-        "java.lang.Runtime",
-        "java.io.InputStreamReader",
-        "java.io.BufferedReader",
-        # OGNL expression patterns
-        "${#",
-        "%24%7B",  # URL encoded ${
-        "redirect:",
-    ]
+    Args:
+        verbose: Enable verbose logging.
+        config_path: Path to config file for attack log directory.
+    """
 
-    ERROR_PATTERNS = [
-        # aiohttp HTTP parser errors from attacks
-        "BadStatusLine",
-        "InvalidURLError",
-        "Expected CRLF after version",
-        "Unexpected start char in url",
-    ]
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        """Filter out log records containing attack patterns."""
-        message = record.getMessage()
-
-        # Check for attack payloads in the message
-        for pattern in self.ATTACK_PATTERNS:
-            if pattern in message:
-                return False  # Suppress this log record
-
-        # Check for specific error types from attacks
-        for pattern in self.ERROR_PATTERNS:
-            if pattern in message:
-                # Additional check: these errors often contain attack patterns
-                # or come from suspicious IPs with malformed requests
-                return False  # Suppress this log record
-
-        return True  # Allow normal log records
-
-
-def setup_logging(verbose: bool = False):
-    """Setup logging with attack filter."""
     # Setup the application logger using standard library
     setup_app_logging(verbose=verbose)
 
-    # Suppress aiohttp access logs for attacks
-    aiohttp_logger = logging.getLogger("aiohttp")
-    aiohttp_logger.addFilter(HTTPAttackFilter())
+    # Setup attack logging with config path
+    path = Path(config_path) if config_path else None
+    attack_filter = setup_attack_logging(path)
 
-    # Suppress aiohttp.server logs for attacks
-    aiohttp_server_logger = logging.getLogger("aiohttp.server")
-    aiohttp_server_logger.addFilter(HTTPAttackFilter())
+    # Apply filter to all aiohttp-related loggers
+    # These loggers may emit attack-related errors at different levels
+    aiohttp_loggers = [
+        "aiohttp",
+        "aiohttp.access",
+        "aiohttp.client",
+        "aiohttp.internal",
+        "aiohttp.server",
+        "aiohttp.web",
+        "aiohttp.web_protocol",
+    ]
+
+    for logger_name in aiohttp_loggers:
+        logger = logging.getLogger(logger_name)
+        logger.addFilter(attack_filter)
 
     # Also filter asyncio logs which may contain similar errors
     asyncio_logger = logging.getLogger("asyncio")
-    asyncio_logger.addFilter(HTTPAttackFilter())
+    asyncio_logger.addFilter(attack_filter)
 
 
 # Initialize logging with default settings
@@ -426,15 +402,27 @@ def main():
 
     set_config_envs(args)
 
-    # Re-setup logging with correct verbosity
-    setup_logging(verbose=args.verbose)
-
     try:
         # Display startup banner
         display_startup_banner()
 
         # Validate config in main process only
         config_instance = validate_config(args.config, args.show)
+
+        # Re-setup logging with correct verbosity and config path
+        # This ensures attack logs go to the right directory
+        from pathlib import Path
+
+        config_path = Path(args.config) if args.config else None
+        if config_path is None and hasattr(config_instance, "_config_path"):
+            config_path = config_instance._config_path
+        setup_logging(
+            verbose=args.verbose, config_path=str(config_path) if config_path else None
+        )
+
+        # Update attack logger with actual config path
+        if config_path:
+            get_attack_logger().set_config_path(config_path)
         if args.validate:
             log_info("Configuration validation successful.", context="cli")
             return
