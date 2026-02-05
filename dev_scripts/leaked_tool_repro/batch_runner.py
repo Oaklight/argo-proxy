@@ -59,6 +59,20 @@ CASE_FILES = {
     5: "leaked_tool_20260131_115028_795330.json",
 }
 
+# Model max_tokens limits (conservative values)
+MODEL_MAX_TOKENS = {
+    "claudehaiku35": 8192,
+    "claudesonnet35v2": 8192,
+    # Newer models support higher limits
+    "claudehaiku45": 16384,
+    "claudesonnet37": 16384,
+    "claudesonnet4": 16384,
+    "claudesonnet45": 16384,
+    "claudeopus4": 32768,
+    "claudeopus41": 32768,
+    "claudeopus45": 32768,
+}
+
 # Patterns to detect leaked tool calls in text content
 LEAKED_TOOL_PATTERNS = [
     # Dict-like tool call pattern
@@ -86,6 +100,13 @@ def load_request_body(case_num: int, model: str) -> dict:
 
     request = log_data["request"]
     request["model"] = model
+
+    # Adjust max_tokens based on model limits
+    if model in MODEL_MAX_TOKENS:
+        model_limit = MODEL_MAX_TOKENS[model]
+        if "max_tokens" in request and request["max_tokens"] > model_limit:
+            request["max_tokens"] = model_limit
+
     return request
 
 
