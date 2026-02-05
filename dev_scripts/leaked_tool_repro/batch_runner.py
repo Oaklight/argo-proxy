@@ -25,6 +25,7 @@ import json
 import os
 import re
 import sys
+import tarfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -383,6 +384,45 @@ def print_statistics(stats: dict) -> None:
         print(row)
 
 
+def compress_logs(logs_dir: Path, output_file: Path | None = None) -> Path:
+    """
+    Compress a logs directory into a tar.gz file.
+
+    Args:
+        logs_dir: Path to the logs directory to compress
+        output_file: Optional output file path. If not provided, creates
+                     {logs_dir}.tar.gz in the same parent directory.
+
+    Returns:
+        Path to the created tar.gz file
+    """
+    if not logs_dir.exists():
+        raise FileNotFoundError(f"Logs directory not found: {logs_dir}")
+
+    if not logs_dir.is_dir():
+        raise ValueError(f"Not a directory: {logs_dir}")
+
+    if output_file is None:
+        output_file = logs_dir.parent / f"{logs_dir.name}.tar.gz"
+
+    print(f"Compressing {logs_dir} -> {output_file}")
+
+    with tarfile.open(output_file, "w:gz") as tar:
+        tar.add(logs_dir, arcname=logs_dir.name)
+
+    # Get file size
+    size_bytes = output_file.stat().st_size
+    if size_bytes < 1024:
+        size_str = f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        size_str = f"{size_bytes / 1024:.1f} KB"
+    else:
+        size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
+
+    print(f"✓ Created {output_file} ({size_str})")
+    return output_file
+
+
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -429,8 +469,29 @@ def main():
         action="store_true",
         help="List all available models and exit",
     )
+    parser.add_argument(
+        "--compress",
+        action="store_true",
+        help="Compress the output directory to tar.gz after running tests",
+    )
+    parser.add_argument(
+        "--compress-only",
+        type=str,
+        metavar="LOGS_DIR",
+        help="Only compress an existing logs directory (no tests run)",
+    )
 
     args = parser.parse_args()
+
+    # Handle --compress-only
+    if args.compress_only:
+        logs_dir = Path(args.compress_only)
+        try:
+            compress_logs(logs_dir)
+        except (FileNotFoundError, ValueError) as e:
+            print(f"Error: {e}")
+            sys.exit(1)
+        sys.exit(0)
 
     # Handle --list-models
     if args.list_models:
@@ -514,6 +575,10 @@ def main():
 
     print(f"\n✓ Summary saved to: {summary_file}")
     print(f"✓ Individual responses saved to: {output_dir}")
+
+    # Compress if requested
+    if args.compress:
+        compress_logs(output_dir)
 
 
 if __name__ == "__main__":
