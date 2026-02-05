@@ -26,15 +26,24 @@ ARGO_API_URL = os.getenv(
     "ARGO_API_URL", "https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/chat/"
 )
 
+# Optional model override via environment variable
+MODEL_OVERRIDE = os.getenv("MODEL")
+
 # Load the original request from the log file (in the same directory)
 LOG_FILE = Path(__file__).parent / "leaked_tool_20260128_171422_165810.json"
 
 
 def load_request_body() -> dict:
-    """Load the request body from the log file."""
+    """Load the request body from the log file.
+
+    If MODEL environment variable is set, it overrides the model in the request.
+    """
     with open(LOG_FILE, "r", encoding="utf-8") as f:
         log_data = json.load(f)
-    return log_data["request"]
+    request = log_data["request"]
+    if MODEL_OVERRIDE:
+        request["model"] = MODEL_OVERRIDE
+    return request
 
 
 def send_request(url: str, request_body: dict) -> dict:
@@ -78,6 +87,8 @@ def main():
     try:
         request_body = load_request_body()
         print(f"\n✓ Loaded request from: {LOG_FILE}")
+        if MODEL_OVERRIDE:
+            print(f"✓ Model overridden via MODEL env: {MODEL_OVERRIDE}")
     except FileNotFoundError:
         print(f"\n✗ Log file not found: {LOG_FILE}")
         sys.exit(1)
