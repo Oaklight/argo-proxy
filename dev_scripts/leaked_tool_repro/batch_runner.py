@@ -104,6 +104,8 @@ def detect_leaked_tool_call(response: dict) -> dict[str, Any]:
     """
     Detect if the response contains leaked tool calls in text content.
 
+    ARGO API format: {"response": {"content": "...", "tool_calls": [...]}}
+
     Returns a dict with detection results:
     - leaked: bool - whether a leak was detected
     - patterns_matched: list of patterns that matched
@@ -117,22 +119,20 @@ def detect_leaked_tool_call(response: dict) -> dict[str, Any]:
         "tool_calls_count": 0,
     }
 
-    # Get the content from the response
-    choices = response.get("choices", [])
-    if not choices:
+    # ARGO API format: {"response": {"content": "...", "tool_calls": [...]}}
+    if "response" not in response:
         return result
 
-    message = choices[0].get("message", {})
+    resp = response["response"]
+    content = resp.get("content", "")
+    tool_calls = resp.get("tool_calls", [])
 
-    # Count proper tool calls
-    tool_calls = message.get("tool_calls", [])
-    result["tool_calls_count"] = len(tool_calls) if tool_calls else 0
-
-    # Get text content
-    content = message.get("content", "")
+    # Handle None content
     if content is None:
         content = ""
+
     result["text_content"] = content
+    result["tool_calls_count"] = len(tool_calls) if tool_calls else 0
 
     # Check for leaked patterns in text content
     for pattern in LEAKED_TOOL_PATTERNS:
