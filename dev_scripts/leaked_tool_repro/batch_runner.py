@@ -207,7 +207,7 @@ def run_single_test(
         result["response_file"] = str(response_file)
 
     except httpx.HTTPStatusError as e:
-        result["error"] = f"HTTP {e.response.status_code}: {e.response.text[:200]}"
+        result["error"] = f"HTTP {e.response.status_code}: {e.response.text}"
     except httpx.RequestError as e:
         result["error"] = f"Request error: {str(e)}"
     except FileNotFoundError as e:
@@ -226,7 +226,7 @@ def print_progress(case_num: int, model: str, run_num: int, total_runs: int) -> 
     sys.stdout.flush()
 
 
-def print_result(result: dict) -> None:
+def print_result(result: dict, verbose: bool = False) -> None:
     """Print result of a single test."""
     if result["success"]:
         if result["leaked"]:
@@ -234,7 +234,10 @@ def print_result(result: dict) -> None:
         else:
             print(f" | ✓ OK (tool_calls: {result['tool_calls_count']})")
     else:
-        print(f" | ✗ ERROR: {result['error'][:50]}")
+        if verbose:
+            print(f" | ✗ ERROR: {result['error']}")
+        else:
+            print(f" | ✗ ERROR: {result['error'][:80]}")
 
 
 def generate_statistics(results: list[dict]) -> dict:
@@ -480,6 +483,12 @@ def main():
         metavar="LOGS_DIR",
         help="Only compress an existing logs directory (no tests run)",
     )
+    parser.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Show full error messages instead of truncated ones",
+    )
 
     args = parser.parse_args()
 
@@ -547,7 +556,7 @@ def main():
                 print_progress(case_num, model, run_num, args.runs)
                 result = run_single_test(case_num, model, run_num, output_dir)
                 all_results.append(result)
-                print_result(result)
+                print_result(result, verbose=args.verbose)
 
     # Generate and print statistics
     stats = generate_statistics(all_results)
