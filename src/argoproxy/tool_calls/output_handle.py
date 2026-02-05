@@ -1,4 +1,3 @@
-import ast
 import gzip
 import json
 import re
@@ -28,6 +27,10 @@ from ..types.function_call import (
 from ..utils.logging import log_debug, log_error, log_warning, truncate_string
 from ..utils.models import generate_id
 from .handler import ToolCall
+from .leaked_tool_parser import (
+    extract_leaked_tool_calls,
+    parse_anthropic_content_array,
+)
 
 
 def _get_leaked_tool_log_dir() -> Path:
@@ -350,7 +353,7 @@ class ToolInterceptor:
         Expected in-house gateway format for Anthropic models:
         {
             "response": {
-                "content": "I'll get the current stock price...",
+                "content": "I'll get the current stock price..." OR [{"type": "text", ...}, {"type": "tool_use", ...}],
                 "tool_calls": [
                     {
                         "id": "toolu_vrtx_01X1tcW6qR1uUoUkfpZMiXnH",
@@ -372,11 +375,22 @@ class ToolInterceptor:
         # Extract response object if present
         response = response_data.get("response", response_data)
 
-        # Get text content directly
-        text_content = response.get("content", "")
+        # Handle content - can be string OR array of content blocks
+        raw_content = response.get("content", "")
+        text_content, content_tool_blocks = parse_anthropic_content_array(raw_content)
 
-        # Get tool calls array
-        claude_tool_calls = response.get("tool_calls", [])
+        # Get tool calls from response (may be empty)
+        claude_tool_calls: List[Dict[str, Any]] = list(
+            response.get("tool_calls", []) or []
+        )
+
+        # Add any tool_use blocks found in content array
+        if content_tool_blocks:
+            log_warning(
+                f"[Output Handle] Found {len(content_tool_blocks)} tool_use blocks in content array",
+                context="output_handle",
+            )
+            claude_tool_calls.extend(content_tool_blocks)
 
         log_warning(
             f"[Output Handle] Claude tool calls: {len(claude_tool_calls)} calls",
@@ -395,55 +409,47 @@ class ToolInterceptor:
         config_data, _ = load_config(verbose=False)
         enable_fix = config_data.enable_leaked_tool_fix if config_data else False
 
-        tool_calls = None
-        # Check for leaked tool calls in text content
-        if not claude_tool_calls and "{'id': 'toolu_" in text_content:
-            try:
-                # Robustly find balanced dictionary
-                start_idx = text_content.find("{'id': 'toolu_")
-                balance = 0
-                end_idx = -1
-                for i, char in enumerate(text_content[start_idx:], start=start_idx):
-                    if char == "{":
-                        balance += 1
-                    elif char == "}":
-                        balance -= 1
-                    if balance == 0:
-                        end_idx = i + 1
-                        break
+        # Check for leaked tool calls in text content (loop to find ALL)
+        if "{'id': 'toolu_" in text_content:
+            if enable_fix:
+                log_warning(
+                    "[LEAKED TOOL FIX ENABLED] Extracting leaked tool calls from text",
+                    context="output_handle",
+                )
+                # Use the new parser to extract all leaked tools
+                extracted_tools, cleaned_text = extract_leaked_tool_calls(
+                    text_content, claude_tool_calls
+                )
 
-                if end_idx != -1:
-                    leaked_str = text_content[start_idx:end_idx]
-
-                    # Always log the leaked tool call case for analysis
+                if extracted_tools and len(extracted_tools) > len(claude_tool_calls):
+                    # Log the leaked tool case for analysis
                     _log_leaked_tool_case(
                         text_content=text_content,
-                        leaked_str=leaked_str,
+                        leaked_str=f"[{len(extracted_tools) - len(claude_tool_calls)} leaked tools extracted]",
+                        request_data=request_data,
+                        response_data=response_data,
+                    )
+                    claude_tool_calls = extracted_tools
+                    text_content = cleaned_text
+            else:
+                # Just log for analysis without fixing
+                log_warning(
+                    "[LEAKED TOOL FIX DISABLED] Found potential leaked tool call(s) in text, logged for analysis",
+                    context="output_handle",
+                )
+                # Log the first leaked tool for analysis
+                start_idx = text_content.find("{'id': 'toolu_")
+                if start_idx != -1:
+                    # Find a reasonable end for logging (first 200 chars)
+                    preview = text_content[start_idx : start_idx + 200]
+                    _log_leaked_tool_case(
+                        text_content=text_content,
+                        leaked_str=preview,
                         request_data=request_data,
                         response_data=response_data,
                     )
 
-                    if enable_fix:
-                        # Use simple fix approach when enabled
-                        log_warning(
-                            f"[LEAKED TOOL FIX ENABLED] Found leaked tool string: {leaked_str}",
-                            context="output_handle",
-                        )
-                        leaked_dict = ast.literal_eval(leaked_str)
-                        claude_tool_calls = [leaked_dict]
-                        # Remove from text
-                        text_content = text_content[:start_idx] + text_content[end_idx:]
-                    else:
-                        log_warning(
-                            f"[LEAKED TOOL FIX DISABLED] Found potential leaked tool call, logged for analysis: {leaked_str[:100]}...",
-                            context="output_handle",
-                        )
-            except Exception as e:
-                log_warning(
-                    f"Failed to process potential leaked tool: {e}",
-                    context="output_handle",
-                )
-
+        tool_calls = None
         if claude_tool_calls:
             tool_calls = []
             for claude_tool_call in claude_tool_calls:
