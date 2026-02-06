@@ -10,14 +10,15 @@ Usage:
     python batch_runner.py [--runs N] [--output-dir DIR]
 
 Models tested:
+    - claudeopus46
     - claudeopus45
     - claudeopus41
     - claudeopus4
     - claudehaiku45
     - claudesonnet45
     - claudesonnet4
-    - claudesonnet37
-    - claudesonnet35v2
+    # - claudesonnet37
+    # - claudesonnet35v2
 """
 
 import argparse
@@ -39,6 +40,7 @@ ARGO_API_URL = os.getenv(
 
 # Models to test
 MODELS = [
+    "claudeopus46",
     "claudeopus45",
     "claudeopus41",
     "claudeopus4",
@@ -46,8 +48,8 @@ MODELS = [
     "claudehaiku35",
     "claudesonnet45",
     "claudesonnet4",
-    "claudesonnet37",
-    "claudesonnet35v2",
+    # "claudesonnet37",
+    # "claudesonnet35v2",
 ]
 
 # Test cases (log files)
