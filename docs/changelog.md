@@ -2,6 +2,18 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v2.8.3 (2026-02-08)
+
+### Features
+
+- **Improved Claude Leaked Tool Call Parsing**: Added new robust parser for extracting leaked tool calls from Claude model responses
+    - New `leaked_tool_parser` module with quote-aware brace counting for accurate dict boundary detection
+    - Handle Anthropic content array format (mixed text+tool_use blocks)
+    - Extract ALL leaked tool calls, not just the first one
+    - Proper handling of braces inside strings (code snippets)
+    - Support for escaped quotes in tool arguments
+    - Added comprehensive unit tests (24 tests)
+
 ## v2.8.2 (2026-01-31)
 
 ### Refactor
