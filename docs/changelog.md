@@ -14,6 +14,20 @@ This page records the major version changes and important feature updates of the
     - Support for escaped quotes in tool arguments
     - Added comprehensive unit tests (24 tests)
 
+- **Attack Logging Module**: Added dedicated security logging for malicious HTTP requests
+    - Create `attack_logger.py` module for security logging
+    - Log concise warning messages with attack type and source IP
+    - Save detailed attack logs to `{config_dir}/attack_logs/` directory
+    - Classify attacks: struts2_ognl, directory_traversal, ssti_probe, etc.
+    - Store logs as compressed JSONL files organized by date
+
+### Bug Fixes
+
+- **Streaming UTF-8 Handling**: Fixed incomplete UTF-8 sequences in streaming responses
+    - Add `StreamDecoder` utility class to safely decode UTF-8 byte streams where multi-byte characters may be split across network packets
+    - Update chat, completions, and responses endpoints to use StreamDecoder
+    - Fixes intermittent `ValueError: 'utf-8' codec can't decode byte` errors
+
 ## v2.8.2 (2026-01-31)
 
 ### Refactor
