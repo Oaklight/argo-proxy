@@ -248,20 +248,27 @@ def handle_google_parallel_tool_calls(
 # ======================================================================
 
 
-def handle_tools_native(data: Dict[str, Any]) -> Dict[str, Any]:
+def handle_tools_native(
+    data: Dict[str, Any],
+    *,
+    input_format: Literal["openai-chatcompletion", "anthropic", "google"] = "openai-chatcompletion",
+) -> Dict[str, Any]:
     """Handles tool calls by converting them to the appropriate format for the target model.
 
     Uses middleware classes from handler.py to process tool-related parameters in the request data
-    and converts them from OpenAI format to the native format required by the target model
+    and converts them from the input format to the native format required by the target model
     (OpenAI, Anthropic, or Google). Also handles tool_calls in messages for different model families.
 
     Args:
         data: Request data dictionary containing model parameters. May include:
-            - tools: List of tool definitions in OpenAI format
-            - tool_choice: Tool choice parameter ("auto", "none", "required", or dict)
+            - tools: List of tool definitions
+            - tool_choice: Tool choice parameter
             - parallel_tool_calls: Whether to enable parallel tool calls (removed for now)
             - model: Model identifier used to determine the target format
             - messages: List of messages that may contain tool_calls
+        input_format: The API format of the incoming tools/tool_calls. Defaults to
+            "openai-chatcompletion". Use "anthropic" when tools arrive via the native
+            Anthropic endpoint.
 
     Returns:
         Modified request data with tools and tool_calls converted to the appropriate format for the
@@ -271,7 +278,7 @@ def handle_tools_native(data: Dict[str, Any]) -> Dict[str, Any]:
         - Uses middleware classes Tool, ToolChoice, and ToolCall from handler.py
         - parallel_tool_calls parameter is currently removed and not implemented
         - Tool conversion is performed based on the model family detected from the model name
-        - OpenAI format tools are passed through unchanged for OpenAI models
+        - When input_format matches model_type, tools are passed through unchanged
         - Converts tool_calls in messages between different API formats
     """
     from .handler import Tool, ToolCall, ToolChoice
@@ -283,10 +290,26 @@ def handle_tools_native(data: Dict[str, Any]) -> Dict[str, Any]:
     # Determine target model family
     model_type = determine_model_family(data.get("model", "gpt4o"))
 
+    # Short-circuit: if input format already matches target, no conversion needed
+    _FORMAT_TO_FAMILY = {
+        "openai-chatcompletion": "openai",
+        "anthropic": "anthropic",
+        "google": "google",
+    }
+    if _FORMAT_TO_FAMILY.get(input_format) == model_type:
+        log_warning(
+            f"[Input Handle] Input format '{input_format}' matches target model type '{model_type}', skipping conversion",
+            context="input_handle",
+        )
+        return data
+
     # Process tools if present
     if tools:
-        # Get tool call related parameters
-        tool_choice = data.get("tool_choice", "auto")
+        # Get tool call related parameters — only default to "auto" for
+        # OpenAI-style input; for other formats use None to avoid injecting
+        # a tool_choice the client never sent.
+        default_tool_choice = "auto" if input_format == "openai-chatcompletion" else None
+        tool_choice = data.get("tool_choice", default_tool_choice)
 
         # Remove parallel_tool_calls from data for now
         # TODO: Implement parallel tool calls handling later
@@ -298,7 +321,7 @@ def handle_tools_native(data: Dict[str, Any]) -> Dict[str, Any]:
             for tool_dict in tools:
                 # Validate and convert each tool using Tool middleware
                 tool_obj = Tool.from_entry(
-                    tool_dict, api_format="openai-chatcompletion"
+                    tool_dict, api_format=input_format
                 )
 
                 if model_type == "openai":
@@ -317,7 +340,7 @@ def handle_tools_native(data: Dict[str, Any]) -> Dict[str, Any]:
             # Convert tool_choice using ToolChoice middleware
             if tool_choice is not None:
                 tool_choice_obj = ToolChoice.from_entry(
-                    tool_choice, api_format="openai-chatcompletion"
+                    tool_choice, api_format=input_format
                 )
 
                 if model_type == "openai":
@@ -380,7 +403,7 @@ def handle_tools_native(data: Dict[str, Any]) -> Dict[str, Any]:
                         converted_tool_calls = []
                         for tool_call_dict in message["tool_calls"]:
                             tool_call_obj = ToolCall.from_entry(
-                                tool_call_dict, api_format="openai-chatcompletion"
+                                tool_call_dict, api_format=input_format
                             )
                             converted_tool_calls.append(
                                 tool_call_obj.serialize("openai-chatcompletion")
@@ -408,7 +431,7 @@ def handle_tools_native(data: Dict[str, Any]) -> Dict[str, Any]:
                         # Convert tool_calls to tool_use blocks in content
                         for tool_call_dict in message["tool_calls"]:
                             tool_call_obj = ToolCall.from_entry(
-                                tool_call_dict, api_format="openai-chatcompletion"
+                                tool_call_dict, api_format=input_format
                             )
                             anthropic_tool_call = tool_call_obj.serialize("anthropic")
                             content_blocks.append(anthropic_tool_call)
@@ -432,7 +455,7 @@ def handle_tools_native(data: Dict[str, Any]) -> Dict[str, Any]:
                         converted_tool_calls = []
                         for tool_call_dict in message["tool_calls"]:
                             tool_call_obj = ToolCall.from_entry(
-                                tool_call_dict, api_format="openai-chatcompletion"
+                                tool_call_dict, api_format=input_format
                             )
                             converted_tool_calls.append(
                                 tool_call_obj.serialize("google")
@@ -452,7 +475,7 @@ def handle_tools_native(data: Dict[str, Any]) -> Dict[str, Any]:
                         converted_tool_calls = []
                         for tool_call_dict in message["tool_calls"]:
                             tool_call_obj = ToolCall.from_entry(
-                                tool_call_dict, api_format="openai-chatcompletion"
+                                tool_call_dict, api_format=input_format
                             )
                             converted_tool_calls.append(
                                 tool_call_obj.serialize("openai-chatcompletion")
@@ -523,7 +546,12 @@ def handle_tools_native(data: Dict[str, Any]) -> Dict[str, Any]:
 # ======================================================================
 
 
-def handle_tools(data: Dict[str, Any], *, native_tools: bool = True) -> Dict[str, Any]:
+def handle_tools(
+    data: Dict[str, Any],
+    *,
+    native_tools: bool = True,
+    input_format: Literal["openai-chatcompletion", "anthropic", "google"] = "openai-chatcompletion",
+) -> Dict[str, Any]:
     """
     Process input data containing tool calls with fallback strategy.
 
@@ -544,6 +572,10 @@ def handle_tools(data: Dict[str, Any], *, native_tools: bool = True) -> Dict[str
         - model: Model identifier
     native_tools : bool, optional
         Whether to use native tools or prompt-based tools, by default True
+    input_format : str, optional
+        The API format of the incoming tools/tool_calls. Defaults to
+        "openai-chatcompletion". Use "anthropic" when tools arrive via the
+        native Anthropic endpoint.
 
     Returns
     -------
@@ -558,7 +590,7 @@ def handle_tools(data: Dict[str, Any], *, native_tools: bool = True) -> Dict[str
     if native_tools:
         try:
             # First attempt: try native tool handling
-            return handle_tools_native(data)
+            return handle_tools_native(data, input_format=input_format)
         except (ValueError, ValidationError, NotImplementedError) as e:
             # Fallback: use prompt-based handling if native handling fails
             # This handles validation errors, unsupported model types, or unimplemented conversions

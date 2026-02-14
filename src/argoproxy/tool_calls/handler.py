@@ -451,8 +451,23 @@ class ToolChoice(BaseModel):
 
     @classmethod
     def _handle_anthropic(cls, data: Union[str, Dict[str, Any]]) -> "ToolChoice":
-        """Handle Anthropic API format tool_choice"""
-        if isinstance(data, dict):
+        """Handle Anthropic API format tool_choice.
+
+        Anthropic's native format uses dicts like {"type": "auto"}, but string
+        shorthand values ("auto", "any", "none") are also accepted for
+        convenience (e.g. when the caller defaults tool_choice to "auto").
+        """
+        if isinstance(data, str):
+            # Accept string shorthand — map to the same internal values
+            if data == "auto":
+                return cls(choice="optional")
+            elif data in ("any", "required"):
+                return cls(choice="any")
+            elif data == "none":
+                return cls(choice="none")
+            else:
+                raise ValueError(f"Invalid Anthropic tool choice string: {data}")
+        elif isinstance(data, dict):
             tool_type = data.get("type")
             if tool_type == "auto":
                 return cls(choice="optional")
@@ -471,7 +486,7 @@ class ToolChoice(BaseModel):
                 raise ValueError(f"Invalid Anthropic tool choice type: {tool_type}")
         else:
             raise ValueError(
-                f"Anthropic tool choice must be a dictionary, got: {type(data)}"
+                f"Anthropic tool choice must be a string or dictionary, got: {type(data)}"
             )
 
     @classmethod

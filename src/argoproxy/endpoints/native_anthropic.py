@@ -81,10 +81,10 @@ async def proxy_native_anthropic_request(
             model_family = determine_model_family(data.get("model", "claude"))
             if model_family in ["google", "unknown"]:
                 # Use prompting based tool handling for Google and unknown models
-                data = handle_tools(data, native_tools=False)
+                data = handle_tools(data, native_tools=False, input_format="anthropic")
             else:
                 # Use native tool handling for OpenAI and Anthropic models
-                data = handle_tools(data, native_tools=config.native_tools)
+                data = handle_tools(data, native_tools=config.native_tools, input_format="anthropic")
 
         # Apply username passthrough - Anthropic uses metadata.user_id
         _apply_user_identification(data, request, config)
