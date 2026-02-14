@@ -37,6 +37,7 @@ class ArgoConfig:
     user: str = ""
     verbose: bool = True
 
+    _argo_base_url: str = ""  # User-configurable base URL, overrides _argo_dev_base
     _argo_dev_base: str = "https://apps-dev.inside.anl.gov/argoapi/api/v1/"
     _argo_prod_base: str = "https://apps.inside.anl.gov/argoapi/api/v1/"
 
@@ -47,14 +48,18 @@ class ArgoConfig:
     _argo_model_url: str = ""
 
     # Native OpenAI endpoint
-    _native_openai_base_url: str = "https://apps-dev.inside.anl.gov/argoapi/v1/"
+    _native_openai_base_url: str = ""
     _use_native_openai: bool = False
+
+    # Config version for migration tracking
+    config_version: str = ""
 
     # CLI flags
     _real_stream: bool = True
     _tool_prompt: bool = False
     _provider_tool_format: bool = False
     _enable_leaked_tool_fix: bool = False
+    _dev_mode: bool = False
 
     # Image processing settings
     enable_payload_control: bool = False  # Enable automatic payload size control
@@ -62,32 +67,55 @@ class ArgoConfig:
     image_timeout: int = 30  # seconds
     concurrent_downloads: int = 10  # parallel downloads
 
+    @property
+    def argo_base_url(self) -> str:
+        """Get the effective Argo base URL (without trailing path segments)."""
+        if self._argo_base_url:
+            return self._argo_base_url.rstrip("/")
+        return self._argo_dev_base.rstrip("/").removesuffix("/api/v1")
+        # Result: https://apps-dev.inside.anl.gov/argoapi
+
     # chat endpoint
     @property
-    def argo_url(self):
+    def argo_url(self) -> str:
+        """Get the Argo chat endpoint URL."""
         if self._argo_url:
             return self._argo_url
-        return f"{self._argo_dev_base}resource/chat/"
+        return f"{self.argo_base_url}/api/v1/resource/chat/"
 
     # stream chat endpoint
     @property
-    def argo_stream_url(self):
+    def argo_stream_url(self) -> str:
+        """Get the Argo stream chat endpoint URL."""
         if self._argo_stream_url:
             return self._argo_stream_url
-        return f"{self._argo_dev_base}resource/streamchat/"
+        return f"{self.argo_base_url}/api/v1/resource/streamchat/"
 
     # embedding endpoint
     @property
-    def argo_embedding_url(self):
+    def argo_embedding_url(self) -> str:
+        """Get the Argo embedding endpoint URL.
+
+        Uses argo_base_url if explicitly set, otherwise falls back to
+        production base URL for backward compatibility.
+        """
         if self._argo_embedding_url:
             return self._argo_embedding_url
+        if self._argo_base_url:
+            return f"{self.argo_base_url}/api/v1/resource/embed/"
         return f"{self._argo_prod_base}resource/embed/"
 
     @property
-    def argo_model_url(self):
+    def argo_model_url(self) -> str:
+        """Get the Argo models endpoint URL."""
         if self._argo_model_url:
             return self._argo_model_url
-        return f"{self._argo_dev_base}models/"
+        return f"{self.argo_base_url}/api/v1/models/"
+
+    @property
+    def argo_message_url(self) -> str:
+        """Get the Argo message endpoint URL (Claude native compatible)."""
+        return f"{self.argo_base_url}/message/"
 
     @property
     def pseudo_stream(self):
@@ -102,9 +130,15 @@ class ArgoConfig:
         return True
 
     @property
-    def native_openai_base_url(self):
-        """Get the native OpenAI base URL."""
-        return self._native_openai_base_url
+    def native_openai_base_url(self) -> str:
+        """Get the native OpenAI base URL.
+
+        If explicitly set, returns the configured value. Otherwise derives
+        from argo_base_url for consistency.
+        """
+        if self._native_openai_base_url:
+            return self._native_openai_base_url
+        return f"{self.argo_base_url}/v1/"
 
     @property
     def use_native_openai(self):
@@ -116,11 +150,17 @@ class ArgoConfig:
         """Check if leaked tool call fix is enabled."""
         return self._enable_leaked_tool_fix
 
+    @property
+    def dev_mode(self):
+        """Check if dev (pure reverse proxy) mode is enabled."""
+        return self._dev_mode
+
     @classmethod
     def from_dict(cls, config_dict: dict):
         """Create ArgoConfig instance from a dictionary."""
         # Map property fields to internal fields if present
         field_map = {
+            "argo_base_url": "_argo_base_url",
             "argo_url": "_argo_url",
             "argo_stream_url": "_argo_stream_url",
             "argo_embedding_url": "_argo_embedding_url",
@@ -507,7 +547,36 @@ def _apply_env_overrides(config_data: ArgoConfig) -> ArgoConfig:
     if env_enable_leaked_tool_fix := os.getenv("ENABLE_LEAKED_TOOL_FIX"):
         config_data._enable_leaked_tool_fix = str_to_bool(env_enable_leaked_tool_fix)
 
+    if env_dev_mode := os.getenv("DEV_MODE"):
+        config_data._dev_mode = str_to_bool(env_dev_mode)
+
+    if env_argo_base_url := os.getenv("ARGO_BASE_URL"):
+        config_data._argo_base_url = env_argo_base_url
+
     return config_data
+
+
+def _migrate_config(config_dict: dict) -> dict:
+    """Apply config migrations for backward compatibility.
+
+    Args:
+        config_dict: The raw config dictionary loaded from YAML.
+
+    Returns:
+        The migrated config dictionary.
+    """
+    version = config_dict.get("config_version", "")
+
+    if not version:
+        # Legacy config without version - compatible, just log a hint
+        log_info(
+            "Config file has no 'config_version' field. "
+            "Consider adding 'config_version: \"2\"' and using 'argo_base_url' "
+            "instead of individual URL fields.",
+            context="config",
+        )
+
+    return config_dict
 
 
 @overload
@@ -569,6 +638,7 @@ def load_config(
                     if as_is:
                         return config_dict, actual_path
 
+                    config_dict = _migrate_config(config_dict)
                     config_data = ArgoConfig.from_dict(config_dict)
                     if env_override:
                         config_data = _apply_env_overrides(config_data)

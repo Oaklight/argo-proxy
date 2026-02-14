@@ -151,6 +151,12 @@ def parsing_args() -> argparse.Namespace:
         default=False,
         help="Enable AST-based leaked tool call detection and fixing (experimental). When disabled, leaked tool calls will be logged for analysis.",
     )
+    parser.add_argument(
+        "--dev",
+        action="store_true",
+        default=False,
+        help="Enable dev mode - pure reverse proxy that forwards all requests to upstream without any transformation",
+    )
 
     parser.add_argument(
         "--edit",
@@ -215,6 +221,8 @@ def set_config_envs(args: argparse.Namespace):
         os.environ["USE_NATIVE_OPENAI"] = str(True)
     if args.enable_leaked_tool_fix:
         os.environ["ENABLE_LEAKED_TOOL_FIX"] = str(True)
+    if args.dev:
+        os.environ["DEV_MODE"] = str(True)
 
 
 def open_in_editor(config_path: Optional[str] = None):

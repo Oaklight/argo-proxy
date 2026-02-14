@@ -8,6 +8,7 @@ from aiohttp import web
 from .__init__ import __version__
 from .config import ArgoConfig, load_config
 from .endpoints import chat, completions, embed, extras, native_openai, responses
+from .endpoints.dev_proxy import register_dev_routes
 from .endpoints.extras import get_latest_pypi_version
 from .models import ModelRegistry
 from .performance import (
@@ -231,12 +232,36 @@ async def get_version(request: web.Request):
 
 def create_app():
     """Factory function to create a new application instance"""
+    # Check dev mode from environment (set by CLI before app creation)
+    import os
+
+    from .config import ArgoConfig
+    from .utils.misc import str_to_bool
+
+    dev_mode = str_to_bool(os.environ.get("DEV_MODE", "false"))
+
     # Set client_max_size to 100MB to handle large image payloads from remote clients
     # Users may send images larger than the gateway's 20MB limit; argo-proxy will
     # compress them before forwarding. Default aiohttp limit is 1MB which is too small.
     app = web.Application(client_max_size=100 * 1024 * 1024)
     app.on_startup.append(prepare_app)
     app.on_shutdown.append(cleanup_app)
+
+    if dev_mode:
+        log_warning(
+            "🔧 DEV MODE: Pure reverse proxy enabled — no format conversion",
+            context="app",
+        )
+
+        # Only register health check, version, and dev proxy routes
+        app.router.add_get("/health", health_check)
+        app.router.add_get("/version", get_version)
+
+        # Register dev proxy routes using a temporary config for URL resolution
+        dev_config = ArgoConfig()
+        register_dev_routes(app, dev_config)
+
+        return app
 
     # root endpoints
     app.router.add_get("/", root_endpoint)

@@ -1,27 +1,25 @@
-# use production url as much as you can.
+# Config version (for migration tracking)
+config_version: "2"
+
 host: "0.0.0.0"
 port: 44497
 user: "" # you should replace it with your username
 
-# Option 1: Use individual URLs (traditional method)
-argo_url: "https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/chat/"
-argo_stream_url: "https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/streamchat/"
-argo_embedding_url: "https://apps.inside.anl.gov/argoapi/api/v1/resource/embed/"
+# Argo API base URL - all endpoint URLs are derived from this
+# This is the recommended way to configure URLs
+argo_base_url: "https://apps-dev.inside.anl.gov/argoapi"
 
-# Option 2: Use base URL (simplified method - will override individual URLs above)
-# argo_base_url: "https://apps-dev.inside.anl.gov/argoapi/api/v1/"
+# Individual endpoint URLs (optional - override base URL derived values)
+# argo_url: "https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/chat/"
+# argo_stream_url: "https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/streamchat/"
+# argo_embedding_url: "https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/embed/"
+# native_openai_base_url: "https://apps-dev.inside.anl.gov/argoapi/v1/"
 
 verbose: true
 
 # Native OpenAI endpoint passthrough mode (default: false)
 # When enabled, requests are directly forwarded to the native OpenAI endpoint without transformation
 # use_native_openai: false
-
-# Native OpenAI endpoint base URL
-# Development endpoint (default):
-# native_openai_base_url: "https://apps-dev.inside.anl.gov/argoapi/v1/"
-# Production endpoint:
-# native_openai_base_url: "https://apps.inside.anl.gov/argoapi/v1/"
 
 # Image processing settings
 enable_payload_control: false  # Enable automatic payload size control
