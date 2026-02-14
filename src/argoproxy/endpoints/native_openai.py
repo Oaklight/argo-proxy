@@ -15,7 +15,7 @@ from aiohttp import web
 from ..config import ArgoConfig
 from ..models import ModelRegistry
 from ..tool_calls.input_handle import handle_tools
-from ..utils.image_processing import process_chat_images
+from ..utils.image_processing import process_openai_images
 from ..utils.logging import (
     log_converted_request,
     log_debug,
@@ -75,7 +75,7 @@ async def proxy_native_openai_request(
 
         # Process image URLs for chat endpoints (download and convert to base64)
         if endpoint_path == "chat/completions":
-            data = await process_chat_images(session, data, config)
+            data = await process_openai_images(session, data, config)
 
             # Handle tool calls if present
             if "tools" in data:

@@ -25,7 +25,7 @@ from ..types import (
     StreamChoice,
 )
 from ..types.chat_completion import FINISH_REASONS
-from ..utils.image_processing import process_chat_images
+from ..utils.image_processing import process_openai_images
 from ..utils.input_handle import (
     handle_multiple_entries_prompt,
     handle_no_sys_msg,
@@ -801,7 +801,7 @@ async def proxy_request(
         session = request.app["http_session"]
 
         # Process image URLs before other transformations
-        data = await process_chat_images(session, data, config)
+        data = await process_openai_images(session, data, config)
 
         # Prepare the request data (includes message scrutinization and normalization)
         data = prepare_chat_request_data(
