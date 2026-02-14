@@ -38,8 +38,8 @@ class ArgoConfig:
     verbose: bool = True
 
     _argo_base_url: str = ""  # User-configurable base URL, overrides _argo_dev_base
-    _argo_dev_base: str = "https://apps-dev.inside.anl.gov/argoapi/api/v1/"
-    _argo_prod_base: str = "https://apps.inside.anl.gov/argoapi/api/v1/"
+    _argo_dev_base: str = "https://apps-dev.inside.anl.gov/argoapi"
+    _argo_prod_base: str = "https://apps.inside.anl.gov/argoapi"
 
     # Derived fields (to be constructed from base URL if not provided)
     _argo_url: str = ""
@@ -72,8 +72,7 @@ class ArgoConfig:
         """Get the effective Argo base URL (without trailing path segments)."""
         if self._argo_base_url:
             return self._argo_base_url.rstrip("/")
-        return self._argo_dev_base.rstrip("/").removesuffix("/api/v1")
-        # Result: https://apps-dev.inside.anl.gov/argoapi
+        return self._argo_dev_base.rstrip("/")
 
     # chat endpoint
     @property
@@ -103,7 +102,7 @@ class ArgoConfig:
             return self._argo_embedding_url
         if self._argo_base_url:
             return f"{self.argo_base_url}/api/v1/resource/embed/"
-        return f"{self._argo_prod_base}resource/embed/"
+        return f"{self._argo_prod_base}/api/v1/resource/embed/"
 
     @property
     def argo_model_url(self) -> str:
