@@ -2,6 +2,33 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v2.8.4 (2026-02-14)
+
+### Refactor
+
+- **Base URL Consolidation**: Refactored URL configuration to use a single `argo_base_url` as the root for all endpoint URLs
+    - Introduced `argo_base_url` configuration field — all endpoint URLs (chat, stream, embed, models, native OpenAI) are now derived from this single base URL
+    - Simplified `_argo_dev_base` and `_argo_prod_base` to root URLs (e.g., `https://apps-dev.inside.anl.gov/argoapi`) instead of full API paths
+    - Individual endpoint URLs (`argo_url`, `argo_stream_url`, etc.) can still override the derived values for backward compatibility
+    - Added `config_version` field for tracking configuration format; legacy configs without this field will log a migration hint
+    - Updated `config.sample.yaml` with the new recommended configuration format
+
+### Features
+
+- **Native Anthropic Passthrough Mode**: Added `--native-anthropic` CLI flag and `use_native_anthropic` configuration option for Anthropic-compatible API passthrough, similar to the existing native OpenAI passthrough
+    - Exposes `/v1/messages` endpoint for direct Anthropic API compatibility
+    - Supports both streaming and non-streaming message requests
+    - Added `native_anthropic_base_url` configuration for customizing the upstream Anthropic endpoint
+    - URL is derived from `argo_base_url` by default for consistency with other endpoints
+
+### Improvements
+
+- **Examples Directory Reorganization**: Restructured examples into `anthropic/`, `openai/`, and `argo/` subdirectories
+    - Each provider directory contains `sdk_based/` and `rest_based/` subdirectories
+    - Added Anthropic function calling examples (SDK and REST)
+    - Added Anthropic image comprehension examples with base64 encoding
+    - Unified API key handling across all examples using `API_KEY` environment variable
+
 ## v2.8.3 (2026-02-08)
 
 ### Features
