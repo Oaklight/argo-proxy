@@ -8,7 +8,7 @@ load_dotenv()
 
 BASE_URL = os.getenv("BASE_URL", "http://localhost:44498")
 MODEL = os.getenv("MODEL", "argo:gpt-4o")
-API_KEY = os.getenv("API_KEY", "whatever+random")
+API_KEY = os.getenv("API_KEY", "your-anl-username")
 
 RESPONSES_ENDPOINT = f"{BASE_URL}/v1/responses"
 

@@ -7,7 +7,7 @@ load_dotenv()
 
 MODEL = os.getenv("MODEL", "argo:gpt-4o")
 BASE_URL = os.getenv("BASE_URL", "http://localhost:44501")
-API_KEY = os.getenv("API_KEY", "whatever+random")
+API_KEY = os.getenv("API_KEY", "your-anl-username")
 STREAM = os.getenv("STREAM", "false").lower() == "true"
 
 client = openai.OpenAI(
@@ -19,14 +19,25 @@ print("Running Chat Test with Direct Image URLs")
 
 
 def image_chat_test_with_urls():
-    huge_image = "https://svs.gsfc.nasa.gov/vis/a030000/a030800/a030877/frames/5760x3240_16x9_01p/BlackMarble_2016_928m_canada_s_labeled.png"
+    # Using direct HTTP URLs with different supported formats - these will be automatically converted to base64 by the proxy
+    # JPEG format
+    image_url_1 = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
+    # PNG format
+    image_url_2 = "https://upload.wikimedia.org/wikipedia/commons/thumb/5/50/Vd-Orig.png/256px-Vd-Orig.png"
+    # WebP format (if available)
+    image_url_3 = "https://convertico.com/samples/webp/webp-sample.webp"
+    # GIF format (if available)
+    image_url_4 = "https://convertico.com/samples/gif/gif-sample.gif"
 
     messages = [
         {
             "role": "user",
             "content": [
                 {"type": "text", "text": "Describe these images in detail."},
-                {"type": "image_url", "image_url": {"url": huge_image}},
+                {"type": "image_url", "image_url": {"url": image_url_1}},
+                {"type": "image_url", "image_url": {"url": image_url_2}},
+                {"type": "image_url", "image_url": {"url": image_url_3}},
+                {"type": "image_url", "image_url": {"url": image_url_4}},
             ],
         },
     ]

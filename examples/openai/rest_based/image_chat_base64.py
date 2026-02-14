@@ -54,20 +54,22 @@ def image_chat_test():
     }
 
     # Send the POST request
-    response = requests.post(CHAT_ENDPOINT, headers=headers, json=payload, stream=STREAM)
+    response = requests.post(
+        CHAT_ENDPOINT, headers=headers, json=payload, stream=STREAM
+    )
 
     try:
         response.raise_for_status()
         print("Response Status Code:", response.status_code)
-        
+
         if STREAM:
             print("Streaming response:")
             for line in response.iter_lines():
                 if line:
-                    decoded_line = line.decode('utf-8')
-                    if decoded_line.startswith('data: '):
+                    decoded_line = line.decode("utf-8")
+                    if decoded_line.startswith("data: "):
                         data = decoded_line[6:]  # Remove 'data: ' prefix
-                        if data.strip() == '[DONE]':
+                        if data.strip() == "[DONE]":
                             break
                         try:
                             chunk = json.loads(data)

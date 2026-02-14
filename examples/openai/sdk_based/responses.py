@@ -7,7 +7,7 @@ load_dotenv()
 
 MODEL = os.getenv("MODEL", "argo:gpt-4o")
 BASE_URL = os.getenv("BASE_URL", "http://localhost:44498")
-API_KEY = os.getenv("API_KEY", "whatever+random")
+API_KEY = os.getenv("API_KEY", "your-anl-username")
 
 client = openai.OpenAI(
     api_key=API_KEY,
@@ -18,20 +18,24 @@ client = openai.OpenAI(
 def stream_chat_test():
     print("Running Chat Test with Streaming")
 
-    prompt = ["Tell me something interesting about quantum mechanics."]
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {
+            "role": "user",
+            "content": "Tell me something interesting about quantum mechanics.",
+        },
+    ]
     # max_tokens = 5
 
     try:
-        response = client.completions.create(
+        response = client.responses.create(
             model=MODEL,
-            prompt=prompt,
-            # max_tokens=max_tokens,
-            stream=True,
+            instructions="Talk like a pirate.",
+            input=messages,
+            # max_output_tokens=max_tokens,
         )
         print("Streaming Response:")
-        for chunk in response:
-            # Stream each chunk as it arrives
-            print(chunk.choices[0].text, end="", flush=True)
+        print(response)
     except Exception as e:
         print("\nError:", e)
 

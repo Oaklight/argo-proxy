@@ -10,7 +10,7 @@ load_dotenv()
 
 MODEL = os.getenv("MODEL", "argo:gpt-4o")
 BASE_URL = os.getenv("BASE_URL", "http://localhost:44501")
-API_KEY = os.getenv("API_KEY", "whatever+random")
+API_KEY = os.getenv("API_KEY", "your-anl-username")
 STREAM = os.getenv("STREAM", "false").lower() == "true"
 
 client = openai.OpenAI(

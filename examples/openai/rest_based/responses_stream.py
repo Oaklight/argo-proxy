@@ -26,7 +26,7 @@ def stream_chat_test():
     }
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {os.getenv('API_KEY', 'whatever+random')}",
+        "Authorization": f"Bearer {os.getenv('API_KEY', 'your-anl-username')}",
     }
 
     try:

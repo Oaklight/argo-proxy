@@ -7,7 +7,7 @@ load_dotenv()
 
 MODEL = os.getenv("MODEL", "argo:text-embedding-3-small")
 BASE_URL = os.getenv("BASE_URL", "http://localhost:44498")
-API_KEY = os.getenv("API_KEY", "whatever+random")
+API_KEY = os.getenv("API_KEY", "your-anl-username")
 
 client = openai.OpenAI(
     api_key=API_KEY,
