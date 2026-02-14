@@ -51,6 +51,10 @@ class ArgoConfig:
     _native_openai_base_url: str = ""
     _use_native_openai: bool = False
 
+    # Native Anthropic endpoint
+    _native_anthropic_base_url: str = ""
+    _use_native_anthropic: bool = False
+
     # Config version for migration tracking
     config_version: str = ""
 
@@ -145,6 +149,22 @@ class ArgoConfig:
         return self._use_native_openai
 
     @property
+    def use_native_anthropic(self):
+        """Check if native Anthropic mode is enabled."""
+        return self._use_native_anthropic
+
+    @property
+    def native_anthropic_base_url(self) -> str:
+        """Get the native Anthropic base URL.
+
+        If explicitly set, returns the configured value. Otherwise derives
+        from argo_base_url for consistency.
+        """
+        if self._native_anthropic_base_url:
+            return self._native_anthropic_base_url
+        return f"{self.argo_base_url}/v1/messages"
+
+    @property
     def enable_leaked_tool_fix(self):
         """Check if leaked tool call fix is enabled."""
         return self._enable_leaked_tool_fix
@@ -166,6 +186,8 @@ class ArgoConfig:
             "real_stream": "_real_stream",
             "native_openai_base_url": "_native_openai_base_url",
             "use_native_openai": "_use_native_openai",
+            "native_anthropic_base_url": "_native_anthropic_base_url",
+            "use_native_anthropic": "_use_native_anthropic",
         }
         valid_fields = {
             k: v for k, v in config_dict.items() if k in cls.__annotations__
@@ -543,6 +565,9 @@ def _apply_env_overrides(config_data: ArgoConfig) -> ArgoConfig:
     if env_use_native_openai := os.getenv("USE_NATIVE_OPENAI"):
         config_data._use_native_openai = str_to_bool(env_use_native_openai)
 
+    if env_use_native_anthropic := os.getenv("USE_NATIVE_ANTHROPIC"):
+        config_data._use_native_anthropic = str_to_bool(env_use_native_anthropic)
+
     if env_enable_leaked_tool_fix := os.getenv("ENABLE_LEAKED_TOOL_FIX"):
         config_data._enable_leaked_tool_fix = str_to_bool(env_enable_leaked_tool_fix)
 
@@ -716,7 +741,13 @@ def validate_config(
             "   ⚠️  Some argo-proxy features may be bypassed in native mode",
             context="config",
         )
-    else:
+    if config_data.use_native_anthropic:
+        log_warning("🚀 NATIVE ANTHROPIC MODE: [ENABLED]", context="config")
+        log_info("   └─ Anthropic-compatible passthrough mode active", context="config")
+        log_info(
+            "   └─ Endpoint: /v1/messages → native Anthropic API", context="config"
+        )
+    if not config_data.use_native_openai and not config_data.use_native_anthropic:
         log_warning("🔧 STANDARD MODE: [ENABLED]", context="config")
         log_info("   └─ Full argo-proxy processing active", context="config")
         # Only show stream mode when not in native OpenAI mode

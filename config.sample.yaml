@@ -21,6 +21,11 @@ verbose: true
 # When enabled, requests are directly forwarded to the native OpenAI endpoint without transformation
 # use_native_openai: false
 
+# Native Anthropic endpoint passthrough mode (default: false)
+# Exposes /v1/messages endpoint for Anthropic-compatible clients
+# use_native_anthropic: false
+# native_anthropic_base_url: "https://apps-dev.inside.anl.gov/argoapi/v1/messages"
+
 # Image processing settings
 enable_payload_control: false  # Enable automatic payload size control
 max_payload_size: 20  # MB default (total for all images)

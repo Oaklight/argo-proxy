@@ -146,6 +146,12 @@ def parsing_args() -> argparse.Namespace:
         help="Enable native OpenAI endpoint passthrough mode - directly forward requests to native OpenAI endpoint without transformation",
     )
     parser.add_argument(
+        "--native-anthropic",
+        action="store_true",
+        default=False,
+        help="Enable native Anthropic endpoint passthrough mode - expose /v1/messages endpoint and directly forward requests to native Anthropic-compatible endpoint without transformation",
+    )
+    parser.add_argument(
         "--enable-leaked-tool-fix",
         action="store_true",
         default=False,
@@ -219,6 +225,8 @@ def set_config_envs(args: argparse.Namespace):
         os.environ["USERNAME_PASSTHROUGH"] = str(True)
     if args.native_openai:
         os.environ["USE_NATIVE_OPENAI"] = str(True)
+    if args.native_anthropic:
+        os.environ["USE_NATIVE_ANTHROPIC"] = str(True)
     if args.enable_leaked_tool_fix:
         os.environ["ENABLE_LEAKED_TOOL_FIX"] = str(True)
     if args.dev:

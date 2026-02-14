@@ -7,7 +7,15 @@ from aiohttp import web
 
 from .__init__ import __version__
 from .config import ArgoConfig, load_config
-from .endpoints import chat, completions, embed, extras, native_openai, responses
+from .endpoints import (
+    chat,
+    completions,
+    embed,
+    extras,
+    native_anthropic,
+    native_openai,
+    responses,
+)
 from .endpoints.dev_proxy import register_dev_routes
 from .endpoints.extras import get_latest_pypi_version
 from .models import ModelRegistry
@@ -166,6 +174,12 @@ async def proxy_openai_embedding_request(request: web.Request):
     return await embed.proxy_request(request, convert_to_openai=True)
 
 
+async def proxy_anthropic_messages(request: web.Request):
+    """Handle Anthropic /v1/messages endpoint."""
+    log_info("/v1/messages", context="app")
+    return await native_anthropic.proxy_native_anthropic_request(request)
+
+
 async def get_models(request: web.Request):
     log_info("/v1/models", context="app")
     return extras.get_models(request)
@@ -277,6 +291,10 @@ def create_app():
     app.router.add_post("/v1/responses", proxy_openai_responses_request)
     app.router.add_post("/v1/embeddings", proxy_openai_embedding_request)
     app.router.add_get("/v1/models", get_models)
+
+    # anthropic compatible (native passthrough)
+    if str_to_bool(os.environ.get("USE_NATIVE_ANTHROPIC", "false")):
+        app.router.add_post("/v1/messages", proxy_anthropic_messages)
 
     # extras
     app.router.add_get("/v1/docs", docs)
