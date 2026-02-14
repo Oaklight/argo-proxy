@@ -162,11 +162,11 @@ def register_dev_routes(app: web.Application, config) -> None:
 
     # Route definitions: (local_prefix, upstream_base)
     route_map = [
-        ("/chat/", f"{base_url}/api/v1/resource/chat/"),
-        ("/stream/", f"{base_url}/api/v1/resource/streamchat/"),
-        ("/embed/", f"{base_url}/api/v1/resource/embed/"),
-        ("/message/", f"{base_url}/message/"),  # Anthropic compatible
-        ("/v1/", f"{base_url}/v1/"),  # OpenAI compatible
+        ("/api/", f"{base_url}/api/"),  # Gateway legacy API paths
+        ("/chat/", f"{base_url}/api/v1/resource/chat/"),  # Shortcut
+        ("/stream/", f"{base_url}/api/v1/resource/streamchat/"),  # Shortcut
+        ("/embed/", f"{base_url}/api/v1/resource/embed/"),  # Shortcut
+        ("/v1/", f"{base_url}/v1/"),  # OpenAI/Anthropic compatible
     ]
 
     for local_prefix, upstream_base in route_map:
