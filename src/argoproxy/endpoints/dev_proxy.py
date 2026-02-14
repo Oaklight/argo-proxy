@@ -165,17 +165,15 @@ def register_dev_routes(app: web.Application, config) -> None:
         ("/chat/", f"{base_url}/api/v1/resource/chat/"),
         ("/stream/", f"{base_url}/api/v1/resource/streamchat/"),
         ("/embed/", f"{base_url}/api/v1/resource/embed/"),
-        ("/message/", f"{base_url}/message/"),
+        ("/message/", f"{base_url}/message/"),  # Anthropic compatible
+        ("/v1/", f"{base_url}/v1/"),  # OpenAI compatible
     ]
 
     for local_prefix, upstream_base in route_map:
         _add_prefix_route(app, local_prefix, upstream_base)
 
-    # OpenAI compatible: /v1/{path} -> {base_url}/v1/{path}
-    _add_prefix_route(app, "/v1/", f"{base_url}/v1/")
-
     log_debug(
-        f"Registered {len(route_map) + 1} dev proxy route groups", context="dev_proxy"
+        f"Registered {len(route_map)} dev proxy route groups", context="dev_proxy"
     )
 
 
