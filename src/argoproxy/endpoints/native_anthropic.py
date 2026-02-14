@@ -14,6 +14,8 @@ from aiohttp import web
 
 from ..config import ArgoConfig
 from ..models import ModelRegistry
+from ..tool_calls.input_handle import handle_tools
+from ..utils.image_processing import process_anthropic_images
 from ..utils.logging import (
     log_converted_request,
     log_debug,
@@ -23,6 +25,7 @@ from ..utils.logging import (
     log_upstream_error,
 )
 from ..utils.misc import apply_username_passthrough
+from ..utils.models import determine_model_family
 
 
 async def proxy_native_anthropic_request(
@@ -69,6 +72,19 @@ async def proxy_native_anthropic_request(
                     f"Using model as-is: {original_model}",
                     context="native_anthropic",
                 )
+
+        # Process image URLs (download and convert to base64)
+        data = await process_anthropic_images(session, data, config)
+
+        # Handle tool calls if present
+        if "tools" in data:
+            model_family = determine_model_family(data.get("model", "claude"))
+            if model_family in ["google", "unknown"]:
+                # Use prompting based tool handling for Google and unknown models
+                data = handle_tools(data, native_tools=False)
+            else:
+                # Use native tool handling for OpenAI and Anthropic models
+                data = handle_tools(data, native_tools=config.native_tools)
 
         # Apply username passthrough - Anthropic uses metadata.user_id
         _apply_user_identification(data, request, config)
