@@ -2,6 +2,15 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v2.8.5 (2026-02-15)
+
+### Bug Fixes
+
+- **Native Anthropic Tool Validation** (@caidao22): Fixed incorrect input format for tool validation on native Anthropic endpoint (#62)
+    - Added `input_format` parameter to `handle_tools`/`handle_tools_native` to correctly parse tools arriving via the native Anthropic endpoint
+    - Allowed `ToolChoice._handle_anthropic` to accept string shorthand values (`auto`, `any`, `none`)
+    - Short-circuit tool conversion when input format already matches target model type
+
 ## v2.8.4 (2026-02-14)
 
 ### Refactor
