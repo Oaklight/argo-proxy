@@ -432,8 +432,19 @@ def main():
         config_path = Path(args.config) if args.config else None
         if config_path is None and hasattr(config_instance, "_config_path"):
             config_path = config_instance._config_path
+
+        # CLI --verbose/--quiet explicitly override config.yaml's verbose setting.
+        # If neither is specified, fall back to config.yaml's verbose value.
+        if args.verbose:
+            effective_verbose = True
+        elif args.quiet:
+            effective_verbose = False
+        else:
+            effective_verbose = config_instance.verbose if config_instance else False
+
         setup_logging(
-            verbose=args.verbose, config_path=str(config_path) if config_path else None
+            verbose=effective_verbose,
+            config_path=str(config_path) if config_path else None,
         )
 
         # Update attack logger with actual config path
