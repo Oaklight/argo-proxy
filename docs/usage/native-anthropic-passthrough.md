@@ -90,7 +90,35 @@ print()
 
 ## Usage with Claude Code
 
-[Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) can be configured to use Argo Proxy as its backend. You need to set three environment variables:
+[Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) can be configured to use Argo Proxy as its backend.
+
+### Method A: Claude Code Config (Recommended)
+
+Use `claude config set` to persist the settings in `~/.claude/settings.json`:
+
+```bash
+claude config set -g apiKeyHelper "echo 'your-anl-username'"
+claude config set -g env.ANTHROPIC_BASE_URL "http://localhost:44497"
+claude config set -g env.CLAUDE_CODE_SKIP_ANTHROPIC_AUTH "1"
+```
+
+This writes the following to `~/.claude/settings.json`:
+
+```json
+{
+    "apiKeyHelper": "echo 'your-anl-username'",
+    "env": {
+        "ANTHROPIC_BASE_URL": "http://localhost:44497",
+        "CLAUDE_CODE_SKIP_ANTHROPIC_AUTH": "1"
+    }
+}
+```
+
+You can also edit `~/.claude/settings.json` directly if you prefer.
+
+### Method B: Environment Variables
+
+Set the environment variables before launching Claude Code:
 
 ```bash
 export ANTHROPIC_BASE_URL="http://localhost:44497"
@@ -109,14 +137,7 @@ CLAUDE_CODE_SKIP_ANTHROPIC_AUTH=1 \
 claude
 ```
 
-You can also add these to your shell profile (e.g., `~/.bashrc` or `~/.zshrc`) for persistence:
-
-```bash
-# Argo Proxy + Claude Code
-export ANTHROPIC_BASE_URL="http://localhost:44497"
-export ANTHROPIC_API_KEY="$(echo 'your-anl-username')"
-export CLAUDE_CODE_SKIP_ANTHROPIC_AUTH=1
-```
+You can also add these to your shell profile (e.g., `~/.bashrc` or `~/.zshrc`) for persistence.
 
 !!! note
     - `CLAUDE_CODE_SKIP_ANTHROPIC_AUTH=1` is **required** — it tells Claude Code to skip Anthropic's default authentication flow and use the API key as-is.
