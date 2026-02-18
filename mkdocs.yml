@@ -41,6 +41,7 @@ theme:
     - search.share
     - search.suggest
     - content.code.copy
+    - content.tabs.link
   language: en
 
 # Extra configuration
