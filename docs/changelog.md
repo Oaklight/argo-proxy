@@ -2,13 +2,15 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
-## v2.8.5 (2026-02-15)
+## v2.8.6 (2026-02-18)
 
 ### Features
 
 - **Model List Refresh Endpoint**: Added `POST /refresh` endpoint to reload the model list from upstream without restarting the instance
     - Returns before/after model statistics for easy comparison
     - Useful for picking up newly added upstream models without downtime
+
+## v2.8.5 (2026-02-15)
 
 ### Bug Fixes
 

@@ -108,7 +108,7 @@ GET http://localhost:44497/version
 
 ### `/refresh`
 
-**Available from**: v2.8.5
+**Available from**: v2.8.6
 
 Reloads the model list from the upstream ARGO API without restarting the instance. Useful when new models are added upstream and you want to pick them up immediately.
 
