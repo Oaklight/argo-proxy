@@ -4,6 +4,12 @@ This page records the major version changes and important feature updates of the
 
 ## v2.8.5 (2026-02-15)
 
+### Features
+
+- **Model List Refresh Endpoint**: Added `POST /refresh` endpoint to reload the model list from upstream without restarting the instance
+    - Returns before/after model statistics for easy comparison
+    - Useful for picking up newly added upstream models without downtime
+
 ### Bug Fixes
 
 - **Native Anthropic Tool Validation** (@caidao22): Fixed incorrect input format for tool validation on native Anthropic endpoint (#62)

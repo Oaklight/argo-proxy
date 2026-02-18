@@ -105,3 +105,37 @@ GET http://localhost:44497/version
 - Current ArgoProxy version
 - Notification if a new version is available
 - Version comparison information
+
+### `/refresh`
+
+**Available from**: v2.8.5
+
+Reloads the model list from the upstream ARGO API without restarting the instance. Useful when new models are added upstream and you want to pick them up immediately.
+
+```bash
+POST http://localhost:44497/refresh
+```
+
+**Response**:
+
+```json
+{
+    "status": "ok",
+    "message": "Model list refreshed successfully",
+    "previous": {
+        "unique_models": 20,
+        "total_aliases": 45
+    },
+    "current": {
+        "unique_models": 22,
+        "total_aliases": 50,
+        "chat_models": 19,
+        "embed_models": 3
+    }
+}
+```
+
+**Use cases:**
+
+- Picking up newly added upstream models without downtime
+- Recovering from a stale model list after transient network issues
