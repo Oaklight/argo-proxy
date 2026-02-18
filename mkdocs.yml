@@ -59,6 +59,7 @@ nav:
     - Endpoints: usage/endpoints.md
     - Models: usage/models.md
     - "Native OpenAI Passthrough": usage/native-openai-passthrough.md
+    - "Native Anthropic Passthrough": usage/native-anthropic-passthrough.md
     - Basics:
       - usage/basics/index.md
       - "CLI": usage/basics/cli.md
