@@ -90,11 +90,12 @@ print()
 
 ## Usage with Claude Code
 
-[Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) can be configured to use Argo Proxy as its backend by setting the `ANTHROPIC_BASE_URL` environment variable:
+[Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) can be configured to use Argo Proxy as its backend. You need to set three environment variables:
 
 ```bash
 export ANTHROPIC_BASE_URL="http://localhost:44497"
 export ANTHROPIC_API_KEY="your-anl-username"
+export CLAUDE_CODE_SKIP_ANTHROPIC_AUTH=1
 
 claude
 ```
@@ -102,11 +103,25 @@ claude
 Or as a one-liner:
 
 ```bash
-ANTHROPIC_BASE_URL="http://localhost:44497" ANTHROPIC_API_KEY="your-anl-username" claude
+ANTHROPIC_BASE_URL="http://localhost:44497" \
+ANTHROPIC_API_KEY="your-anl-username" \
+CLAUDE_CODE_SKIP_ANTHROPIC_AUTH=1 \
+claude
+```
+
+You can also add these to your shell profile (e.g., `~/.bashrc` or `~/.zshrc`) for persistence:
+
+```bash
+# Argo Proxy + Claude Code
+export ANTHROPIC_BASE_URL="http://localhost:44497"
+export ANTHROPIC_API_KEY="$(echo 'your-anl-username')"
+export CLAUDE_CODE_SKIP_ANTHROPIC_AUTH=1
 ```
 
 !!! note
-    Claude Code appends `/v1/messages` to the base URL automatically, so you should set `ANTHROPIC_BASE_URL` to the root of your Argo Proxy instance (e.g., `http://localhost:44497`), **not** `http://localhost:44497/v1/messages`.
+    - `CLAUDE_CODE_SKIP_ANTHROPIC_AUTH=1` is **required** — it tells Claude Code to skip Anthropic's default authentication flow and use the API key as-is.
+    - Claude Code appends `/v1/messages` to the base URL automatically, so set `ANTHROPIC_BASE_URL` to the root of your Argo Proxy instance (e.g., `http://localhost:44497`), **not** `http://localhost:44497/v1/messages`.
+    - Replace `your-anl-username` with your actual Argonne domain username.
 
 ## Usage with REST API (httpx / curl)
 
@@ -233,7 +248,8 @@ If Claude Code cannot connect:
 
 1. Verify `ANTHROPIC_BASE_URL` is set to the proxy root (e.g., `http://localhost:44497`), **not** the full `/v1/messages` path
 2. Verify `ANTHROPIC_API_KEY` is set to your ANL username
-3. Ensure argo-proxy is running with `--native-anthropic`
+3. Verify `CLAUDE_CODE_SKIP_ANTHROPIC_AUTH=1` is set — without this, Claude Code will attempt Anthropic's default auth flow and fail
+4. Ensure argo-proxy is running with `--native-anthropic`
 
 ## Related Documentation
 
