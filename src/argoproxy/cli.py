@@ -432,8 +432,10 @@ def main():
         config_path = Path(args.config) if args.config else None
         if config_path is None and hasattr(config_instance, "_config_path"):
             config_path = config_instance._config_path
+
         setup_logging(
-            verbose=args.verbose, config_path=str(config_path) if config_path else None
+            verbose=config_instance.verbose,
+            config_path=str(config_path) if config_path else None,
         )
 
         # Update attack logger with actual config path
