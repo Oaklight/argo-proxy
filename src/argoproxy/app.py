@@ -185,6 +185,11 @@ async def get_models(request: web.Request):
     return extras.get_models(request)
 
 
+async def refresh_models(request: web.Request):
+    log_info("/refresh", context="app")
+    return await extras.refresh_models(request)
+
+
 # ================= Extras =================
 
 
@@ -297,6 +302,7 @@ def create_app():
         app.router.add_post("/v1/messages", proxy_anthropic_messages)
 
     # extras
+    app.router.add_post("/refresh", refresh_models)
     app.router.add_get("/v1/docs", docs)
     app.router.add_get("/health", health_check)
     app.router.add_get("/version", get_version)
