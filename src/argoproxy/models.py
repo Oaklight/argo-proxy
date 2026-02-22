@@ -2,11 +2,11 @@
 import asyncio
 import fnmatch
 import json
-import urllib.request
 from collections import defaultdict
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple
 
+import aiohttp
 from pydantic import BaseModel
 from tqdm.asyncio import tqdm_asyncio
 
@@ -269,90 +269,114 @@ def produce_argo_model_list(upstream_models: List[Model]) -> Dict[str, str]:
     return argo_models
 
 
-def get_upstream_model_list(url: str) -> Dict[str, str]:
-    """Fetches the list of available models from the upstream server.
+async def get_upstream_model_list_async(
+    url: str,
+    resolver_overrides: Optional[dict[str, str]] = None,
+) -> Dict[str, str]:
+    """Fetches the list of available models from the upstream server asynchronously.
 
     Args:
         url: The URL of the upstream server.
+        resolver_overrides: Optional dict mapping "host:port" to IP address
+            for custom DNS resolution.
 
     Returns:
         A dictionary containing the list of available models mapping
         argo model names to internal IDs.
     """
+    from .performance import StaticOverrideResolver
+
     log_debug(f"Starting model list fetch from: {url}", context="models")
 
+    connector = None
+    if resolver_overrides:
+        resolver = StaticOverrideResolver(resolver_overrides)
+        connector = aiohttp.TCPConnector(resolver=resolver)
+
+    client_timeout = aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT)
+    raw_data = ""
+
     try:
-        # Create request object
-        req = urllib.request.Request(url)
-        req.add_header("User-Agent", "argo-proxy/1.0")
+        async with aiohttp.ClientSession(
+            connector=connector,
+            connector_owner=connector is not None,
+            timeout=client_timeout,
+            headers={"User-Agent": "argo-proxy/1.0"},
+        ) as session:
+            log_debug(f"Sending request to: {url}", context="models")
 
-        log_debug(f"Sending request to: {url}", context="models")
+            async with session.get(url) as response:
+                status_code = response.status
+                log_debug(
+                    f"Received response with status code: {status_code}",
+                    context="models",
+                )
 
-        # Use detailed parameters
-        with urllib.request.urlopen(req, timeout=30) as response:
-            status_code = response.getcode()
-            log_debug(
-                f"Received response with status code: {status_code}", context="models"
-            )
-
-            raw_data = response.read().decode()
-            log_debug(
-                f"Response data length: {len(raw_data)} characters", context="models"
-            )
-
-            # Parse JSON
-            data = json.loads(raw_data)
-            model_count = len(data.get("data", []))
-            log_debug(f"Parsed {model_count} models from API", context="models")
-
-            # Detect API format (debug level)
-            if data.get("data") and len(data["data"]) > 0:
-                sample_model = data["data"][0]
-                if "model_name" in sample_model:
-                    log_debug(
-                        "Detected old format API (contains model_name field)",
+                if status_code != 200:
+                    log_error(
+                        f"HTTP error fetching model list from {url}",
                         context="models",
                     )
-                elif "internal_id" in sample_model:
+                    log_error(f"HTTP status code: {status_code}", context="models")
+                    try:
+                        error_body = await response.text()
+                        log_error(
+                            f"HTTP error response body: {error_body}",
+                            context="models",
+                        )
+                    except Exception:
+                        pass
+                    log_warning("Using built-in model list.", context="models")
+                    return _DEFAULT_CHAT_MODELS
+
+                raw_data = await response.text()
+                log_debug(
+                    f"Response data length: {len(raw_data)} characters",
+                    context="models",
+                )
+
+                # Parse JSON
+                data = json.loads(raw_data)
+                model_count = len(data.get("data", []))
+                log_debug(f"Parsed {model_count} models from API", context="models")
+
+                # Detect API format (debug level)
+                if data.get("data") and len(data["data"]) > 0:
+                    sample_model = data["data"][0]
+                    if "model_name" in sample_model:
+                        log_debug(
+                            "Detected old format API (contains model_name field)",
+                            context="models",
+                        )
+                    elif "internal_id" in sample_model:
+                        log_debug(
+                            "Detected new format API (contains internal_id field)",
+                            context="models",
+                        )
+                    else:
+                        log_warning("Detected unknown format API", context="models")
+                    log_debug(f"Sample model data: {sample_model}", context="models")
+
+                models = (
+                    [Model(**model) for model in data.get("data", [])]
+                    if data.get("data")
+                    else []
+                )
+
+                argo_models = produce_argo_model_list(models)
+
+                # Show first few model mappings for verification (debug level)
+                if argo_models:
+                    sample_mappings = list(argo_models.items())[:3]
                     log_debug(
-                        "Detected new format API (contains internal_id field)",
-                        context="models",
+                        f"Sample model mappings: {sample_mappings}", context="models"
                     )
-                else:
-                    log_warning("Detected unknown format API", context="models")
-                log_debug(f"Sample model data: {sample_model}", context="models")
 
-            models = (
-                [Model(**model) for model in data.get("data", [])]
-                if data.get("data")
-                else []
-            )
+                return argo_models
 
-            argo_models = produce_argo_model_list(models)
-
-            # Show first few model mappings for verification (debug level)
-            if argo_models:
-                sample_mappings = list(argo_models.items())[:3]
-                log_debug(f"Sample model mappings: {sample_mappings}", context="models")
-
-            return argo_models
-
-    except urllib.error.HTTPError as e:
-        log_error(f"HTTP error fetching model list from {url}", context="models")
-        log_error(f"HTTP status code: {e.code}", context="models")
-        log_error(f"HTTP error message: {e.reason}", context="models")
-        if hasattr(e, "read"):
-            try:
-                error_body = e.read().decode()
-                log_error(f"HTTP error response body: {error_body}", context="models")
-            except Exception:
-                pass
-        log_warning("Using built-in model list.", context="models")
-        return _DEFAULT_CHAT_MODELS
-
-    except urllib.error.URLError as e:
-        log_error(f"URL error fetching model list from {url}", context="models")
-        log_error(f"Network error message: {e.reason}", context="models")
+    except aiohttp.ClientError as e:
+        log_error(f"HTTP client error fetching model list from {url}", context="models")
+        log_error(f"Error message: {e}", context="models")
         log_warning("Using built-in model list.", context="models")
         return _DEFAULT_CHAT_MODELS
 
@@ -362,7 +386,7 @@ def get_upstream_model_list(url: str) -> Dict[str, str]:
         )
         log_error(f"JSON error: {e}", context="models")
         log_error(
-            f"Response content first 200 chars: {raw_data[:200] if 'raw_data' in locals() else 'unknown'}",
+            f"Response content first 200 chars: {raw_data[:200] if raw_data else 'unknown'}",
             context="models",
         )
         log_warning("Using built-in model list.", context="models")
@@ -540,7 +564,10 @@ class ModelRegistry:
             f"Fetching models from: {self._config.argo_model_url}",
             context="ModelRegistry",
         )
-        self._chat_models = get_upstream_model_list(self._config.argo_model_url)
+        self._chat_models = await get_upstream_model_list_async(
+            self._config.argo_model_url,
+            resolver_overrides=getattr(self._config, "resolve_overrides", None),
+        )
 
         # Log summary at info level
         source = "upstream API" if len(self._chat_models) > 32 else "built-in list"
