@@ -7,11 +7,18 @@ This page records the major version changes and important feature updates of the
 ### Features
 
 - **Flexible Model Name Resolution**: Improve model name resolution flexibility - support slash separator, case-insensitive matching, and automatic `argo:` prefix handling ([#65](https://github.com/Oaklight/argo-proxy/pull/65), contributed by @keceli)
+- **DNS Resolution Overrides** (@michel2323): Custom DNS resolver (`StaticOverrideResolver`) implementing `aiohttp.abc.AbstractResolver`, similar to `curl --resolve`. Maps specific `host:port` combinations to IP addresses, enabling access to Argo API through SSH tunnels while preserving TLS certificate validation. Configured via `resolve_overrides` in `config.yaml`.
+- **Skip URL Validation** (@michel2323): New `skip_url_validation` config option (also via `SKIP_URL_VALIDATION` env var) to skip startup connectivity checks — useful for non-interactive environments (CI/CD, containers) where network may be unavailable.
+
+### Refactoring
+
+- **urllib → aiohttp Migration**: Migrated `validate_api_async` and `get_upstream_model_list` from synchronous `urllib.request` to native async `aiohttp.ClientSession`, with support for `resolve_overrides` parameter for custom DNS resolution.
 
 ### Documentation
 
 - **Model Naming Guide**: Rewrite models page as naming scheme guide
 - **CLI Docs Link**: Add model naming docs link to CLI startup prompt
+- **DNS Resolution Overrides**: Added [DNS Resolution Overrides](https://argo-proxy.readthedocs.io/en/latest/usage/advanced/dns-resolution/) documentation page
 
 ### Bug Fixes
 
