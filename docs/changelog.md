@@ -16,6 +16,7 @@ This page records the major version changes and important feature updates of the
 ### Bug Fixes
 
 - **CLI Verbose Flag Override**: CLI `--verbose`/`--quiet` flags now properly override the `verbose` setting in `config.yaml` (#64)
+- **Leaked tool parsing**: Replaced quote-aware brace counting with a more robust candidate-end-position + repair strategy approach for parsing leaked Claude tool calls. This handles edge cases with nested quotes, escaped characters, and malformed output more reliably. (Contributed by [n-getty](https://github.com/n-getty))
 
 ## v2.8.6 (2026-02-18)
 
