@@ -6,12 +6,82 @@ import asyncio
 import inspect
 import multiprocessing
 import os
+import socket
 from typing import Optional
 
 import aiohttp
+import aiohttp.abc
 from tqdm import tqdm
 
-from .utils.logging import log_debug, log_warning
+from .utils.logging import log_debug, log_info, log_warning
+
+
+class StaticOverrideResolver(aiohttp.abc.AbstractResolver):
+    """Custom DNS resolver that overrides specific host:port to IP mappings.
+
+    Works like `curl --resolve host:port:address`, allowing DNS resolution
+    overrides for specific host:port combinations. This is useful when
+    accessing services through SSH tunnels or port forwarding, where the
+    original hostname must be preserved for TLS/SNI but DNS should resolve
+    to a different address (e.g., localhost).
+
+    Args:
+        overrides: Dictionary mapping "host:port" to IP address.
+            Example: {"apps-dev.inside.anl.gov:8383": "127.0.0.1"}
+        fallback: Optional fallback resolver. Defaults to aiohttp's
+            DefaultResolver if not provided.
+
+    Example:
+        >>> resolver = StaticOverrideResolver(
+        ...     {"apps-dev.inside.anl.gov:8383": "127.0.0.1"}
+        ... )
+        >>> connector = aiohttp.TCPConnector(resolver=resolver)
+        >>> session = aiohttp.ClientSession(connector=connector)
+    """
+
+    def __init__(
+        self,
+        overrides: dict[str, str],
+        fallback: Optional[aiohttp.abc.AbstractResolver] = None,
+    ):
+        self._overrides = overrides
+        self._fallback = fallback or aiohttp.DefaultResolver()
+
+    async def resolve(
+        self, host: str, port: int = 0, family: int = socket.AF_INET
+    ) -> list[dict]:
+        """Resolve hostname, using override if available.
+
+        Args:
+            host: Hostname to resolve.
+            port: Port number.
+            family: Socket address family.
+
+        Returns:
+            List of resolved address dicts compatible with aiohttp.
+        """
+        key = f"{host}:{port}"
+        if key in self._overrides:
+            ip = self._overrides[key]
+            log_debug(
+                f"DNS override: {key} -> {ip}",
+                context="performance",
+            )
+            return [
+                {
+                    "hostname": host,
+                    "host": ip,
+                    "port": port,
+                    "family": family,
+                    "proto": 0,
+                    "flags": socket.AI_NUMERICHOST,
+                }
+            ]
+        return await self._fallback.resolve(host, port, family)
+
+    async def close(self) -> None:
+        """Close the fallback resolver."""
+        await self._fallback.close()
 
 
 class OptimizedHTTPSession:
@@ -28,6 +98,7 @@ class OptimizedHTTPSession:
         total_timeout: int = 60,
         dns_cache_ttl: int = 300,
         user_agent: str = "argo-proxy",
+        resolve_overrides: Optional[dict[str, str]] = None,
     ):
         """
         Initialize optimized HTTP session.
@@ -41,6 +112,8 @@ class OptimizedHTTPSession:
             total_timeout: Total request timeout in seconds
             dns_cache_ttl: DNS cache TTL in seconds
             user_agent: User agent string
+            resolve_overrides: Optional dict mapping "host:port" to IP address
+                for custom DNS resolution (similar to curl --resolve).
         """
         # Check aiohttp version for tcp_nodelay support
         connector_kwargs = {
@@ -51,6 +124,15 @@ class OptimizedHTTPSession:
             "keepalive_timeout": keepalive_timeout,
             "enable_cleanup_closed": True,
         }
+
+        # Add custom resolver if overrides are provided
+        if resolve_overrides:
+            resolver = StaticOverrideResolver(resolve_overrides)
+            connector_kwargs["resolver"] = resolver
+            log_info(
+                f"DNS resolution overrides configured: {resolve_overrides}",
+                context="performance",
+            )
 
         # Only add tcp_nodelay if supported (aiohttp >= 3.8.0)
         try:
