@@ -69,6 +69,7 @@ nav:
       - "Timeout Examples": usage/basics/timeout_examples.md
     - Advanced:
       - usage/advanced/index.md
+      - "DNS Resolution Overrides": usage/advanced/dns-resolution.md
       - "Streaming": usage/advanced/streaming.md
       - "Vision": usage/advanced/vision.md
       - Tools:
