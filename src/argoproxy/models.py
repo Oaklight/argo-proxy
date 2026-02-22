@@ -299,7 +299,6 @@ async def get_upstream_model_list_async(
     try:
         async with aiohttp.ClientSession(
             connector=connector,
-            connector_owner=connector is not None,
             timeout=client_timeout,
             headers={"User-Agent": "argo-proxy/1.0"},
         ) as session:

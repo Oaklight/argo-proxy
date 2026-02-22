@@ -103,7 +103,6 @@ async def validate_api_async(
         try:
             async with aiohttp.ClientSession(
                 connector=connector,
-                connector_owner=connector is not None,
                 timeout=client_timeout,
             ) as session:
                 async with session.post(
