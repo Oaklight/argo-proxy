@@ -83,6 +83,10 @@ async def prepare_app(app):
         context="app",
     )
 
+    log_info(
+        "   ├─ Naming docs: https://argo-proxy.readthedocs.io/en/latest/usage/models/",
+        context="app",
+    )
     log_info("   └─ Model availability refreshed successfully", context="app")
     log_info("=" * 60, context="app")
 
