@@ -1,58 +1,119 @@
-# Available Models
+# Models
 
-Argo Proxy provides access to various AI models through the ARGO API, with OpenAI-compatible naming conventions for easy integration.
+Argo Proxy dynamically fetches the model list from the upstream ARGO API at startup. Rather than maintaining a static list of models (which quickly becomes outdated), this page explains the **naming scheme** used by Argo Proxy and how to **query available models** at runtime.
 
-## Chat Models
+## Querying Available Models
 
-### OpenAI Series
+### List Models
 
-The OpenAI model series includes various GPT models with different capabilities and context lengths.
+Send a `GET` request to the `/v1/models` endpoint to retrieve all currently available models:
 
-| Original ARGO Model Name | Argo Proxy Name                          | Description                    | Thinking |
-| ------------------------ | ---------------------------------------- | ------------------------------ | -------- |
-| `gpt35`                  | `argo:gpt-3.5-turbo`                     | GPT-3.5 Turbo                  | No       |
-| `gpt35large`             | `argo:gpt-3.5-turbo-16k`                 | GPT-3.5 Turbo with 16K context | No       |
-| `gpt4`                   | `argo:gpt-4`                             | GPT-4 base model               | No       |
-| `gpt4large`              | `argo:gpt-4-32k`                         | GPT-4 with 32K context         | No       |
-| `gpt4turbo`              | `argo:gpt-4-turbo`                       | GPT-4 Turbo                    | No       |
-| `gpt4o`                  | `argo:gpt-4o`                            | GPT-4o                         | No       |
-| `gpt4olatest`            | `argo:gpt-4o-latest`                     | Latest GPT-4o version          | No       |
-| `gpto1preview`           | `argo:gpt-o1-preview`, `argo:o1-preview` | GPT-o1 Preview                 | **Yes**  |
-| `gpto1mini`              | `argo:gpt-o1-mini`, `argo:o1-mini`       | GPT-o1 Mini                    | **Yes**  |
-| `gpto3mini`              | `argo:gpt-o3-mini`, `argo:o3-mini`       | GPT-o3 Mini                    | **Yes**  |
-| `gpto1`                  | `argo:gpt-o1`, `argo:o1`                 | GPT-o1                         | **Yes**  |
-| `gpto3`                  | `argo:gpt-o3`, `argo:o3`                 | GPT-o3                         | **Yes**  |
-| `gpto4mini`              | `argo:gpt-o4-mini`, `argo:o4-mini`       | GPT-o4 Mini                    | **Yes**  |
-| `gpt41`                  | `argo:gpt-4.1`                           | GPT-4.1                        | No       |
-| `gpt41mini`              | `argo:gpt-4.1-mini`                      | GPT-4.1 Mini                   | No       |
-| `gpt41nano`              | `argo:gpt-4.1-nano`                      | GPT-4.1 Nano                   | No       |
+```bash
+curl http://localhost:44497/v1/models
+```
 
-### Google Gemini Series
+The response follows the OpenAI-compatible format:
 
-Google's Gemini models offer advanced multimodal capabilities.
+```json
+{
+    "object": "list",
+    "data": [
+        {
+            "id": "argo:gpt-4o",
+            "internal_name": "gpt4o",
+            "object": "model",
+            "created": 1700000000,
+            "owned_by": "openai"
+        },
+        ...
+    ]
+}
+```
 
-| Original ARGO Model Name | Argo Proxy Name         | Description      | Thinking |
-| ------------------------ | ----------------------- | ---------------- | -------- |
-| `gemini25pro`            | `argo:gemini-2.5-pro`   | Gemini 2.5 Pro   | **Yes**  |
-| `gemini25flash`          | `argo:gemini-2.5-flash` | Gemini 2.5 Flash | **Yes**  |
+Each entry contains:
 
-### Anthropic Claude Series
+- **`id`** — the Argo Proxy alias you use in API requests (e.g. `argo:gpt-4o`)
+- **`internal_name`** — the upstream ARGO internal model identifier (e.g. `gpt4o`)
+- **`owned_by`** — the model provider family (`openai`, `anthropic`, `google`, or `unknown`)
 
-Anthropic's Claude models are known for their safety and reasoning capabilities.
+### Refresh Model List
 
-| Original ARGO Model Name | Argo Proxy Name                                    | Description       | Thinking |
-| ------------------------ | -------------------------------------------------- | ----------------- | -------- |
-| `claudeopus4`            | `argo:claude-opus-4`, `argo:claude-4-opus`         | Claude Opus 4     | **Yes**  |
-| `claudesonnet4`          | `argo:claude-sonnet-4`, `argo:claude-4-sonnet`     | Claude Sonnet 4   | **Yes**  |
-| `claudesonnet37`         | `argo:claude-sonnet-3.7`, `argo:claude-3.7-sonnet` | Claude Sonnet 3.7 | **Yes**  |
-| `claudesonnet35v2`       | `argo:claude-sonnet-3.5`, `argo:claude-3.5-sonnet` | Claude Sonnet 3.5 | No       |
+If new models are added upstream, you can reload the model list without restarting:
 
-## Embedding Models
+```bash
+curl -X POST http://localhost:44497/refresh
+```
 
-Embedding models convert text into numerical vectors for similarity search, clustering, and other ML tasks.
+See [Endpoints — `/refresh`](endpoints.md#refresh) for details on the response format.
 
-| Original ARGO Model Name | Argo Proxy Name               | Description                   | Thinking |
-| ------------------------ | ----------------------------- | ----------------------------- | -------- |
-| `ada002`                 | `argo:text-embedding-ada-002` | OpenAI Ada 002 embeddings     | N/A      |
-| `v3small`                | `argo:text-embedding-3-small` | OpenAI text-embedding-3-small | N/A      |
-| `v3large`                | `argo:text-embedding-3-large` | OpenAI text-embedding-3-large | N/A      |
+## Model Naming Scheme
+
+All Argo Proxy model names use the `argo:` prefix followed by a human-readable, OpenAI-style name. The naming rules vary by model family.
+
+### OpenAI Models
+
+Standard GPT models use the format `argo:gpt-{version}`:
+
+| Pattern | Example |
+| --- | --- |
+| `argo:gpt-{version}` | `argo:gpt-4`, `argo:gpt-4-turbo`, `argo:gpt-4o` |
+| `argo:gpt-{version}-{variant}` | `argo:gpt-3.5-turbo-16k`, `argo:gpt-4.1-mini` |
+
+OpenAI reasoning models (o-series) have **two equivalent aliases**:
+
+| Pattern | Example |
+| --- | --- |
+| `argo:gpt-{o-model}` | `argo:gpt-o3-mini` |
+| `argo:{o-model}` | `argo:o3-mini` |
+
+Both forms resolve to the same upstream model. Use whichever you prefer.
+
+### Anthropic Claude Models
+
+Claude models have **two equivalent aliases** with different ordering:
+
+| Pattern | Example |
+| --- | --- |
+| `argo:claude-{codename}-{generation}` | `argo:claude-sonnet-4`, `argo:claude-opus-4` |
+| `argo:claude-{generation}-{codename}` | `argo:claude-4-sonnet`, `argo:claude-4-opus` |
+
+For versioned models, a version suffix is appended:
+
+| Pattern | Example |
+| --- | --- |
+| `argo:claude-{codename}-{generation}-{version}` | `argo:claude-sonnet-3.5-v2` |
+| `argo:claude-{generation}-{codename}-{version}` | `argo:claude-3.5-sonnet-v2` |
+
+### Google Gemini Models
+
+Gemini models use the format `argo:gemini-{version}-{variant}`:
+
+| Pattern | Example |
+| --- | --- |
+| `argo:gemini-{version}-{variant}` | `argo:gemini-2.5-pro`, `argo:gemini-2.5-flash` |
+
+### Embedding Models
+
+Embedding models follow OpenAI's naming convention:
+
+| Pattern | Example |
+| --- | --- |
+| `argo:text-embedding-{name}` | `argo:text-embedding-ada-002`, `argo:text-embedding-3-small` |
+
+## Flexible Model Name Resolution
+
+Argo Proxy is lenient when resolving model names. The following variations are all accepted:
+
+- **Prefix**: `argo:gpt-4o` or just `gpt-4o` (the `argo:` prefix is optional)
+- **Separator**: `argo:gpt-4o` or `argo/gpt-4o` (slash works as well)
+- **Case**: `argo:GPT-4o` or `argo:gpt-4o` (case-insensitive)
+
+If a model name cannot be resolved, Argo Proxy falls back to `gpt4o` for chat models and `v3small` for embedding models.
+
+## Why No Static Model List?
+
+The upstream ARGO API evolves over time — models are added, retired, or renamed. Argo Proxy fetches the model list dynamically at startup and generates aliases automatically based on the naming rules above. This means:
+
+1. **New models are available immediately** after an upstream update (just call `/refresh` or restart).
+2. **Documentation stays accurate** without manual updates.
+3. **You always have the ground truth** via the `/v1/models` endpoint.
