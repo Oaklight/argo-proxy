@@ -3,7 +3,7 @@ import difflib
 import json
 import os
 import threading
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from hashlib import md5
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional, Tuple, Union, overload
@@ -64,6 +64,10 @@ class ArgoConfig:
     _provider_tool_format: bool = False
     _enable_leaked_tool_fix: bool = False
     _dev_mode: bool = False
+
+    # Validation and resolver settings
+    _skip_url_validation: bool = False
+    resolve_overrides: dict = field(default_factory=dict)
 
     # Image processing settings
     enable_payload_control: bool = False  # Enable automatic payload size control
@@ -188,6 +192,7 @@ class ArgoConfig:
             "use_native_openai": "_use_native_openai",
             "native_anthropic_base_url": "_native_anthropic_base_url",
             "use_native_anthropic": "_use_native_anthropic",
+            "skip_url_validation": "_skip_url_validation",
         }
         valid_fields = {
             k: v for k, v in config_dict.items() if k in cls.__annotations__
@@ -259,6 +264,12 @@ class ArgoConfig:
 
     def _validate_urls(self) -> None:
         """Validate URL connectivity using validate_api_async with default retries."""
+        if self._skip_url_validation:
+            log_info(
+                "URL validation skipped (skip_url_validation=True)", context="config"
+            )
+            return
+
         required_urls: list[tuple[str, dict[str, Any]]] = [
             (
                 self.argo_url,
@@ -576,6 +587,9 @@ def _apply_env_overrides(config_data: ArgoConfig) -> ArgoConfig:
 
     if env_argo_base_url := os.getenv("ARGO_BASE_URL"):
         config_data._argo_base_url = env_argo_base_url
+
+    if env_skip_url_validation := os.getenv("SKIP_URL_VALIDATION"):
+        config_data._skip_url_validation = str_to_bool(env_skip_url_validation)
 
     return config_data
 
