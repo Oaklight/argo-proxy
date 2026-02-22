@@ -618,6 +618,38 @@ class ModelRegistry:
         except Exception as e:
             log_error(f"Manual refresh failed: {str(e)}", context="ModelRegistry")
 
+    def _model_lookup_candidates(self, model_name: str) -> List[str]:
+        """Build equivalent model-name candidates for flexible lookup."""
+        raw_model_name = model_name.strip()
+        if not raw_model_name:
+            return []
+
+        candidates: List[str] = []
+
+        def _add(candidate: str) -> None:
+            if candidate and candidate not in candidates:
+                candidates.append(candidate)
+
+        _add(raw_model_name)
+
+        # Allow users to use argo/model instead of argo:model.
+        if "/" in raw_model_name:
+            _add(raw_model_name.replace("/", ":"))
+
+        # Case-insensitive fallback.
+        _add(raw_model_name.lower())
+        if "/" in raw_model_name:
+            _add(raw_model_name.replace("/", ":").lower())
+
+        # Accept original Argo model names without the `argo:` prefix.
+        for candidate in list(candidates):
+            if candidate.startswith("argo:"):
+                _add(candidate[len("argo:") :])
+            else:
+                _add(f"argo:{candidate}")
+
+        return candidates
+
     def resolve_model_name(
         self,
         model_name: str,
@@ -633,20 +665,19 @@ class ModelRegistry:
         Returns:
             The resolved primary model name or default_model if no match found
         """
+        for candidate in self._model_lookup_candidates(model_name):
+            # Directly pass through a resolved model_id.
+            if candidate in self.available_models.values():
+                return candidate
+            # Resolve aliases to their model_id.
+            if candidate in self.available_models:
+                return self.available_models[candidate]
 
-        # directly pass in resolved model_id
-        if model_name in self.available_models.values():
-            return model_name
-
-        # Check if input exists in the flattened mapping
-        if model_name in self.available_models:
-            return self.available_models[model_name]
-        else:
-            if model_type == "chat":
-                default_model = "argo:gpt-4o"
-            elif model_type == "embed":
-                default_model = "argo:text-embedding-3-small"
-            return self.available_models[default_model]
+        if model_type == "chat":
+            default_model = "argo:gpt-4o"
+        elif model_type == "embed":
+            default_model = "argo:text-embedding-3-small"
+        return self.available_models[default_model]
 
     def as_openai_list(self) -> Dict[str, Any]:
         # Mock data for available models
