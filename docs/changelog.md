@@ -2,7 +2,7 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
-## v2.8.7
+## v2.8.7 (2026-02-22)
 
 ### Features
 
