@@ -619,9 +619,29 @@ class ModelRegistry:
             log_error(f"Manual refresh failed: {str(e)}", context="ModelRegistry")
 
     def _model_lookup_candidates(self, model_name: str) -> List[str]:
-        """Build equivalent model-name candidates for flexible lookup."""
-        raw_model_name = model_name.strip()
-        if not raw_model_name:
+        """Build equivalent model-name candidates for flexible lookup.
+
+        The ``available_models`` dict uses ``argo:xxx`` keys (e.g.
+        ``argo:gpt-4o``) mapped to compact ``internal_id`` values (e.g.
+        ``gpt4o``).  ``resolve_model_name`` already checks both keys and
+        values, so passing an ``internal_id`` directly (like ``gpt4o``)
+        will match without any extra transformation here.
+
+        Candidate transformations kept:
+        - Original input: baseline behaviour.
+        - ``/`` → ``:`` : URL path segments use ``/``; Argo keys use ``:``.
+        - Lowercasing: defensive against case mismatches.
+        - ``argo:`` prefix addition: lets users omit the prefix
+          (e.g. ``gpt-4o`` → ``argo:gpt-4o`` matches a key).
+
+        Removed (compared to the original implementation):
+        - Stripping the ``argo:`` prefix is unnecessary because the
+          resulting bare name (e.g. ``gpt-4o``) would need to match an
+          ``internal_id`` value, but values use the compact format
+          (``gpt4o``), so the stripped form never matches.
+        """
+        raw = model_name.strip()
+        if not raw:
             return []
 
         candidates: List[str] = []
@@ -630,23 +650,23 @@ class ModelRegistry:
             if candidate and candidate not in candidates:
                 candidates.append(candidate)
 
-        _add(raw_model_name)
+        # 1. Original input (baseline).
+        _add(raw)
 
-        # Allow users to use argo/model instead of argo:model.
-        if "/" in raw_model_name:
-            _add(raw_model_name.replace("/", ":"))
+        # 2. Slash → colon (URL path compatibility, e.g. "argo/gpt-4o").
+        if "/" in raw:
+            _add(raw.replace("/", ":"))
 
-        # Case-insensitive fallback.
-        _add(raw_model_name.lower())
-        if "/" in raw_model_name:
-            _add(raw_model_name.replace("/", ":").lower())
+        # 3. Case-insensitive fallback.
+        _add(raw.lower())
+        if "/" in raw:
+            _add(raw.replace("/", ":").lower())
 
-        # Accept original Argo model names without the `argo:` prefix.
-        for candidate in list(candidates):
-            if candidate.startswith("argo:"):
-                _add(candidate[len("argo:") :])
-            else:
-                _add(f"argo:{candidate}")
+        # 4. Auto-add "argo:" prefix so users can omit it
+        #    (e.g. "gpt-4o" → "argo:gpt-4o" matches a key).
+        for c in list(candidates):
+            if not c.startswith("argo:"):
+                _add(f"argo:{c}")
 
         return candidates
 
