@@ -1,8 +1,8 @@
 import asyncio
 import json
-import urllib.request
 from typing import Any, AsyncGenerator, Dict, Optional, Union
 
+import aiohttp
 from aiohttp import web
 
 
@@ -61,60 +61,69 @@ async def send_off_sse(
     await response.write(sse_chunk)
 
 
-def validate_api(url: str, username: str, payload: dict, timeout: int = 2) -> bool:
-    """
-    Helper to validate API endpoint connectivity.
-    Args:
-        url (str): The API URL to validate.
-        username (str): The username included in the request payload.
-        payload (dict): The request payload in dictionary format.
-
-    Returns:
-        bool: True if validation succeeds, False otherwise.
-    Raises:
-        ValueError: If validation fails
-    """
-    payload["user"] = username
-    request_data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        url, data=request_data, headers={"Content-Type": "application/json"}
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as response:
-            if response.getcode() != 200:
-                raise ValueError(f"API returned status code {response.getcode()}")
-            return True
-    except Exception as e:
-        raise ValueError(f"API validation failed for {url}: {str(e)}") from e
-
-
-async def validate_api_async(url, user, payload, timeout, attempts=3):
-    """
-    Asynchronously validates API connectivity with attempts.
+async def validate_api_async(
+    url: str,
+    user: str,
+    payload: dict,
+    timeout: int = 2,
+    attempts: int = 3,
+    resolver_overrides: Optional[dict[str, str]] = None,
+) -> bool:
+    """Asynchronously validates API connectivity with retries using aiohttp.
 
     Args:
-        url (str): The API URL to validate.
-        user (str): The username for payload.
-        payload (dict): Request payload.
-        timeout (int): Request timeout seconds.
-        attempts (int): Total attempts (including the first).
+        url: The API URL to validate.
+        user: The username for payload.
+        payload: Request payload.
+        timeout: Request timeout seconds.
+        attempts: Total attempts (including the first).
+        resolver_overrides: Optional dict mapping "host:port" to IP address
+            for custom DNS resolution.
 
     Returns:
-        bool: True if validation succeeds.
+        True if validation succeeds.
 
     Raises:
-        ValueError if all attempts fail.
+        ValueError: If all attempts fail.
     """
-    last_err = None
+    from ..performance import StaticOverrideResolver
+
+    payload_copy = payload.copy()
+    payload_copy["user"] = user
+
+    connector = None
+    if resolver_overrides:
+        resolver = StaticOverrideResolver(resolver_overrides)
+        connector = aiohttp.TCPConnector(resolver=resolver)
+
+    client_timeout = aiohttp.ClientTimeout(total=timeout)
+
+    last_err: Optional[Exception] = None
     for attempt in range(attempts + 1):  # tries = 1 + attempts
         try:
-            return await asyncio.to_thread(
-                validate_api, url, user, payload, timeout=timeout
-            )
+            async with aiohttp.ClientSession(
+                connector=connector,
+                connector_owner=connector is not None,
+                timeout=client_timeout,
+            ) as session:
+                async with session.post(
+                    url,
+                    json=payload_copy,
+                    headers={"Content-Type": "application/json"},
+                ) as response:
+                    if response.status != 200:
+                        raise ValueError(f"API returned status code {response.status}")
+                    return True
         except Exception as e:
             last_err = e
             if attempt < attempts:
                 await asyncio.sleep(0.5)
+            # Recreate connector for next attempt if needed
+            if resolver_overrides and attempt < attempts:
+                resolver = StaticOverrideResolver(resolver_overrides)
+                connector = aiohttp.TCPConnector(resolver=resolver)
+            else:
+                connector = None
 
     # If we reach here, all attempts failed
     if last_err is not None:
