@@ -17,6 +17,20 @@ argo_base_url: "https://apps-dev.inside.anl.gov/argoapi"
 
 verbose: true
 
+# Skip URL validation at startup (default: false)
+# Useful for non-interactive environments (CI/CD, containers) or when
+# connectivity is known to be unavailable at startup time
+# Can also be set via SKIP_URL_VALIDATION environment variable
+# skip_url_validation: false
+
+# DNS resolution overrides (similar to curl --resolve)
+# Maps "host:port" to IP address for custom DNS resolution.
+# Useful when accessing Argo API through SSH tunnels or port forwarding,
+# where the original hostname must be preserved for TLS certificate validation.
+# Example: route apps-dev.inside.anl.gov:443 through localhost SSH tunnel
+# resolve_overrides:
+#   "apps-dev.inside.anl.gov:443": "127.0.0.1"
+
 # Native OpenAI endpoint passthrough mode (default: false)
 # When enabled, requests are directly forwarded to the native OpenAI endpoint without transformation
 # use_native_openai: false
