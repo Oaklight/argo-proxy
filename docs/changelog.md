@@ -2,6 +2,21 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v2.8.7
+
+### Features
+
+- **Flexible Model Name Resolution**: Improve model name resolution flexibility - support slash separator, case-insensitive matching, and automatic `argo:` prefix handling ([#65](https://github.com/Oaklight/argo-proxy/pull/65), contributed by @keceli)
+
+### Documentation
+
+- **Model Naming Guide**: Rewrite models page as naming scheme guide
+- **CLI Docs Link**: Add model naming docs link to CLI startup prompt
+
+### Bug Fixes
+
+- **CLI Verbose Flag Override**: CLI `--verbose`/`--quiet` flags now properly override the `verbose` setting in `config.yaml` (#64)
+
 ## v2.8.6 (2026-02-18)
 
 ### Features
