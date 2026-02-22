@@ -38,8 +38,10 @@ class LeakedToolParser:
     Parser for extracting leaked tool calls from text content.
 
     This parser handles the case where Claude models embed tool calls directly
-    in the text response as Python dict-like strings. It uses quote-aware brace
-    counting to correctly handle nested structures and strings containing braces.
+    in the text response as Python dict-like strings. It uses a candidate-end
+    position strategy with progressive parsing and repair heuristics to handle
+    malformed strings (e.g., unescaped newlines, double-escaped quotes, extra
+    closing braces).
     """
 
     # Pattern to detect the start of a leaked tool call
@@ -48,56 +50,60 @@ class LeakedToolParser:
     def __init__(self):
         pass
 
-    def find_balanced_dict_end(
-        self, text: str, start_idx: int
-    ) -> Tuple[int, Optional[str]]:
+    @staticmethod
+    def _try_parse_candidate(candidate_str: str) -> Optional[Dict[str, Any]]:
         """
-        Find the end index of a balanced dictionary starting at start_idx.
+        Try to parse a candidate string as a Python dict literal.
 
-        Uses quote-aware brace counting to handle:
-        - Nested dictionaries and lists
-        - Strings containing braces (e.g., code snippets)
-        - Both single and double quotes
+        First attempts a direct ``ast.literal_eval``.  If that fails, applies
+        a series of repair strategies to handle common malformations produced
+        by Claude models.
+
+        Repair strategies:
+            1. Fix unescaped newlines (``\\n`` → ``\\\\n``).
+            2. Fix double-escaped single quotes (``\\\\'`` → ``\\'``).
+            3. Combination of strategies 1 + 2.
+            4. Fix extra closing braces before ``'name'``/``'type'`` keys.
+            5. Combination of strategies 1 + 4.
 
         Args:
-            text: The text to search in
-            start_idx: The starting index (should point to '{')
+            candidate_str: The raw candidate string to parse.
 
         Returns:
-            Tuple of (end_index, error_message)
-            - end_index is -1 if no balanced end found
-            - error_message is None on success
+            Parsed dict if successful and contains required keys, else None.
         """
-        if start_idx >= len(text) or text[start_idx] != "{":
-            return -1, "Start index does not point to '{'"
+        # Direct attempt
+        try:
+            result = ast.literal_eval(candidate_str)
+            if isinstance(result, dict) and "id" in result and "name" in result:
+                return result
+        except (ValueError, SyntaxError):
+            pass
 
-        balance = 0
-        in_string = False
-        string_char: Optional[str] = None
-        prev_char: Optional[str] = None
+        # Build repair candidates
+        s1 = re.sub(r"(?<!\\)\\n", r"\\\\n", candidate_str)
+        s2 = candidate_str.replace(r"\\'", r"\'")
+        s3 = s1.replace(r"\\'", r"\'")
+        s4 = re.sub(
+            r"\}\},[ \n\r]*?('name'|\"name\"|'type'|\"type\")",
+            r"}, \1",
+            candidate_str,
+        )
+        s5 = re.sub(
+            r"\}\},[ \n\r]*?('name'|\"name\"|'type'|\"type\")",
+            r"}, \1",
+            s1,
+        )
 
-        for i, char in enumerate(text[start_idx:], start=start_idx):
-            # Track string state (handle both ' and " quotes)
-            if char in ('"', "'") and prev_char != "\\":
-                if not in_string:
-                    in_string = True
-                    string_char = char
-                elif char == string_char:
-                    in_string = False
-                    string_char = None
+        for repaired_str in (s1, s2, s3, s4, s5):
+            try:
+                result = ast.literal_eval(repaired_str)
+                if isinstance(result, dict) and "id" in result and "name" in result:
+                    return result
+            except (ValueError, SyntaxError):
+                continue
 
-            # Only count braces when NOT inside a string
-            if not in_string:
-                if char == "{":
-                    balance += 1
-                elif char == "}":
-                    balance -= 1
-                if balance == 0:
-                    return i + 1, None
-
-            prev_char = char
-
-        return -1, f"Unbalanced braces: balance={balance}, in_string={in_string}"
+        return None
 
     def extract_single_leaked_tool(
         self, text: str, start_idx: int
@@ -105,77 +111,85 @@ class LeakedToolParser:
         """
         Extract a single leaked tool call starting at the given index.
 
+        Uses a candidate-end strategy: finds all ``}`` positions after
+        ``start_idx``, then tries to parse progressively longer substrings
+        until a valid tool-call dict is obtained (with repair fallbacks).
+
         Args:
-            text: The text containing the leaked tool call
-            start_idx: The starting index of the tool call
+            text: The text containing the leaked tool call.
+            start_idx: The starting index of the tool call (pointing to ``{``).
 
         Returns:
-            LeakedToolCall object if successful, None otherwise
+            LeakedToolCall object if successful, None otherwise.
         """
-        end_idx, error = self.find_balanced_dict_end(text, start_idx)
+        tail = text[start_idx:]
+        candidate_ends = [m.start() + 1 for m in re.finditer(r"}", tail)]
 
-        if end_idx == -1:
+        if not candidate_ends:
             log_warning(
-                f"Failed to find balanced dict end: {error}",
+                "No closing brace found after leaked tool start",
                 context="LeakedToolParser",
             )
             return None
 
-        leaked_str = text[start_idx:end_idx]
+        for end_rel in candidate_ends:
+            candidate_str = tail[:end_rel]
+            leaked_dict = self._try_parse_candidate(candidate_str)
 
-        try:
-            # Parse the Python dict-like string
-            leaked_dict = ast.literal_eval(leaked_str)
+            if leaked_dict is None:
+                continue
 
-            # Validate required fields
-            if not isinstance(leaked_dict, dict):
-                log_warning(
-                    f"Leaked tool is not a dict: {type(leaked_dict)}",
-                    context="LeakedToolParser",
-                )
-                return None
-
+            # Validate tool ID format
             tool_id = leaked_dict.get("id", "")
-            if not tool_id.startswith("toolu_"):
+            if not isinstance(tool_id, str) or not tool_id.startswith("toolu_"):
                 log_warning(
                     f"Invalid tool ID format: {tool_id}",
                     context="LeakedToolParser",
                 )
-                return None
+                continue
+
+            end_idx = start_idx + end_rel
+            log_debug(
+                f"Parsed leaked tool at [{start_idx}:{end_idx}]: "
+                f"{candidate_str[:50]}...",
+                context="LeakedToolParser",
+            )
 
             return LeakedToolCall(
                 id=tool_id,
                 name=leaked_dict.get("name", ""),
                 input=leaked_dict.get("input", {}),
                 type=leaked_dict.get("type", "tool_use"),
-                raw_string=leaked_str,
+                raw_string=candidate_str,
                 start_index=start_idx,
                 end_index=end_idx,
             )
 
-        except (ValueError, SyntaxError) as e:
-            log_warning(
-                f"Failed to parse leaked tool string: {e}",
-                context="LeakedToolParser",
-            )
-            log_debug(
-                f"Leaked string was: {leaked_str[:200]}...",
-                context="LeakedToolParser",
-            )
-            return None
+        log_warning(
+            f"Failed to parse leaked tool string after trying "
+            f"{len(candidate_ends)} candidate endings",
+            context="LeakedToolParser",
+        )
+        log_debug(
+            f"Leaked string start was: {tail[:200]}...",
+            context="LeakedToolParser",
+        )
+        return None
 
     def extract_all_leaked_tools(self, text: str) -> Tuple[List[LeakedToolCall], str]:
         """
         Extract all leaked tool calls from text and return cleaned text.
 
-        This method finds ALL leaked tool calls in the text, not just the first one.
-        It removes the leaked tool call strings from the text content.
+        This method finds ALL leaked tool calls in the text, not just the first
+        one.  It removes the leaked tool call strings from the text content.
+        When a leaked tool pattern cannot be parsed, it logs a warning and
+        continues searching for subsequent leaked tools instead of stopping.
 
         Args:
-            text: The text content to search
+            text: The text content to search.
 
         Returns:
-            Tuple of (list of LeakedToolCall objects, cleaned text content)
+            Tuple of (list of LeakedToolCall objects, cleaned text content).
         """
         leaked_tools: List[LeakedToolCall] = []
         cleaned_text = text
@@ -201,18 +215,18 @@ class LeakedToolParser:
                     context="LeakedToolParser",
                 )
             else:
-                # Couldn't parse this one, skip past it to avoid infinite loop
-                # Move past the pattern match to continue searching
+                # Couldn't parse this one — skip past the pattern match to
+                # avoid an infinite loop and continue searching for more.
+                log_warning(
+                    "Found unparseable leaked tool pattern, skipping to "
+                    "search for more",
+                    context="LeakedToolParser",
+                )
                 cleaned_text = (
                     cleaned_text[:start_idx]
                     + "[UNPARSEABLE_TOOL]"
                     + cleaned_text[match.end() :]
                 )
-                log_warning(
-                    "Found unparseable leaked tool pattern, skipping",
-                    context="LeakedToolParser",
-                )
-                break  # Stop on error to avoid infinite loop
 
         return leaked_tools, cleaned_text
 

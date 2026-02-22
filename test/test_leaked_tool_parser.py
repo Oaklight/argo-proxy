@@ -17,48 +17,68 @@ class TestLeakedToolParser:
         """Set up test fixtures."""
         self.parser = LeakedToolParser()
 
-    def test_find_balanced_dict_end_simple(self):
-        """Test finding end of a simple dictionary."""
+    def test_try_parse_candidate_simple(self):
+        """Test parsing a simple valid candidate string."""
         text = "{'id': 'toolu_123', 'name': 'test'}"
-        end_idx, error = self.parser.find_balanced_dict_end(text, 0)
-        assert error is None
-        assert end_idx == len(text)
+        result = LeakedToolParser._try_parse_candidate(text)
+        assert result is not None
+        assert result["id"] == "toolu_123"
+        assert result["name"] == "test"
 
-    def test_find_balanced_dict_end_nested(self):
-        """Test finding end of a nested dictionary."""
-        text = "{'id': 'toolu_123', 'input': {'key': 'value'}}"
-        end_idx, error = self.parser.find_balanced_dict_end(text, 0)
-        assert error is None
-        assert end_idx == len(text)
+    def test_try_parse_candidate_nested(self):
+        """Test parsing a nested dictionary candidate."""
+        text = "{'id': 'toolu_123', 'name': 'test', 'input': {'key': 'value'}}"
+        result = LeakedToolParser._try_parse_candidate(text)
+        assert result is not None
+        assert result["input"] == {"key": "value"}
 
-    def test_find_balanced_dict_end_with_braces_in_string(self):
-        """Test handling braces inside strings."""
-        text = "{'id': 'toolu_123', 'input': {'code': 'def foo(): { return 1 }'}}"
-        end_idx, error = self.parser.find_balanced_dict_end(text, 0)
-        assert error is None
-        assert end_idx == len(text)
+    def test_try_parse_candidate_missing_required_keys(self):
+        """Test that candidates without 'id' or 'name' return None."""
+        text = "{'id': 'toolu_123', 'type': 'tool_use'}"
+        result = LeakedToolParser._try_parse_candidate(text)
+        assert result is None
 
-    def test_find_balanced_dict_end_with_escaped_quotes(self):
-        """Test handling escaped quotes."""
-        text = r"{'id': 'toolu_123', 'input': {'text': 'He said \"hello\"'}}"
-        end_idx, error = self.parser.find_balanced_dict_end(text, 0)
-        assert error is None
-        assert end_idx == len(text)
+    def test_try_parse_candidate_repair_unescaped_newline(self):
+        """Test repair strategy 1: fix unescaped newlines."""
+        # Simulate a string with a literal backslash-n that should be \\n
+        text = "{'id': 'toolu_123', 'name': 'test', 'input': {'text': 'line1\\nline2'}}"
+        result = LeakedToolParser._try_parse_candidate(text)
+        assert result is not None
+        assert result["id"] == "toolu_123"
 
-    def test_find_balanced_dict_end_unbalanced(self):
-        """Test handling unbalanced braces."""
-        text = "{'id': 'toolu_123', 'input': {'key': 'value'"
-        end_idx, error = self.parser.find_balanced_dict_end(text, 0)
-        assert end_idx == -1
-        assert error is not None
+    def test_try_parse_candidate_repair_extra_closing_brace(self):
+        """Test repair strategy 4: fix extra closing braces before 'name'."""
+        text = "{'id': 'toolu_123', 'input': {'key': 'val'}}, 'name': 'test', 'type': 'tool_use'}"
+        result = LeakedToolParser._try_parse_candidate(text)
+        assert result is not None
+        assert result["name"] == "test"
 
-    def test_find_balanced_dict_end_with_prefix(self):
-        """Test finding dict end with text before it."""
-        text = "Some text before {'id': 'toolu_123', 'name': 'test'} and after"
-        start_idx = text.find("{")
-        end_idx, error = self.parser.find_balanced_dict_end(text, start_idx)
-        assert error is None
-        assert text[start_idx:end_idx] == "{'id': 'toolu_123', 'name': 'test'}"
+    def test_try_parse_candidate_invalid_string(self):
+        """Test that completely invalid strings return None."""
+        text = "this is not a dict at all"
+        result = LeakedToolParser._try_parse_candidate(text)
+        assert result is None
+
+    def test_extract_single_leaked_tool_with_trailing_text(self):
+        """Test extracting a tool when there is trailing text after it."""
+        text = "{'id': 'toolu_vrtx_01AAA', 'input': {}, 'name': 'tool1', 'type': 'tool_use'} some trailing text"
+        leaked_tool = self.parser.extract_single_leaked_tool(text, 0)
+        assert leaked_tool is not None
+        assert leaked_tool.name == "tool1"
+        # end_index should point right after the outermost closing brace
+        expected_end = text.index("} some trailing text")
+        assert leaked_tool.end_index == expected_end + 1
+
+    def test_extract_all_leaked_tools_continues_on_failure(self):
+        """Test that unparseable patterns are skipped and parsing continues."""
+        text = (
+            "{'id': 'toolu_BROKEN"  # Unparseable (no closing)
+            "{'id': 'toolu_vrtx_01AAA', 'input': {}, 'name': 'tool1', 'type': 'tool_use'}"
+        )
+        leaked_tools, cleaned_text = self.parser.extract_all_leaked_tools(text)
+        # The first pattern is broken but should be skipped; the second should parse
+        assert len(leaked_tools) == 1
+        assert leaked_tools[0].name == "tool1"
 
     def test_extract_single_leaked_tool(self):
         """Test extracting a single leaked tool call."""
