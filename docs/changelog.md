@@ -2,6 +2,12 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v2.8.7.post1 (2026-02-22)
+
+### Bug Fixes
+
+- **Unclosed aiohttp Connector**: Fixed `connector_owner` logic in `get_upstream_model_list_async()` and `validate_api_async()` that caused "Unclosed connector" warnings during startup. When no custom DNS resolver was provided, `connector_owner=False` was incorrectly set, preventing the auto-created `TCPConnector` from being closed with the session.
+
 ## v2.8.7 (2026-02-22)
 
 ### Features
