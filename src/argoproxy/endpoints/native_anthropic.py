@@ -55,21 +55,14 @@ async def proxy_native_anthropic_request(
         # Use the shared HTTP session from app context
         session = request.app["http_session"]
 
-        # Resolve model name if present (supports argo: aliases)
+        # Resolve model name if present (supports argo: aliases and bare names)
         if "model" in data:
             original_model = data["model"]
-
-            # Only resolve argo: prefixed aliases, pass through other model names as-is
-            if original_model.startswith("argo:"):
-                resolved = model_registry.resolve_model_name(original_model, "chat")
-                data["model"] = resolved
+            resolved = model_registry.resolve_model_name(original_model, "chat")
+            data["model"] = resolved
+            if resolved != original_model:
                 log_info(
                     f"Resolved model alias: {original_model} -> {resolved}",
-                    context="native_anthropic",
-                )
-            else:
-                log_info(
-                    f"Using model as-is: {original_model}",
                     context="native_anthropic",
                 )
 
@@ -84,7 +77,9 @@ async def proxy_native_anthropic_request(
                 data = handle_tools(data, native_tools=False, input_format="anthropic")
             else:
                 # Use native tool handling for OpenAI and Anthropic models
-                data = handle_tools(data, native_tools=config.native_tools, input_format="anthropic")
+                data = handle_tools(
+                    data, native_tools=config.native_tools, input_format="anthropic"
+                )
 
         # Apply username passthrough - Anthropic uses metadata.user_id
         _apply_user_identification(data, request, config)
