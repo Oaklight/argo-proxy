@@ -2,6 +2,12 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v2.8.8 (2026-03-05)
+
+### Features
+
+- **Configurable Connection Test Timeout**: Added `connection_test_timeout` configuration option (default: 5 seconds) to control the per-URL timeout during startup connectivity validation. Previously hardcoded at 2 seconds, which was insufficient for high-latency connections such as layered SSH tunnels. Configurable via `config.yaml`.
+
 ## v2.8.7.post1 (2026-02-22)
 
 ### Bug Fixes
