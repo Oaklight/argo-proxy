@@ -67,6 +67,7 @@ class ArgoConfig:
 
     # Validation and resolver settings
     _skip_url_validation: bool = False
+    connection_test_timeout: int = 5  # seconds per URL validation request
     resolve_overrides: dict = field(default_factory=dict)
 
     # Image processing settings
@@ -281,7 +282,7 @@ class ArgoConfig:
             (self.argo_embedding_url, {"model": "v3small", "prompt": ["hello"]}),
         ]
 
-        timeout = 2
+        timeout = self.connection_test_timeout
         attempts = 2
         log_info(
             f"Validating {len(required_urls)} URL connectivity with timeout {timeout}s and {attempts} attempts ...",

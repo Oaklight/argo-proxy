@@ -23,6 +23,10 @@ verbose: true
 # Can also be set via SKIP_URL_VALIDATION environment variable
 # skip_url_validation: false
 
+# Timeout in seconds for each URL connectivity test at startup (default: 5)
+# Increase this if connecting through SSH tunnels or high-latency networks
+# connection_test_timeout: 5
+
 # DNS resolution overrides (similar to curl --resolve)
 # Maps "host:port" to IP address for custom DNS resolution.
 # Useful when accessing Argo API through SSH tunnels or port forwarding,
