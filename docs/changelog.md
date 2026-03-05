@@ -4,6 +4,10 @@ This page records the major version changes and important feature updates of the
 
 ## v2.8.8 (2026-03-05)
 
+### Bug Fixes
+
+- **Native Anthropic Model Resolution**: Fixed model name resolution on the native Anthropic endpoint (`/v1/messages`) to resolve bare model names (e.g., `claude-4.6-sonnet`) the same way as all other endpoints. Previously, only `argo:`-prefixed names were resolved, causing bare names to be forwarded as-is to the upstream API, resulting in 400 errors.
+
 ### Features
 
 - **Configurable Connection Test Timeout**: Added `connection_test_timeout` configuration option (default: 5 seconds) to control the per-URL timeout during startup connectivity validation. Previously hardcoded at 2 seconds, which was insufficient for high-latency connections such as layered SSH tunnels. Configurable via `config.yaml`.
