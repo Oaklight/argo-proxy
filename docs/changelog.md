@@ -2,6 +2,12 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v2.8.8.post1 (2026-03-07)
+
+### Bug Fixes
+
+- **Native Endpoint Model Passthrough**: Fixed model name resolution on native endpoints (`/v1/messages` and native OpenAI passthrough) incorrectly falling back to the default model (`gpt-4o`) when encountering unrecognized model names. Added `as_is` parameter to `resolve_model_name()` so that native passthrough endpoints forward the caller's original model name to the upstream API unchanged. ([#68](https://github.com/Oaklight/argo-proxy/pull/68), fixes [#67](https://github.com/Oaklight/argo-proxy/issues/67))
+
 ## v2.8.8 (2026-03-05)
 
 ### Bug Fixes
