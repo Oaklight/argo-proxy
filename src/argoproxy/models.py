@@ -700,16 +700,22 @@ class ModelRegistry:
         self,
         model_name: str,
         model_type: Literal["chat", "embed"],
+        as_is: bool = False,
     ) -> str:
-        """
-        Resolves a model name to its primary model name using the flattened model mapping.
+        """Resolves a model name to its primary model name using the flattened model mapping.
 
         Args:
-            model_name: The input model name to resolve
-            model_type: The type of model to resolve (chat or embed)
+            model_name: The input model name to resolve.
+            model_type: The type of model to resolve (chat or embed).
+            as_is: If True, return the original model name unchanged when no
+                match is found instead of falling back to a default model.
+                Useful for native passthrough endpoints (e.g. native-anthropic,
+                native-openai) where the upstream API should receive the
+                caller's original model name.
 
         Returns:
-            The resolved primary model name or default_model if no match found
+            The resolved primary model name, the original model name (when
+            *as_is* is True and no match is found), or a default model.
         """
         for candidate in self._model_lookup_candidates(model_name):
             # Directly pass through a resolved model_id.
@@ -718,6 +724,16 @@ class ModelRegistry:
             # Resolve aliases to their model_id.
             if candidate in self.available_models:
                 return self.available_models[candidate]
+
+        if as_is:
+            # No match found – pass through the original model name so that
+            # native passthrough endpoints can forward it to the upstream API
+            # unchanged.
+            log_warning(
+                f"Model '{model_name}' not found in registry, passing through as-is",
+                context="ModelRegistry",
+            )
+            return model_name
 
         if model_type == "chat":
             default_model = "argo:gpt-4o"

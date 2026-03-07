@@ -64,7 +64,7 @@ async def proxy_native_openai_request(
             # Determine model type based on endpoint
             model_type = "embed" if endpoint_path == "embeddings" else "chat"
             data["model"] = model_registry.resolve_model_name(
-                original_model, model_type
+                original_model, model_type, as_is=True
             )
 
             if config.verbose and data["model"] != original_model:

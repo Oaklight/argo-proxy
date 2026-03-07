@@ -58,7 +58,9 @@ async def proxy_native_anthropic_request(
         # Resolve model name if present (supports argo: aliases and bare names)
         if "model" in data:
             original_model = data["model"]
-            resolved = model_registry.resolve_model_name(original_model, "chat")
+            resolved = model_registry.resolve_model_name(
+                original_model, "chat", as_is=True
+            )
             data["model"] = resolved
             if resolved != original_model:
                 log_info(
