@@ -254,6 +254,56 @@ def transform_streaming_response(
         return {"error": f"An error occurred: {err}"}
 
 
+def _convert_responses_messages(
+    messages: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Convert Responses API messages to Chat Completions format.
+
+    Handles the following differences:
+    - Strips ``type: "message"`` from message objects
+    - Converts ``type: "input_text"`` content blocks to ``type: "text"``
+    - Converts ``role: "developer"`` to ``role: "system"``
+    """
+    converted = []
+    for msg in messages:
+        out = {}
+        for k, v in msg.items():
+            if k == "type":
+                # Strip the Responses API "type" field from messages
+                continue
+            out[k] = v
+
+        # developer -> system
+        if out.get("role") == "developer":
+            out["role"] = "system"
+
+        # Convert content blocks
+        if isinstance(out.get("content"), list):
+            out["content"] = [
+                _convert_content_block(block) for block in out["content"]
+            ]
+
+        converted.append(out)
+    return converted
+
+
+def _convert_content_block(block: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert a single Responses API content block to Chat Completions format."""
+    if not isinstance(block, dict):
+        return block
+    block_type = block.get("type")
+    if block_type in ("input_text", "output_text"):
+        return {"type": "text", "text": block.get("text", "")}
+    if block_type == "input_image":
+        # Convert to Chat Completions image_url format
+        image_data = block.get("image_url") or block.get("source", {})
+        return {"type": "image_url", "image_url": image_data}
+    if block_type == "input_audio":
+        audio_data = block.get("input_audio") or block.get("source", {})
+        return {"type": "input_audio", "input_audio": audio_data}
+    return block
+
+
 def prepare_request_data(
     data: Dict[str, Any], config: ArgoConfig, model_registry: ModelRegistry
 ) -> Dict[str, Any]:
@@ -268,8 +318,15 @@ def prepare_request_data(
     Returns:
         The modified and prepared request data.
     """
-    # Insert instructions and format messages from input
-    messages = data.get("input", [])
+    # Convert Responses API input to Chat Completions messages format
+    raw_input = data.get("input", [])
+
+    # OpenAI Responses API allows input to be a plain string
+    if isinstance(raw_input, str):
+        messages = [{"role": "user", "content": raw_input}]
+    else:
+        messages = _convert_responses_messages(raw_input)
+
     if instructions := data.get("instructions", ""):
         messages.insert(0, {"role": "system", "content": instructions})
         del data["instructions"]
