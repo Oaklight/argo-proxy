@@ -10,8 +10,7 @@ hide:
 
 # Argo Proxy
 
-[![PyPI version](https://badge.fury.io/py/argo-proxy.svg?icon=si%3Apython)](https://badge.fury.io/py/argo-proxy)
-[![GitHub version](https://badge.fury.io/gh/Oaklight%2FArgo-Proxy.svg?icon=si%3Agithub)](https://badge.fury.io/gh/Oaklight%2FArgo-Proxy)
+[![PyPI version](https://img.shields.io/pypi/v/argo-proxy?color=green)](https://pypi.org/project/argo-proxy/)
 
 **An OpenAI-compatible proxy for Argo API** - designed for efficiency, reliability, and ease of use.
 
