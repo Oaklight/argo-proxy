@@ -53,6 +53,46 @@ class TestLeakedToolParser:
         assert result is not None
         assert result["name"] == "test"
 
+    def test_try_parse_candidate_json_false(self):
+        """Test repair of JSON-style 'false' literal."""
+        text = "{'id': 'toolu_123', 'name': 'test', 'input': {'run': false}, 'cache_control': None}"
+        result = LeakedToolParser._try_parse_candidate(text)
+        assert result is not None
+        assert result["input"]["run"] is False
+
+    def test_try_parse_candidate_json_true(self):
+        """Test repair of JSON-style 'true' literal."""
+        text = "{'id': 'toolu_123', 'name': 'test', 'input': {'enabled': true}}"
+        result = LeakedToolParser._try_parse_candidate(text)
+        assert result is not None
+        assert result["input"]["enabled"] is True
+
+    def test_try_parse_candidate_json_null(self):
+        """Test repair of JSON-style 'null' literal."""
+        text = "{'id': 'toolu_123', 'name': 'test', 'cache_control': null}"
+        result = LeakedToolParser._try_parse_candidate(text)
+        assert result is not None
+        assert result["cache_control"] is None
+
+    def test_try_parse_candidate_json_literals_in_string_values(self):
+        """Test that strings containing 'false'/'true'/'null' as words parse correctly.
+
+        When the dict is already valid Python (no bare JSON booleans), the
+        direct ast.literal_eval succeeds and no repair runs, preserving the
+        original string values unchanged.
+        """
+        text = "{'id': 'toolu_123', 'name': 'test', 'input': {'text': 'this is not false or true or null'}}"
+        result = LeakedToolParser._try_parse_candidate(text)
+        assert result is not None
+        assert result["input"]["text"] == "this is not false or true or null"
+
+    def test_try_parse_candidate_json_false_combined_with_newline_repair(self):
+        """Test JSON literal repair combined with newline repair."""
+        text = "{'id': 'toolu_123', 'name': 'test', 'input': {'text': 'line1\\nline2'}, 'run_in_background': false}"
+        result = LeakedToolParser._try_parse_candidate(text)
+        assert result is not None
+        assert result["run_in_background"] is False
+
     def test_try_parse_candidate_invalid_string(self):
         """Test that completely invalid strings return None."""
         text = "this is not a dict at all"
@@ -263,3 +303,18 @@ class TestExtractLeakedToolCalls:
 
         assert len(tools) == 1
         assert cleaned == "BeforeAfter"
+
+    def test_extract_tool_with_json_false_literal(self):
+        """Test extracting a leaked tool that uses JSON 'false' instead of Python 'False'."""
+        text = (
+            "Let me delegate this:"
+            "{'id': 'toolu_vrtx_01RW7dSW3M47z5mPAf6cSUuU', "
+            "'input': {'category': 'deep', 'run_in_background': false}, "
+            "'name': 'task', 'type': 'tool_use', 'cache_control': None}"
+        )
+        tools, cleaned = extract_leaked_tool_calls(text)
+
+        assert len(tools) == 1
+        assert tools[0]["name"] == "task"
+        assert tools[0]["input"]["run_in_background"] is False
+        assert cleaned == "Let me delegate this:"

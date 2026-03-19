@@ -51,6 +51,21 @@ class LeakedToolParser:
         pass
 
     @staticmethod
+    def _fix_json_literals(s: str) -> str:
+        """Replace JSON-style literals with Python equivalents.
+
+        Claude models sometimes emit ``false``, ``true``, or ``null`` (JSON
+        style) instead of Python's ``False``, ``True``, ``None`` in leaked
+        tool-call dicts.  This helper uses word-boundary-aware substitution
+        so it won't corrupt values that merely *contain* the substring (e.g.
+        ``'falsehood'``).
+        """
+        s = re.sub(r"\bfalse\b", "False", s)
+        s = re.sub(r"\btrue\b", "True", s)
+        s = re.sub(r"\bnull\b", "None", s)
+        return s
+
+    @staticmethod
     def _try_parse_candidate(candidate_str: str) -> Optional[Dict[str, Any]]:
         """
         Try to parse a candidate string as a Python dict literal.
@@ -65,6 +80,8 @@ class LeakedToolParser:
             3. Combination of strategies 1 + 2.
             4. Fix extra closing braces before ``'name'``/``'type'`` keys.
             5. Combination of strategies 1 + 4.
+            6. Fix JSON-style literals (``false``/``true``/``null``).
+            7–11. Combinations of strategy 6 with strategies 1–5.
 
         Args:
             candidate_str: The raw candidate string to parse.
@@ -96,6 +113,23 @@ class LeakedToolParser:
         )
 
         for repaired_str in (s1, s2, s3, s4, s5):
+            try:
+                result = ast.literal_eval(repaired_str)
+                if isinstance(result, dict) and "id" in result and "name" in result:
+                    return result
+            except (ValueError, SyntaxError):
+                continue
+
+        # Strategy 6: Fix JSON-style literals (false/true/null → False/True/None)
+        s6 = LeakedToolParser._fix_json_literals(candidate_str)
+        # Also combine with all previous strategies
+        s7 = LeakedToolParser._fix_json_literals(s1)
+        s8 = LeakedToolParser._fix_json_literals(s2)
+        s9 = LeakedToolParser._fix_json_literals(s3)
+        s10 = LeakedToolParser._fix_json_literals(s4)
+        s11 = LeakedToolParser._fix_json_literals(s5)
+
+        for repaired_str in (s6, s7, s8, s9, s10, s11):
             try:
                 result = ast.literal_eval(repaired_str)
                 if isinstance(result, dict) and "id" in result and "name" in result:
