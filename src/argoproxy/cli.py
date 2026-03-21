@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+"""Argo Proxy CLI — universal API gateway for LLM services.
+
+Subcommands:
+    serve   Start the proxy server (default if no subcommand given)
+    config  Manage configuration files (edit, validate, show, migrate)
+    logs    Collect diagnostic logs
+"""
+
 import argparse
 import asyncio
 import logging
@@ -26,6 +34,11 @@ from .utils.logging import (
 )
 
 
+# ---------------------------------------------------------------------------
+# Logging setup
+# ---------------------------------------------------------------------------
+
+
 def setup_logging(verbose: bool = False, config_path: Optional[str] = None):
     """Setup logging with attack filter.
 
@@ -33,16 +46,11 @@ def setup_logging(verbose: bool = False, config_path: Optional[str] = None):
         verbose: Enable verbose logging.
         config_path: Path to config file for attack log directory.
     """
-
-    # Setup the application logger using standard library
     setup_app_logging(verbose=verbose)
 
-    # Setup attack logging with config path
     path = Path(config_path) if config_path else None
     attack_filter = setup_attack_logging(path)
 
-    # Apply filter to all aiohttp-related loggers
-    # These loggers may emit attack-related errors at different levels
     aiohttp_loggers = [
         "aiohttp",
         "aiohttp.access",
@@ -57,7 +65,6 @@ def setup_logging(verbose: bool = False, config_path: Optional[str] = None):
         logger = logging.getLogger(logger_name)
         logger.addFilter(attack_filter)
 
-    # Also filter asyncio logs which may contain similar errors
     asyncio_logger = logging.getLogger("asyncio")
     asyncio_logger.addFilter(attack_filter)
 
@@ -66,15 +73,20 @@ def setup_logging(verbose: bool = False, config_path: Optional[str] = None):
 setup_logging()
 
 
-def parsing_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Argo Proxy CLI",
-        formatter_class=RawTextHelpFormatter,
-    )
+# ---------------------------------------------------------------------------
+# Argument parsing
+# ---------------------------------------------------------------------------
+
+# Known subcommands — used for default-subcommand detection
+_SUBCOMMANDS = {"serve", "config", "logs"}
+
+
+def _add_serve_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add arguments for the ``serve`` subcommand."""
     parser.add_argument(
         "config",
         type=str,
-        nargs="?",  # makes argument optional
+        nargs="?",
         help="Path to the configuration file",
         default=None,
     )
@@ -91,23 +103,53 @@ def parsing_args() -> argparse.Namespace:
         help="Port number to bind the server to",
     )
 
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument(
+    verbosity = parser.add_mutually_exclusive_group()
+    verbosity.add_argument(
         "--verbose",
         "-v",
         action="store_true",
-        default=False,  # default is False, so --verbose will set it to True
-        help="Enable verbose logging, override if `verbose` set False in config",
+        default=False,
+        help="Enable verbose logging",
     )
-    group.add_argument(
+    verbosity.add_argument(
         "--quiet",
         "-q",
         action="store_true",
-        default=False,  # default is False, so --quiet will set it to True
-        help="Disable verbose logging, override if `verbose` set True in config",
+        default=False,
+        help="Disable verbose logging",
     )
 
-    # Streaming mode group (mutually exclusive, legacy mode only)
+    parser.add_argument(
+        "--show",
+        "-s",
+        action="store_true",
+        help="Show the current configuration during launch",
+    )
+    parser.add_argument(
+        "--username-passthrough",
+        action="store_true",
+        help="Use API key from request headers as user field",
+    )
+    parser.add_argument(
+        "--legacy-argo",
+        action="store_true",
+        default=False,
+        help="Use the legacy ARGO gateway pipeline instead of universal dispatch",
+    )
+    parser.add_argument(
+        "--enable-leaked-tool-fix",
+        action="store_true",
+        default=False,
+        help="[Legacy only] Enable AST-based leaked tool call detection and fixing",
+    )
+    parser.add_argument(
+        "--dev",
+        action="store_true",
+        default=False,
+        help="Pure reverse proxy mode — no format conversion",
+    )
+
+    # Legacy-only streaming options
     stream_group = parser.add_mutually_exclusive_group()
     stream_group.add_argument(
         "--real-stream",
@@ -123,136 +165,127 @@ def parsing_args() -> argparse.Namespace:
         default=False,
         help="[Legacy only] Enable pseudo streaming",
     )
-
     parser.add_argument(
         "--tool-prompting",
         action="store_true",
-        help="[Legacy only] Enable prompting-based tool calls instead of native tool calls",
-    )
-    parser.add_argument(
-        "--username-passthrough",
-        action="store_true",
-        help="Enable username passthrough mode - use API key from request headers as user field",
-    )
-    parser.add_argument(
-        "--legacy-argo",
-        action="store_true",
-        default=False,
-        help="Enable legacy ARGO gateway mode - use the legacy ARGO gateway endpoints instead of native upstream dispatch",
-    )
-    parser.add_argument(
-        "--enable-leaked-tool-fix",
-        action="store_true",
-        default=False,
-        help="[Legacy only] Enable AST-based leaked tool call detection and fixing (experimental)",
-    )
-    parser.add_argument(
-        "--dev",
-        action="store_true",
-        default=False,
-        help="Enable dev mode - pure reverse proxy that forwards all requests to upstream without any transformation",
+        help="[Legacy only] Enable prompting-based tool calls",
     )
 
-    parser.add_argument(
-        "--edit",
-        "-e",
-        action="store_true",
-        help="Open the configuration file in the system's default editor for editing",
+
+def _add_config_subparsers(parser: argparse.ArgumentParser) -> None:
+    """Add sub-subcommands for the ``config`` subcommand."""
+    sub = parser.add_subparsers(dest="config_action", metavar="action")
+
+    edit_parser = sub.add_parser("edit", help="Open config in the default editor")
+    edit_parser.add_argument("config", nargs="?", default=None, help="Config file path")
+
+    validate_parser = sub.add_parser("validate", help="Validate config and exit")
+    validate_parser.add_argument(
+        "config", nargs="?", default=None, help="Config file path"
     )
-    parser.add_argument(
-        "--validate",
-        "-vv",
-        action="store_true",
-        help="Validate the configuration file and exit",
+
+    show_parser = sub.add_parser("show", help="Show the current configuration")
+    show_parser.add_argument("config", nargs="?", default=None, help="Config file path")
+
+    migrate_parser = sub.add_parser(
+        "migrate", help="Migrate config from v1/v2 to v3 (creates .bak backup)"
     )
-    parser.add_argument(
-        "--show",
-        "-s",
-        action="store_true",
-        help="Show the current configuration during launch",
+    migrate_parser.add_argument(
+        "config", nargs="?", default=None, help="Config file path"
+    )
+
+
+def _add_logs_subparsers(parser: argparse.ArgumentParser) -> None:
+    """Add sub-subcommands for the ``logs`` subcommand."""
+    sub = parser.add_subparsers(dest="logs_action", metavar="action")
+
+    collect_parser = sub.add_parser(
+        "collect", help="Collect leaked tool call logs into a tar.gz archive"
+    )
+    collect_parser.add_argument(
+        "config", nargs="?", default=None, help="Config file path"
+    )
+
+
+def create_parser() -> argparse.ArgumentParser:
+    """Build the top-level argument parser with subcommands."""
+    parser = argparse.ArgumentParser(
+        prog="argo-proxy",
+        description="Argo Proxy — universal API gateway for LLM services",
+        formatter_class=RawTextHelpFormatter,
     )
     parser.add_argument(
         "--version",
         "-V",
-        # action="store_true",  # Changed from 'version' to 'store_true'
         action="version",
         version=f"%(prog)s {version_check()}",
         help="Show the version and check for updates",
     )
-    parser.add_argument(
-        "--collect-leaked-logs",
-        action="store_true",
-        help="Collect all leaked tool call logs into a tar.gz archive for analysis",
+
+    subparsers = parser.add_subparsers(dest="command", metavar="command")
+
+    # serve
+    serve_parser = subparsers.add_parser(
+        "serve",
+        help="Start the proxy server (default)",
+        formatter_class=RawTextHelpFormatter,
     )
-    parser.add_argument(
-        "--migrate",
-        action="store_true",
-        help="Migrate configuration file from v1/v2 to v3 format in place (creates a backup)",
+    _add_serve_arguments(serve_parser)
+
+    # config
+    config_parser = subparsers.add_parser(
+        "config",
+        help="Manage configuration files",
+        formatter_class=RawTextHelpFormatter,
     )
+    _add_config_subparsers(config_parser)
 
-    args = parser.parse_args()
+    # logs
+    logs_parser = subparsers.add_parser(
+        "logs",
+        help="Collect diagnostic logs",
+        formatter_class=RawTextHelpFormatter,
+    )
+    _add_logs_subparsers(logs_parser)
 
-    return args
-
-
-def set_config_envs(args: argparse.Namespace):
-    if args.config:
-        os.environ["CONFIG_PATH"] = args.config
-
-    if args.port:
-        os.environ["PORT"] = str(args.port)
-    if args.verbose:
-        os.environ["VERBOSE"] = str(True)
-    if args.quiet:
-        os.environ["VERBOSE"] = str(False)
-
-    # Handle streaming mode: default to real stream if neither option is specified
-    if args.real_stream:
-        os.environ["REAL_STREAM"] = str(True)
-    if args.pseudo_stream:
-        os.environ["REAL_STREAM"] = str(False)
-    if args.tool_prompting:
-        os.environ["TOOL_PROMPT"] = str(True)
-    if args.username_passthrough:
-        os.environ["USERNAME_PASSTHROUGH"] = str(True)
-    if args.legacy_argo:
-        os.environ["USE_LEGACY_ARGO"] = str(True)
-    if args.enable_leaked_tool_fix:
-        os.environ["ENABLE_LEAKED_TOOL_FIX"] = str(True)
-    if args.dev:
-        os.environ["DEV_MODE"] = str(True)
+    return parser
 
 
-def open_in_editor(config_path: Optional[str] = None):
-    paths_to_try = [config_path] if config_path else PATHS_TO_TRY
+def _insert_default_subcommand() -> None:
+    """Insert ``serve`` into sys.argv when no subcommand is given.
 
-    # Add EDITOR from environment variable if set, followed by defaults
-    editors_to_try = [os.getenv("EDITOR")] if os.getenv("EDITOR") else []
-    editors_to_try += ["notepad"] if os.name == "nt" else ["nano", "vi", "vim"]
-    # Filter out None editors
-    editors_to_try = [e for e in editors_to_try if e is not None]
+    This keeps backward compatibility: ``argo-proxy config.yaml`` still works
+    as ``argo-proxy serve config.yaml``.
+    """
+    if len(sys.argv) < 2:
+        return  # Will show help via parser
 
-    for path in paths_to_try:
-        if path and os.path.exists(path):
-            for editor in editors_to_try:
-                try:
-                    subprocess.run([editor, path], check=True)
-                    return
-                except FileNotFoundError:
-                    continue  # Try the next editor in the list
-                except Exception as e:
-                    log_error(
-                        f"Failed to open editor with {editor} for {path}: {e}",
-                        context="cli",
-                    )
-                    sys.exit(1)
+    # Don't insert if only top-level flags are present
+    top_level_flags = {"-h", "--help", "-V", "--version"}
+    if all(arg in top_level_flags for arg in sys.argv[1:]):
+        return
 
-    log_error("No valid configuration file found to edit.", context="cli")
-    sys.exit(1)
+    # Skip over the program name, find the first non-flag argument
+    for arg in sys.argv[1:]:
+        if arg.startswith("-"):
+            continue
+        # If the first positional is a known subcommand, nothing to do
+        if arg in _SUBCOMMANDS:
+            return
+        # Otherwise it's a config path or unknown — assume ``serve``
+        break
+
+    # If only flags are present (e.g. ``argo-proxy --verbose``), also assume serve
+    sys.argv.insert(1, "serve")
+
+
+# ---------------------------------------------------------------------------
+# Banner
+# ---------------------------------------------------------------------------
 
 
 def get_ascii_banner() -> str:
-    """Generate ASCII banner for Argo Proxy"""
+    """Generate ASCII banner for Argo Proxy."""
     return """
  █████╗ ██████╗  ██████╗  ██████╗     ██████╗ ██████╗  ██████╗ ██╗  ██╗██╗   ██╗
 ██╔══██╗██╔══██╗██╔════╝ ██╔═══██╗    ██╔══██╗██╔══██╗██╔═══██╗╚██╗██╔╝╚██╗ ██╔╝
@@ -272,7 +305,6 @@ def version_check() -> str:
     latest = asyncio.run(get_latest_pypi_version())
 
     if latest:
-        # Use packaging.version to compare versions correctly
         if version.parse(latest) > version.parse(__version__):
             ver_content.extend(
                 [
@@ -290,10 +322,8 @@ def display_startup_banner():
     banner = get_ascii_banner()
     latest = asyncio.run(get_latest_pypi_version())
 
-    # Print banner
     print(banner)
 
-    # Version information with styling
     log_info("=" * 80, context="cli")
     if latest and version.parse(latest) > version.parse(__version__):
         log_warning(f"🚀 ARGO PROXY v{__version__}", context="cli")
@@ -303,7 +333,6 @@ def display_startup_banner():
     else:
         log_warning(f"🚀 ARGO PROXY v{__version__} (Latest)", context="cli")
 
-    # Show running mode
     from .utils.misc import str_to_bool
 
     if str_to_bool(os.environ.get("USE_LEGACY_ARGO", "false")):
@@ -311,6 +340,11 @@ def display_startup_banner():
     else:
         log_info("⚙️  MODE: Universal (llm-rosetta)", context="cli")
     log_info("=" * 80, context="cli")
+
+
+# ---------------------------------------------------------------------------
+# Config migration
+# ---------------------------------------------------------------------------
 
 
 def migrate_config(config_path: Optional[str] = None):
@@ -325,9 +359,6 @@ def migrate_config(config_path: Optional[str] = None):
 
     import yaml
 
-    from .config import PATHS_TO_TRY
-
-    # Find the config file
     paths = [config_path] if config_path else PATHS_TO_TRY
     found_path = None
     for p in paths:
@@ -351,19 +382,16 @@ def migrate_config(config_path: Optional[str] = None):
         log_info("Config is already v3. Nothing to do.", context="cli")
         return
 
-    # Create backup
     backup_path = found_path + ".bak"
     shutil.copy2(found_path, backup_path)
     log_info(f"Backup saved: {backup_path}", context="cli")
 
     changes: list[str] = []
 
-    # Update config_version
     old_ver = current_version or "(none)"
     data["config_version"] = "3"
     changes.append(f"config_version: {old_ver} -> 3")
 
-    # Remove deprecated v2 keys
     deprecated_keys = [
         "use_native_openai",
         "use_native_anthropic",
@@ -374,7 +402,6 @@ def migrate_config(config_path: Optional[str] = None):
             data.pop(key)
             changes.append(f"removed deprecated key: {key}")
 
-    # Derive native URLs from argo_base_url if present but native URLs missing
     base_url = data.get("argo_base_url", "")
     if base_url:
         base = base_url.rstrip("/")
@@ -385,7 +412,6 @@ def migrate_config(config_path: Optional[str] = None):
             data["native_anthropic_base_url"] = f"{base}/v1/messages"
             changes.append(f"added native_anthropic_base_url: {base}/v1/messages")
 
-    # Write back
     with open(found_path, "w", encoding="utf-8") as f:
         yaml.dump(
             data, f, default_flow_style=False, sort_keys=False, allow_unicode=True
@@ -398,15 +424,49 @@ def migrate_config(config_path: Optional[str] = None):
     log_info("=" * 60, context="cli")
 
 
+# ---------------------------------------------------------------------------
+# Open in editor
+# ---------------------------------------------------------------------------
+
+
+def open_in_editor(config_path: Optional[str] = None):
+    paths_to_try = [config_path] if config_path else PATHS_TO_TRY
+
+    editors_to_try = [os.getenv("EDITOR")] if os.getenv("EDITOR") else []
+    editors_to_try += ["notepad"] if os.name == "nt" else ["nano", "vi", "vim"]
+    editors_to_try = [e for e in editors_to_try if e is not None]
+
+    for path in paths_to_try:
+        if path and os.path.exists(path):
+            for editor in editors_to_try:
+                try:
+                    subprocess.run([editor, path], check=True)
+                    return
+                except FileNotFoundError:
+                    continue
+                except Exception as e:
+                    log_error(
+                        f"Failed to open editor with {editor} for {path}: {e}",
+                        context="cli",
+                    )
+                    sys.exit(1)
+
+    log_error("No valid configuration file found to edit.", context="cli")
+    sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Collect leaked logs
+# ---------------------------------------------------------------------------
+
+
 def collect_leaked_logs(config_path: Optional[str] = None):
     """Collect all leaked tool call logs into a tar.gz archive."""
     import tarfile
     from datetime import datetime
-    from pathlib import Path
 
     from .config import load_config
 
-    # Get log directory
     config_data, actual_config_path = load_config(config_path, verbose=False)
 
     if actual_config_path:
@@ -419,7 +479,6 @@ def collect_leaked_logs(config_path: Optional[str] = None):
         log_info("No leaked tool call logs to collect.", context="cli")
         return
 
-    # Find all log files (both .json and .json.gz)
     json_files = list(log_dir.glob("leaked_tool_*.json"))
     gz_files = list(log_dir.glob("leaked_tool_*.json.gz"))
 
@@ -427,7 +486,6 @@ def collect_leaked_logs(config_path: Optional[str] = None):
         log_info(f"No leaked tool call logs found in {log_dir}", context="cli")
         return
 
-    # Create archive filename with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     archive_name = f"leaked_tool_logs_{timestamp}.tar.gz"
     archive_path = Path.cwd() / archive_name
@@ -440,47 +498,27 @@ def collect_leaked_logs(config_path: Optional[str] = None):
 
     try:
         with tarfile.open(archive_path, "w:gz") as tar:
-            # Add all JSON files (will be compressed by tar.gz)
             for json_file in json_files:
                 tar.add(json_file, arcname=json_file.name)
-
-            # Add all .json.gz files (already compressed, but tar.gz will try again)
             for gz_file in gz_files:
                 tar.add(gz_file, arcname=gz_file.name)
 
-        # Get archive size
         archive_size = archive_path.stat().st_size
         log_info("=" * 80, context="cli")
-        log_info("✅ Archive created successfully!", context="cli")
+        log_info("Archive created successfully!", context="cli")
         log_info(f"   Location: {archive_path}", context="cli")
         log_info(f"   Size: {archive_size / 1024 / 1024:.2f} MB", context="cli")
         log_info(f"   Files: {len(json_files) + len(gz_files)} logs", context="cli")
         log_info("=" * 80, context="cli")
         log_info("", context="cli")
-        log_info(
-            "📊 These logs are crucial for improving argo-proxy and Argo API!",
-            context="cli",
-        )
-        log_info("", context="cli")
-        log_info(
-            "They contain examples of Claude model's tool call buggy forms,",
-            context="cli",
-        )
-        log_info(
-            "which help us understand and fix edge cases in tool call handling.",
-            context="cli",
-        )
-        log_info("", context="cli")
         log_info("Please send this archive to:", context="cli")
         log_info(
-            "  • Matthew Dearing (Argo API maintainer): mdearing@anl.gov", context="cli"
+            "  - Matthew Dearing (Argo API maintainer): mdearing@anl.gov", context="cli"
         )
         log_info(
-            "  • Peng Ding (argo-proxy maintainer): dingpeng@uchicago.edu",
+            "  - Peng Ding (argo-proxy maintainer): dingpeng@uchicago.edu",
             context="cli",
         )
-        log_info("", context="cli")
-        log_info("Thank you for helping us improve the service! 🙏", context="cli")
         log_info("=" * 80, context="cli")
 
     except Exception as e:
@@ -488,33 +526,47 @@ def collect_leaked_logs(config_path: Optional[str] = None):
         sys.exit(1)
 
 
-def main():
-    args = parsing_args()
+# ---------------------------------------------------------------------------
+# Serve handler
+# ---------------------------------------------------------------------------
 
-    if args.edit:
-        open_in_editor(args.config)
-        return
 
-    if args.collect_leaked_logs:
-        collect_leaked_logs(args.config)
-        return
+def set_config_envs(args: argparse.Namespace):
+    """Set environment variables from serve CLI arguments."""
+    if args.config:
+        os.environ["CONFIG_PATH"] = args.config
+    if args.port:
+        os.environ["PORT"] = str(args.port)
+    if args.verbose:
+        os.environ["VERBOSE"] = str(True)
+    if args.quiet:
+        os.environ["VERBOSE"] = str(False)
 
-    if args.migrate:
-        migrate_config(args.config)
-        return
+    # Legacy-only streaming flags
+    if args.real_stream:
+        os.environ["REAL_STREAM"] = str(True)
+    if args.pseudo_stream:
+        os.environ["REAL_STREAM"] = str(False)
+    if args.tool_prompting:
+        os.environ["TOOL_PROMPT"] = str(True)
+    if args.username_passthrough:
+        os.environ["USERNAME_PASSTHROUGH"] = str(True)
+    if args.legacy_argo:
+        os.environ["USE_LEGACY_ARGO"] = str(True)
+    if args.enable_leaked_tool_fix:
+        os.environ["ENABLE_LEAKED_TOOL_FIX"] = str(True)
+    if args.dev:
+        os.environ["DEV_MODE"] = str(True)
 
+
+def _handle_serve(args: argparse.Namespace):
+    """Handle the ``serve`` subcommand."""
     set_config_envs(args)
 
     try:
-        # Display startup banner
         display_startup_banner()
 
-        # Validate config in main process only
         config_instance = validate_config(args.config, args.show)
-
-        # Re-setup logging with correct verbosity and config path
-        # This ensures attack logs go to the right directory
-        from pathlib import Path
 
         config_path: Path | None = Path(args.config) if args.config else None
         if config_path is None and hasattr(config_instance, "_config_path"):
@@ -527,12 +579,9 @@ def main():
             config_path=str(config_path) if config_path else None,
         )
 
-        # Update attack logger with actual config path
         if config_path is not None:
             get_attack_logger().set_config_path(config_path)
-        if args.validate:
-            log_info("Configuration validation successful.", context="cli")
-            return
+
         run(host=config_instance.host, port=config_instance.port)
     except KeyError:
         log_error("Port not specified in configuration file.", context="cli")
@@ -543,6 +592,78 @@ def main():
     except Exception as e:
         log_error(f"An error occurred while starting the server: {e}", context="cli")
         sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Config handler
+# ---------------------------------------------------------------------------
+
+
+def _handle_config(args: argparse.Namespace):
+    """Handle the ``config`` subcommand."""
+    if not args.config_action:
+        # No action given — show help
+        create_parser().parse_args(["config", "--help"])
+        return
+
+    config_path = getattr(args, "config", None)
+
+    if args.config_action == "edit":
+        open_in_editor(config_path)
+    elif args.config_action == "validate":
+        try:
+            validate_config(config_path, show_config=True)
+            log_info("Configuration validation successful.", context="cli")
+        except Exception as e:
+            log_error(f"Configuration validation failed: {e}", context="cli")
+            sys.exit(1)
+    elif args.config_action == "show":
+        try:
+            validate_config(config_path, show_config=True)
+        except Exception as e:
+            log_error(f"Failed to load configuration: {e}", context="cli")
+            sys.exit(1)
+    elif args.config_action == "migrate":
+        migrate_config(config_path)
+
+
+# ---------------------------------------------------------------------------
+# Logs handler
+# ---------------------------------------------------------------------------
+
+
+def _handle_logs(args: argparse.Namespace):
+    """Handle the ``logs`` subcommand."""
+    if not args.logs_action:
+        create_parser().parse_args(["logs", "--help"])
+        return
+
+    config_path = getattr(args, "config", None)
+
+    if args.logs_action == "collect":
+        collect_leaked_logs(config_path)
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+
+def main():
+    _insert_default_subcommand()
+    parser = create_parser()
+    args = parser.parse_args()
+
+    if not args.command:
+        parser.print_help()
+        sys.exit(0)
+
+    if args.command == "serve":
+        _handle_serve(args)
+    elif args.command == "config":
+        _handle_config(args)
+    elif args.command == "logs":
+        _handle_logs(args)
 
 
 if __name__ == "__main__":
