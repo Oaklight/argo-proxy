@@ -2,6 +2,64 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v3.0.0 (2026-03-21)
+
+### Major Features
+
+- **Universal API Gateway (llm-rosetta)**: Transformed argo-proxy from a single-format ARGO gateway proxy into a universal API translator. All 4 client API formats are now supported — users can talk to any upstream model using any client format:
+
+    | Client Format | Endpoint |
+    |---|---|
+    | OpenAI Chat Completions | `POST /v1/chat/completions` |
+    | OpenAI Responses API | `POST /v1/responses` |
+    | Anthropic Messages | `POST /v1/messages` |
+    | Google GenAI | `POST /v1beta/models/{model}:generateContent` |
+
+- **Smart Upstream Routing**: Claude models are automatically routed to the native Anthropic endpoint (avoiding tool call leakage on OpenAI-compat), while all other models (GPT, Gemini) go to the native OpenAI Chat endpoint.
+
+- **Same-Format Passthrough**: When the client format matches the upstream format, requests and responses are piped through without conversion for maximum performance and fidelity.
+
+- **Cross-Format Conversion**: When formats differ (e.g., Anthropic client + GPT model, or OpenAI client + Claude model), [llm-rosetta](https://github.com/Oaklight/llm-rosetta) handles bidirectional conversion via its Intermediate Representation (IR), for both streaming and non-streaming requests.
+
+### New Features
+
+- **Universal Dispatch Module** (`endpoints/dispatch.py`): Central entry point for all API requests with model resolution, format detection, image preprocessing, auth header translation, and error handling.
+
+- **Cross-Format Auth Header Translation**: Automatic conversion between `x-api-key` (Anthropic) and `Authorization: Bearer` (OpenAI) headers when routing across formats.
+
+- **Flexible Model Name Resolution**: Enhanced `_model_lookup_candidates()` to accept all common model name formats:
+    - Anthropic dash format: `claude-sonnet-4-6`
+    - Argo dot format: `argo:claude-sonnet-4.6`
+    - Internal IDs: `claudesonnet46`
+    - Anthropic model IDs with dates: `claude-sonnet-4-6-20250514`
+
+- **Native Upstream Model List**: Model registry now fetches from the native OpenAI `/v1/models` endpoint instead of the legacy ARGO models API.
+
+- **CLI Subcommands**: Restructured CLI with hierarchical subcommands:
+    - `argo-proxy serve` — start the server (default, backward compatible)
+    - `argo-proxy config {edit,validate,show,migrate}` — manage configuration
+    - `argo-proxy logs collect` — collect diagnostic logs
+    - `--no-banner` flag to suppress ASCII banner
+
+- **Config Migration** (`argo-proxy config migrate`): Automatic migration of v1/v2 config files to v3 format with `.bak` backup.
+
+### Breaking Changes
+
+- **Native endpoints are now default**: `use_native_openai` and `use_native_anthropic` config keys are deprecated and ignored. Native upstream routing is always active.
+- **Legacy mode is opt-in**: Use `--legacy-argo` flag or `use_legacy_argo: true` in config to enable the old ARGO gateway pipeline.
+- **Removed `--native-openai` / `--native-anthropic` CLI flags**: No longer needed since native mode is the default.
+- **Legacy endpoints moved to `_legacy/`**: `chat.py`, `completions.py`, `embed.py`, `responses.py`, `native_anthropic.py` relocated to `endpoints/_legacy/`.
+
+### Deprecations
+
+- `tool_calls/handler.py`, `tool_calls/output_handle.py` — replaced by llm-rosetta converters
+- `types/chat_completion.py`, `types/completions.py`, `types/embedding.py`, `types/responses.py` — replaced by llm-rosetta IR types
+- `tool_calls/converters.py` — removed entirely (unused)
+
+### Dependencies
+
+- Added `llm-rosetta` as a core dependency for cross-format conversion
+
 ## v2.8.9 (2026-03-21)
 
 ### Bug Fixes
