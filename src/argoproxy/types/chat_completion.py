@@ -1,3 +1,6 @@
+# Deprecated: Legacy type definitions for the v2 ARGO gateway pipeline (--legacy-argo).
+# In v3.0.0, type handling is performed by llm-rosetta IR types via dispatch.py.
+#
 # File generated from our OpenAPI spec by Stainless. See CONTRIBUTING.md for details.
 
 from typing import List, Literal, Optional

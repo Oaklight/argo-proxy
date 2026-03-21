@@ -1,5 +1,8 @@
 """
-Universal Tool Call Middleware Module
+Deprecated: Universal Tool Call Middleware Module
+
+Legacy module — only used by the v2 ARGO gateway pipeline (--legacy-argo).
+In v3.0.0, tool call handling is performed by llm-rosetta converters via dispatch.py.
 
 This module provides universal middleware classes for converting tool calls, tool definitions,
 and tool choice data between different API formats.

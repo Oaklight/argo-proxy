@@ -1,3 +1,9 @@
+"""Deprecated: Tool call output handling.
+
+Legacy module — only used by the v2 ARGO gateway pipeline (--legacy-argo).
+In v3.0.0, response processing is performed by llm-rosetta converters via dispatch.py.
+"""
+
 import gzip
 import json
 import re

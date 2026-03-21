@@ -8,12 +8,14 @@ from aiohttp import web
 from .__init__ import __version__
 from .config import ArgoConfig, load_config
 from .endpoints import (
-    chat,
-    completions,
     dispatch,
-    embed,
     extras,
     native_openai,
+)
+from .endpoints._legacy import (
+    chat,
+    completions,
+    embed,
     responses,
 )
 from .endpoints.dev_proxy import register_dev_routes
