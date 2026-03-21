@@ -13,7 +13,7 @@ from tqdm.asyncio import tqdm_asyncio
 
 from .utils.logging import log_error, log_info, log_warning
 from .utils.misc import get_random_port, is_port_available, make_bar, str_to_bool
-from .utils.transports import validate_api_async
+from .utils.transports import validate_api_async, validate_url_get_async
 
 PATHS_TO_TRY = [
     "./config.yaml",
@@ -206,14 +206,27 @@ class ArgoConfig:
         return instance
 
     def to_dict(self) -> dict:
-        """Convert ArgoConfig instance to a dictionary."""
+        """Convert ArgoConfig instance to a dictionary.
+
+        In v3 universal mode, exposes native endpoint URLs and mode info.
+        In legacy mode, exposes the classic ARGO gateway URLs.
+        """
         serialized = asdict(self)
         # drop all private fields
         serialized = {k: v for k, v in serialized.items() if not k.startswith("_")}
-        # include properties except legacy_mode
-        serialized["argo_url"] = self.argo_url
-        serialized["argo_stream_url"] = self.argo_stream_url
-        serialized["argo_embedding_url"] = self.argo_embedding_url
+
+        if self.use_legacy_argo:
+            # Legacy mode: show ARGO gateway URLs
+            serialized["argo_url"] = self.argo_url
+            serialized["argo_stream_url"] = self.argo_stream_url
+            serialized["argo_embedding_url"] = self.argo_embedding_url
+            serialized["mode"] = "legacy"
+        else:
+            # Universal mode: show native endpoint URLs
+            serialized["argo_base_url"] = self.argo_base_url
+            serialized["native_openai_base_url"] = self.native_openai_base_url
+            serialized["native_anthropic_base_url"] = self.native_anthropic_base_url
+            serialized["mode"] = "universal"
 
         # sort keys
         serialized = dict(sorted(serialized.items()))
@@ -264,48 +277,87 @@ class ArgoConfig:
         log_info(f"Using port {self.port}...", context="config")
 
     def _validate_urls(self) -> None:
-        """Validate URL connectivity using validate_api_async with default retries."""
+        """Validate URL connectivity.
+
+        In v3 universal mode, tests the native OpenAI models endpoint (GET)
+        and the native Anthropic messages endpoint (POST).
+        In legacy mode, tests the legacy ARGO chat and embedding endpoints.
+        """
         if self._skip_url_validation:
             log_info(
                 "URL validation skipped (skip_url_validation=True)", context="config"
             )
             return
 
-        required_urls: list[tuple[str, dict[str, Any]]] = [
-            (
-                self.argo_url,
-                {
-                    "model": "gpt4o",
-                    "messages": [{"role": "user", "content": "What are you?"}],
-                },
-            ),
-            (self.argo_embedding_url, {"model": "v3small", "prompt": ["hello"]}),
-        ]
-
         timeout = self.connection_test_timeout
         attempts = 2
+        failed_urls: list[str] = []
+
+        if self.use_legacy_argo:
+            # Legacy mode: POST-based validation against ARGO gateway
+            post_urls: list[tuple[str, dict[str, Any]]] = [
+                (
+                    self.argo_url,
+                    {
+                        "model": "gpt4o",
+                        "messages": [{"role": "user", "content": "What are you?"}],
+                    },
+                ),
+                (
+                    self.argo_embedding_url,
+                    {"model": "v3small", "prompt": ["hello"]},
+                ),
+            ]
+            get_urls: list[str] = []
+        else:
+            # Universal mode: test native endpoints
+            post_urls = []
+            get_urls = [
+                f"{self.native_openai_base_url}/models",
+            ]
+
+        total = len(post_urls) + len(get_urls)
         log_info(
-            f"Validating {len(required_urls)} URL connectivity with timeout {timeout}s and {attempts} attempts ...",
+            f"Validating {total} URL connectivity with timeout {timeout}s "
+            f"and {attempts} attempts ...",
             context="config",
         )
 
-        failed_urls = []
-
-        async def _validate_single_url(url: str, payload: dict) -> None:
+        async def _validate_post(url: str, payload: dict) -> None:
             if not url.startswith(("http://", "https://")):
                 log_error(f"Invalid URL format: {url}", context="config")
                 failed_urls.append(url)
                 return
             try:
                 await validate_api_async(
-                    url, self.user, payload, timeout=timeout, attempts=attempts
+                    url,
+                    self.user,
+                    payload,
+                    timeout=timeout,
+                    attempts=attempts,
+                    resolver_overrides=self.resolve_overrides or None,
+                )
+            except Exception:
+                failed_urls.append(url)
+
+        async def _validate_get(url: str) -> None:
+            if not url.startswith(("http://", "https://")):
+                log_error(f"Invalid URL format: {url}", context="config")
+                failed_urls.append(url)
+                return
+            try:
+                await validate_url_get_async(
+                    url,
+                    timeout=timeout,
+                    attempts=attempts,
+                    resolver_overrides=self.resolve_overrides or None,
                 )
             except Exception:
                 failed_urls.append(url)
 
         async def _main():
-            tasks = [
-                _validate_single_url(url, payload) for url, payload in required_urls
+            tasks = [_validate_post(url, payload) for url, payload in post_urls] + [
+                _validate_get(url) for url in get_urls
             ]
             for fut in tqdm_asyncio.as_completed(
                 tasks, total=len(tasks), desc="Validating URLs"

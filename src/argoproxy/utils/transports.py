@@ -128,3 +128,60 @@ async def validate_api_async(
     if last_err is not None:
         raise last_err
     raise ValueError("API validation failed after all attempts")
+
+
+async def validate_url_get_async(
+    url: str,
+    timeout: int = 5,
+    attempts: int = 2,
+    resolver_overrides: Optional[dict[str, str]] = None,
+) -> bool:
+    """Validate URL connectivity with a simple GET request.
+
+    Useful for endpoints like ``/v1/models`` that don't require a POST body.
+
+    Args:
+        url: The URL to validate.
+        timeout: Request timeout seconds.
+        attempts: Total attempts (including the first).
+        resolver_overrides: Optional DNS override mapping.
+
+    Returns:
+        True if validation succeeds.
+
+    Raises:
+        ValueError: If all attempts fail.
+    """
+    from ..performance import StaticOverrideResolver
+
+    connector = None
+    if resolver_overrides:
+        resolver = StaticOverrideResolver(resolver_overrides)
+        connector = aiohttp.TCPConnector(resolver=resolver)
+
+    client_timeout = aiohttp.ClientTimeout(total=timeout)
+
+    last_err: Optional[Exception] = None
+    for attempt in range(attempts + 1):
+        try:
+            async with aiohttp.ClientSession(
+                connector=connector,
+                timeout=client_timeout,
+            ) as session:
+                async with session.get(url) as response:
+                    if response.status != 200:
+                        raise ValueError(f"GET {url} returned status {response.status}")
+                    return True
+        except Exception as e:
+            last_err = e
+            if attempt < attempts:
+                await asyncio.sleep(0.5)
+            if resolver_overrides and attempt < attempts:
+                resolver = StaticOverrideResolver(resolver_overrides)
+                connector = aiohttp.TCPConnector(resolver=resolver)
+            else:
+                connector = None
+
+    if last_err is not None:
+        raise last_err
+    raise ValueError("URL validation failed after all attempts")
