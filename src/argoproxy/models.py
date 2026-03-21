@@ -2,6 +2,7 @@
 import asyncio
 import fnmatch
 import json
+import re
 from collections import defaultdict
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple
@@ -558,13 +559,20 @@ class ModelRegistry:
         if not self._config:
             raise ValueError("Failed to load valid configuration")
 
+        # Choose model list URL based on mode
+        if self._config.use_legacy_argo:
+            model_url = self._config.argo_model_url
+        else:
+            # v3 universal mode: use the native OpenAI models endpoint
+            model_url = self._config.native_openai_base_url.rstrip("/") + "/models"
+
         # Initial model list fetch
         log_debug(
-            f"Fetching models from: {self._config.argo_model_url}",
+            f"Fetching models from: {model_url}",
             context="ModelRegistry",
         )
         self._chat_models = await get_upstream_model_list_async(
-            self._config.argo_model_url,
+            model_url,
             resolver_overrides=getattr(self._config, "resolve_overrides", None),
         )
 
@@ -693,6 +701,22 @@ class ModelRegistry:
         for c in list(candidates):
             if not c.startswith("argo:"):
                 _add(f"argo:{c}")
+
+        # 5. Strip all non-alphanumeric chars to match internal IDs directly.
+        #    e.g. "claude-sonnet-4-6" → "claudesonnet46" (matches internal_id)
+        stripped = re.sub(r"[^a-z0-9]", "", raw.lower())
+        _add(stripped)
+
+        # 6. Strip date suffixes from provider model IDs, then retry.
+        #    e.g. "claude-sonnet-4-6-20250514" → "claude-sonnet-4-6"
+        date_stripped = re.sub(r"-\d{8}$", "", raw)
+        if date_stripped != raw:
+            _add(date_stripped)
+            _add(date_stripped.lower())
+            if not date_stripped.startswith("argo:"):
+                _add(f"argo:{date_stripped.lower()}")
+            # Also strip non-alnum for the date-stripped form
+            _add(re.sub(r"[^a-z0-9]", "", date_stripped.lower()))
 
         return candidates
 

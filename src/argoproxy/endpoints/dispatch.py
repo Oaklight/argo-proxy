@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import time
+import traceback
 from typing import Any, Union
 
 import aiohttp
@@ -26,6 +27,7 @@ from ..utils.image_processing import process_anthropic_images, process_openai_im
 from ..utils.logging import (
     log_converted_request,
     log_debug,
+    log_error,
     log_info,
     log_original_request,
     log_upstream_error,
@@ -138,22 +140,34 @@ def _build_upstream_headers(
     *,
     stream: bool = False,
 ) -> dict[str, str]:
-    """Build headers for the upstream request."""
+    """Build headers for the upstream request.
+
+    Handles cross-format auth header translation:
+    - Anthropic uses ``x-api-key``, OpenAI uses ``Authorization: Bearer ...``
+    - When crossing formats, the auth credential is mapped automatically.
+    """
     headers: dict[str, str] = {"Content-Type": "application/json"}
 
+    # Collect the auth credential from whichever header the client sent
+    api_key: str | None = None
+    if "Authorization" in request.headers:
+        auth_val = request.headers["Authorization"]
+        api_key = auth_val.removeprefix("Bearer ").strip() if auth_val else None
+    if "x-api-key" in request.headers:
+        api_key = request.headers["x-api-key"]
+
     if target_provider == "anthropic":
-        # Forward Anthropic-specific headers
-        if "x-api-key" in request.headers:
-            headers["x-api-key"] = request.headers["x-api-key"]
+        if api_key:
+            headers["x-api-key"] = api_key
         if "anthropic-version" in request.headers:
             headers["anthropic-version"] = request.headers["anthropic-version"]
-        # Also forward Authorization for backends that accept it
-        if "Authorization" in request.headers:
-            headers["Authorization"] = request.headers["Authorization"]
+        else:
+            # Provide a default version header for cross-format requests
+            headers["anthropic-version"] = "2023-06-01"
     else:
-        # OpenAI-style: forward Authorization
-        if "Authorization" in request.headers:
-            headers["Authorization"] = request.headers["Authorization"]
+        # OpenAI-style target
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
 
     if stream:
         headers["Accept"] = "text/event-stream"
@@ -558,90 +572,99 @@ async def proxy_request(
     except Exception:
         return _error_response(source_provider, 400, "Invalid JSON body")
 
-    log_original_request(body, verbose=config.verbose)
+    try:
+        log_original_request(body, verbose=config.verbose)
 
-    # Extract and resolve model
-    model = model_override or body.get("model")
-    if not model:
-        return _error_response(source_provider, 400, "Missing 'model' field")
+        # Extract and resolve model
+        model = model_override or body.get("model")
+        if not model:
+            return _error_response(source_provider, 400, "Missing 'model' field")
 
-    original_model = model
-    # For Anthropic source, use as_is=True to preserve bare model names
-    as_is = source_provider == "anthropic"
-    resolved_model = model_registry.resolve_model_name(model, "chat", as_is=as_is)
+        original_model = model
+        # For Anthropic source, use as_is=True to preserve bare model names
+        as_is = source_provider == "anthropic"
+        resolved_model = model_registry.resolve_model_name(model, "chat", as_is=as_is)
 
-    if resolved_model != original_model and config.verbose:
-        log_info(
-            f"Model resolved: {original_model} -> {resolved_model}",
-            context="dispatch",
+        if resolved_model != original_model and config.verbose:
+            log_info(
+                f"Model resolved: {original_model} -> {resolved_model}",
+                context="dispatch",
+            )
+
+        # Update body with resolved model
+        body["model"] = resolved_model
+
+        # Determine upstream target
+        target_provider, upstream_url = model_registry.resolve_model_target(
+            resolved_model, config
         )
 
-    # Update body with resolved model
-    body["model"] = resolved_model
-
-    # Determine upstream target
-    target_provider, upstream_url = model_registry.resolve_model_target(
-        resolved_model, config
-    )
-
-    if config.verbose:
-        log_debug(
-            f"Routing: {source_provider} -> {target_provider} ({upstream_url})",
-            context="dispatch",
-        )
-
-    # Preprocess images (format-specific, before conversion)
-    body = await _preprocess_images(session, body, source_provider, config)
-
-    # Apply username passthrough
-    apply_username_passthrough(body, request, config.user)
-
-    # Anthropic target: also set metadata.user_id
-    if target_provider == "anthropic":
-        _apply_anthropic_user_id(body, config.user)
-
-    # Detect streaming
-    stream = force_stream or _detect_stream(source_provider, body)
-
-    # Build upstream headers
-    headers = _build_upstream_headers(request, target_provider, stream=stream)
-
-    # Same-format passthrough: skip conversion entirely
-    if source_provider == target_provider:
         if config.verbose:
-            log_debug("Same-format passthrough (no conversion)", context="dispatch")
+            log_debug(
+                f"Routing: {source_provider} -> {target_provider} ({upstream_url})",
+                context="dispatch",
+            )
+
+        # Preprocess images (format-specific, before conversion)
+        body = await _preprocess_images(session, body, source_provider, config)
+
+        # Apply username passthrough
+        apply_username_passthrough(body, request, config.user)
+
+        # Anthropic target: also set metadata.user_id
+        if target_provider == "anthropic":
+            _apply_anthropic_user_id(body, config.user)
+
+        # Detect streaming
+        stream = force_stream or _detect_stream(source_provider, body)
+
+        # Build upstream headers
+        headers = _build_upstream_headers(request, target_provider, stream=stream)
+
+        # Same-format passthrough: skip conversion entirely
+        if source_provider == target_provider:
+            if config.verbose:
+                log_debug("Same-format passthrough (no conversion)", context="dispatch")
+
+            if stream:
+                return await _passthrough_streaming(
+                    session, upstream_url, headers, body, request, target_provider
+                )
+            return await _passthrough_non_streaming(
+                session, upstream_url, headers, body
+            )
+
+        # Cross-format conversion
+        if config.verbose:
+            log_debug(
+                f"Cross-format: {source_provider} -> {target_provider}",
+                context="dispatch",
+            )
 
         if stream:
-            return await _passthrough_streaming(
-                session, upstream_url, headers, body, request, target_provider
+            return await _convert_streaming(
+                session,
+                upstream_url,
+                headers,
+                body,
+                source_provider,
+                target_provider,
+                request,
+                config,
             )
-        return await _passthrough_non_streaming(session, upstream_url, headers, body)
 
-    # Cross-format conversion
-    if config.verbose:
-        log_debug(
-            f"Cross-format: {source_provider} -> {target_provider}",
-            context="dispatch",
-        )
-
-    if stream:
-        return await _convert_streaming(
+        return await _convert_non_streaming(
             session,
             upstream_url,
             headers,
             body,
             source_provider,
             target_provider,
-            request,
             config,
         )
-
-    return await _convert_non_streaming(
-        session,
-        upstream_url,
-        headers,
-        body,
-        source_provider,
-        target_provider,
-        config,
-    )
+    except Exception as exc:
+        log_error(
+            f"Unhandled dispatch error: {exc}\n{traceback.format_exc()}",
+            context="dispatch",
+        )
+        return _error_response(source_provider, 500, f"Internal error: {exc}")
