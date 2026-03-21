@@ -2,6 +2,12 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v2.8.9 (2026-03-21)
+
+### Bug Fixes
+
+- **Leaked Tool Parser JSON Literals**: Fixed `ast.literal_eval` failures when Claude emits JSON-style `false`/`true`/`null` instead of Python's `False`/`True`/`None` in leaked tool calls. Added word-boundary-aware regex repair strategy. ([#70](https://github.com/Oaklight/argo-proxy/pull/70), contributed by @mvictoras)
+
 ## v2.8.8.post1 (2026-03-07)
 
 ### Bug Fixes
