@@ -308,7 +308,7 @@ def create_app():
 
     if dev_mode:
         log_warning(
-            "🔧 DEV MODE: Pure reverse proxy enabled — no format conversion",
+            "🔧 Transparent proxy — all requests forwarded without conversion",
             context="app",
         )
 

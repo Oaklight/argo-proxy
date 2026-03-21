@@ -152,7 +152,7 @@ def _add_serve_arguments(parser: argparse.ArgumentParser) -> None:
         "--dev",
         action="store_true",
         default=False,
-        help="Pure reverse proxy mode — no format conversion",
+        help=argparse.SUPPRESS,
     )
 
     # Legacy-only streaming options
@@ -365,8 +365,12 @@ def display_startup_banner(no_banner: bool = False):
 
     from .utils.misc import str_to_bool
 
+    dev_mode = str_to_bool(os.environ.get("DEV_MODE", "false"))
+
     if str_to_bool(os.environ.get("USE_LEGACY_ARGO", "false")):
         log_warning("⚙️  MODE: Legacy ARGO Gateway", context="cli")
+    elif dev_mode:
+        log_warning("⚙️  MODE: Transparent Proxy (no conversion)", context="cli")
     else:
         log_info("⚙️  MODE: Universal (llm-rosetta)", context="cli")
     log_info("=" * 80, context="cli")
