@@ -10,9 +10,9 @@ from .config import ArgoConfig, load_config
 from .endpoints import (
     chat,
     completions,
+    dispatch,
     embed,
     extras,
-    native_anthropic,
     native_openai,
     responses,
 )
@@ -145,14 +145,10 @@ async def proxy_openai_chat_compatible(request: web.Request):
     log_info("/v1/chat/completions", context="app")
     config: ArgoConfig = request.app["config"]
 
-    # In legacy mode, use old ARGO gateway pipeline
     if config.use_legacy_argo:
         return await chat.proxy_request(request)
 
-    # Universal mode: native OpenAI passthrough (dispatch.py will replace this in Phase 1)
-    return await native_openai.proxy_native_openai_request(
-        request, "chat/completions"
-    )
+    return await dispatch.proxy_request(request, source_provider="openai_chat")
 
 
 async def proxy_openai_legacy_completions_compatible(request: web.Request):
@@ -169,7 +165,12 @@ async def proxy_openai_legacy_completions_compatible(request: web.Request):
 
 async def proxy_openai_responses_request(request: web.Request):
     log_info("/v1/responses", context="app")
-    return await responses.proxy_request(request)
+    config: ArgoConfig = request.app["config"]
+
+    if config.use_legacy_argo:
+        return await responses.proxy_request(request)
+
+    return await dispatch.proxy_request(request, source_provider="openai_responses")
 
 
 async def proxy_openai_embedding_request(request: web.Request):
@@ -187,7 +188,34 @@ async def proxy_openai_embedding_request(request: web.Request):
 async def proxy_anthropic_messages(request: web.Request):
     """Handle Anthropic /v1/messages endpoint."""
     log_info("/v1/messages", context="app")
-    return await native_anthropic.proxy_native_anthropic_request(request)
+    return await dispatch.proxy_request(request, source_provider="anthropic")
+
+
+async def proxy_google_genai(request: web.Request):
+    """Handle Google GenAI /v1beta/models/{model}:{method} endpoints."""
+    model_path = request.match_info["model_path"]
+    log_info(f"/v1beta/models/{model_path}", context="app")
+
+    if model_path.endswith(":streamGenerateContent"):
+        model = model_path.removesuffix(":streamGenerateContent")
+        return await dispatch.proxy_request(
+            request,
+            source_provider="google",
+            model_override=model,
+            force_stream=True,
+        )
+    elif model_path.endswith(":generateContent"):
+        model = model_path.removesuffix(":generateContent")
+        return await dispatch.proxy_request(
+            request,
+            source_provider="google",
+            model_override=model,
+        )
+    else:
+        return web.json_response(
+            {"error": {"code": 400, "message": f"Unknown method in: {model_path}"}},
+            status=400,
+        )
 
 
 async def get_models(request: web.Request):
@@ -296,19 +324,26 @@ def create_app():
     app.router.add_get("/", root_endpoint)
     app.router.add_get("/v1", v1_endpoint)
 
-    # openai incompatible
-    app.router.add_post("/v1/chat", proxy_argo_chat_directly)
-    app.router.add_post("/v1/embed", proxy_embedding_directly)
+    # Legacy ARGO direct-access endpoints (only in legacy mode)
+    use_legacy = str_to_bool(os.environ.get("USE_LEGACY_ARGO", "false"))
+    if use_legacy:
+        app.router.add_post("/v1/chat", proxy_argo_chat_directly)
+        app.router.add_post("/v1/embed", proxy_embedding_directly)
+        app.router.add_post(
+            "/v1/completions", proxy_openai_legacy_completions_compatible
+        )
 
-    # openai compatible
+    # Universal endpoints (all 4 client formats)
     app.router.add_post("/v1/chat/completions", proxy_openai_chat_compatible)
-    app.router.add_post("/v1/completions", proxy_openai_legacy_completions_compatible)
     app.router.add_post("/v1/responses", proxy_openai_responses_request)
-    app.router.add_post("/v1/embeddings", proxy_openai_embedding_request)
-    app.router.add_get("/v1/models", get_models)
-
-    # anthropic compatible (always registered in v3.0.0)
     app.router.add_post("/v1/messages", proxy_anthropic_messages)
+    app.router.add_post("/v1beta/models/{model_path}", proxy_google_genai)
+
+    # Embeddings (passthrough)
+    app.router.add_post("/v1/embeddings", proxy_openai_embedding_request)
+
+    # Model listing
+    app.router.add_get("/v1/models", get_models)
 
     # extras
     app.router.add_post("/refresh", refresh_models)
