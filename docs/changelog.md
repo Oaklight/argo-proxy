@@ -39,9 +39,16 @@ This page records the major version changes and important feature updates of the
     - `argo-proxy serve` — start the server (default, backward compatible)
     - `argo-proxy config {edit,validate,show,migrate}` — manage configuration
     - `argo-proxy logs collect` — collect diagnostic logs
+    - `argo-proxy update {check,install}` — check for and install updates from PyPI (supports `--pre` for pre-release)
     - `--no-banner` flag to suppress ASCII banner
 
+- **Simplified Base URL Configuration**: Only `argo_base_url` is needed — `native_openai_base_url` and `native_anthropic_base_url` are automatically derived. Explicit overrides are still supported and trailing slashes are normalized.
+
 - **Config Migration** (`argo-proxy config migrate`): Automatic migration of v1/v2 config files to v3 format with `.bak` backup.
+
+- **Mode-Aware Config Display**: `argo-proxy config validate` and `config show` now display native endpoint URLs and `mode: universal` in v3 mode, or legacy ARGO gateway URLs in legacy mode.
+
+- **Native Endpoint Connectivity Check**: URL validation at startup tests the native OpenAI `/v1/models` endpoint (GET) in universal mode, instead of the legacy ARGO chat/embedding POST endpoints.
 
 ### Breaking Changes
 
