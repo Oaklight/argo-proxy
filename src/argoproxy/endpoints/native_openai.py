@@ -91,7 +91,7 @@ async def proxy_native_openai_request(
         apply_username_passthrough(data, request, config.user)
 
         # Construct the full upstream URL
-        upstream_url = f"{config.native_openai_base_url}{endpoint_path}"
+        upstream_url = f"{config.native_openai_base_url}/{endpoint_path}"
 
         # Check if this is a streaming request
         stream = data.get("stream", False)

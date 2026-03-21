@@ -436,11 +436,11 @@ def migrate_config(config_path: Optional[str] = None):
     if base_url:
         base = base_url.rstrip("/")
         if "native_openai_base_url" not in data:
-            data["native_openai_base_url"] = f"{base}/v1/"
-            changes.append(f"added native_openai_base_url: {base}/v1/")
+            data["native_openai_base_url"] = f"{base}/v1"
+            changes.append(f"added native_openai_base_url: {base}/v1")
         if "native_anthropic_base_url" not in data:
-            data["native_anthropic_base_url"] = f"{base}/v1/messages"
-            changes.append(f"added native_anthropic_base_url: {base}/v1/messages")
+            data["native_anthropic_base_url"] = base
+            changes.append(f"added native_anthropic_base_url: {base}")
 
     with open(found_path, "w", encoding="utf-8") as f:
         yaml.dump(

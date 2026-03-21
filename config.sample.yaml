@@ -10,8 +10,8 @@ user: "" # you should replace it with your username
 argo_base_url: "https://apps-dev.inside.anl.gov/argoapi"
 
 # Native upstream endpoint URLs (derived from argo_base_url if not set)
-# native_openai_base_url: "https://apps-dev.inside.anl.gov/argoapi/v1/"
-# native_anthropic_base_url: "https://apps-dev.inside.anl.gov/argoapi/v1/messages"
+# native_openai_base_url: "https://apps-dev.inside.anl.gov/argoapi/v1"
+# native_anthropic_base_url: "https://apps-dev.inside.anl.gov/argoapi"
 
 # Legacy ARGO gateway mode (default: false)
 # When enabled, uses the old ARGO gateway endpoints instead of universal dispatch.

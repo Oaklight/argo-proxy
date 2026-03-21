@@ -564,7 +564,7 @@ class ModelRegistry:
             model_url = self._config.argo_model_url
         else:
             # v3 universal mode: use the native OpenAI models endpoint
-            model_url = self._config.native_openai_base_url.rstrip("/") + "/models"
+            model_url = f"{self._config.native_openai_base_url}/models"
 
         # Initial model list fetch
         log_debug(
@@ -883,8 +883,8 @@ class ModelRegistry:
         """
         family = self._classify_model_by_family(resolved_model)
         if family == "anthropic":
-            return ("anthropic", config.native_anthropic_base_url)
-        return ("openai_chat", config.native_openai_base_url + "chat/completions")
+            return ("anthropic", f"{config.native_anthropic_base_url}/v1/messages")
+        return ("openai_chat", f"{config.native_openai_base_url}/chat/completions")
 
     def get_model_stats(self) -> dict:
         """Get detailed model statistics including model family breakdown."""

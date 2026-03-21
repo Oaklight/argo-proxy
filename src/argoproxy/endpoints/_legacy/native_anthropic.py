@@ -87,7 +87,7 @@ async def proxy_native_anthropic_request(
         _apply_user_identification(data, request, config)
 
         # Construct the full upstream URL
-        upstream_url = config.native_anthropic_base_url
+        upstream_url = f"{config.native_anthropic_base_url}/v1/messages"
 
         # Check if this is a streaming request
         stream = data.get("stream", False)

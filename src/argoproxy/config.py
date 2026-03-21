@@ -139,14 +139,17 @@ class ArgoConfig:
 
     @property
     def native_openai_base_url(self) -> str:
-        """Get the native OpenAI base URL.
+        """Get the native OpenAI base URL (without trailing slash).
 
-        If explicitly set, returns the configured value. Otherwise derives
-        from argo_base_url for consistency.
+        This is the base path for OpenAI-compatible endpoints.  Callers
+        append specific paths like ``/chat/completions`` or ``/models``.
+
+        If explicitly set, returns the configured value (stripped of
+        trailing ``/``).  Otherwise derives from ``argo_base_url``.
         """
         if self._native_openai_base_url:
-            return self._native_openai_base_url
-        return f"{self.argo_base_url}/v1/"
+            return self._native_openai_base_url.rstrip("/")
+        return f"{self.argo_base_url}/v1"
 
     @property
     def use_legacy_argo(self):
@@ -157,12 +160,15 @@ class ArgoConfig:
     def native_anthropic_base_url(self) -> str:
         """Get the native Anthropic base URL.
 
-        If explicitly set, returns the configured value. Otherwise derives
-        from argo_base_url for consistency.
+        This is the base URL for the Anthropic Messages endpoint.
+        Callers append ``/v1/messages`` to form the full endpoint URL.
+
+        If explicitly set, returns the configured value (stripped of
+        trailing ``/``).  Otherwise derives from ``argo_base_url``.
         """
         if self._native_anthropic_base_url:
-            return self._native_anthropic_base_url
-        return f"{self.argo_base_url}/v1/messages"
+            return self._native_anthropic_base_url.rstrip("/")
+        return self.argo_base_url
 
     @property
     def enable_leaked_tool_fix(self):
@@ -627,7 +633,11 @@ def _migrate_config(config_dict: dict) -> dict:
 
     # Migrate v2 → v3: remove deprecated native mode toggles
     if version and version < "3":
-        deprecated_keys = ["use_native_openai", "use_native_anthropic", "provider_tool_format"]
+        deprecated_keys = [
+            "use_native_openai",
+            "use_native_anthropic",
+            "provider_tool_format",
+        ]
         found = [k for k in deprecated_keys if k in config_dict]
         if found:
             log_warning(
