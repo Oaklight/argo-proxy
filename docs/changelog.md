@@ -40,6 +40,7 @@ This page records the major version changes and important feature updates of the
     - `argo-proxy config {edit,validate,show,migrate}` — manage configuration
     - `argo-proxy logs collect` — collect diagnostic logs
     - `argo-proxy update {check,install}` — check for and install updates from PyPI (supports `--pre` for pre-release)
+    - `argo-proxy models` — list all available upstream models with their aliases, grouped by type (Chat/Embedding) and provider, with `--json` output support
     - `--no-banner` flag to suppress ASCII banner
 
 - **Simplified Base URL Configuration**: Only `argo_base_url` is needed — `native_openai_base_url` and `native_anthropic_base_url` are automatically derived. Explicit overrides are still supported and trailing slashes are normalized.
@@ -66,6 +67,15 @@ This page records the major version changes and important feature updates of the
 ### Dependencies
 
 - Added `llm-rosetta` as a core dependency for cross-format conversion
+
+### Documentation
+
+- Comprehensive v3 documentation rewrite covering all pages
+- New **CLI Tools Guide** with configuration instructions for Claude Code, Codex CLI, Aider, Gemini CLI, OpenCode, and generic SDK usage
+- Updated endpoint docs with universal routing logic and all 4 API formats
+- Rewrote CLI reference for subcommand-based interface
+- Rewrote configuration guide for v3 format (`argo_base_url`, modes, migration)
+- Simplified native passthrough pages with v3 notes pointing to new docs
 
 ## v2.8.9 (2026-03-21)
 
