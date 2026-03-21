@@ -12,7 +12,7 @@ build:
       # Download the source code from the main repository for mkdocstrings
       - git clone https://github.com/Oaklight/argo-proxy.git src_repo
       - mkdir -p src
-      - cp -r src_repo/src/argo_proxy src/
+      - cp -r src_repo/src/argoproxy src/
       - rm -rf src_repo
     install:
       - pip install -r requirements.txt
