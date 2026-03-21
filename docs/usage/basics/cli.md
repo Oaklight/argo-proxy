@@ -1,311 +1,274 @@
-# CLI Options
+# CLI Reference
 
-The Argo Proxy command-line interface provides comprehensive options for configuration, management, and operation.
+Argo Proxy v3 uses a subcommand-based CLI. If no subcommand is given, `serve` is assumed for backward compatibility.
 
-## Command Syntax
+## Top-Level Usage
 
-```bash
-argo-proxy [-h] [--host HOST] [--port PORT] [--verbose | --quiet]
-           [--real-stream | --pseudo-stream] [--tool-prompting]
-           [--provider-tool-format] [--username-passthrough]
-           [--native-openai] [--enable-leaked-tool-fix]
-           [--edit] [--validate] [--show] [--version]
-           [--collect-leaked-logs]
-           [config]
+```
+argo-proxy [-h] [-V] {serve,config,logs,update} ...
 ```
 
-## Positional Arguments
+### Global Options
 
-### config
+| Option | Description |
+|--------|-------------|
+| `-h, --help` | Show help message and exit |
+| `-V, --version` | Show version and check for updates |
 
-Path to the configuration file.
+---
 
-```bash
-argo-proxy /path/to/config.yaml
-```
+## `serve` — Start the Proxy Server
 
-- **Optional**: If not provided, searches default locations
-- **Fallback**: If specified file doesn't exist, falls back to default search
-
-## Optional Arguments
-
-### Help and Information
-
-#### `-h, --help`
-
-Show help message and exit.
+The default subcommand. Starts the argo-proxy server in **universal mode** (all 4 API formats).
 
 ```bash
-argo-proxy --help
+argo-proxy serve [config] [options]
 ```
 
-#### `--version, -V`
-
-Show the version and check for updates.
+Backward-compatible shorthand (no subcommand):
 
 ```bash
-argo-proxy --version
+argo-proxy config.yaml --port 8080 --verbose
 ```
 
-- **Enhanced**: Also checks for available updates from PyPI
-- **Information**: Displays current version and update instructions if newer version available
+### Positional Arguments
 
-### Server Configuration
+| Argument | Description |
+|----------|-------------|
+| `config` | Path to configuration file (optional, searches default locations if omitted) |
 
-#### `--host HOST, -H HOST`
+### Server Options
 
-Host address to bind the server to.
+| Option | Description |
+|--------|-------------|
+| `--host HOST, -H HOST` | Host address to bind the server to (default: from config or `0.0.0.0`) |
+| `--port PORT, -p PORT` | Port number (default: from config or random available port) |
+| `--verbose, -v` | Enable verbose logging |
+| `--quiet, -q` | Disable verbose logging |
+| `--show, -s` | Show the current configuration during launch |
+| `--no-banner` | Suppress the ASCII banner on startup |
+| `--username-passthrough` | Use API key from request headers as user field |
+| `--legacy-argo` | Use legacy ARGO gateway pipeline instead of universal dispatch |
+
+### Legacy-Only Options
+
+These options only apply when `--legacy-argo` is enabled:
+
+| Option | Description |
+|--------|-------------|
+| `--real-stream, -rs` | Enable real streaming (default behavior) |
+| `--pseudo-stream, -ps` | Enable pseudo streaming |
+| `--tool-prompting` | Enable prompting-based tool calls |
+| `--enable-leaked-tool-fix` | Enable AST-based leaked tool call detection |
+
+### Examples
 
 ```bash
-argo-proxy --host 127.0.0.1
-argo-proxy -H 0.0.0.0
+# Start in universal mode (default)
+argo-proxy serve
+
+# Start with custom host and port
+argo-proxy serve --host 127.0.0.1 --port 8080
+
+# Start with specific config file
+argo-proxy serve /path/to/config.yaml
+
+# Show config on startup
+argo-proxy serve --show --verbose
+
+# Start in legacy ARGO gateway mode
+argo-proxy serve --legacy-argo
 ```
 
-- **Default**: Uses value from config file or `0.0.0.0`
-- **Override**: Command-line value takes precedence over config file
+---
 
-#### `--port PORT, -p PORT`
+## `config` — Manage Configuration
 
-Port number to bind the server to.
+Manage configuration files without starting the server.
 
 ```bash
-argo-proxy --port 8080
-argo-proxy -p 44497
+argo-proxy config {edit,validate,show,migrate} [config]
 ```
 
-- **Default**: Uses value from config file or random available port
-- **Override**: Command-line value takes precedence over config file
+### Actions
 
-### Logging Control
-
-#### `--verbose, -v`
-
-Enable verbose logging.
-
-```bash
-argo-proxy --verbose
-argo-proxy -v
-```
-
-- **Override**: Enables verbose logging even if `verbose: false` in config
-- **Mutually exclusive**: Cannot be used with `--quiet`
-
-#### `--quiet, -q`
-
-Disable verbose logging.
-
-```bash
-argo-proxy --quiet
-argo-proxy -q
-```
-
-- **Override**: Disables verbose logging even if `verbose: true` in config
-- **Mutually exclusive**: Cannot be used with `--verbose`
-
-### Streaming Configuration
-
-#### `--real-stream, -rs`
-
-Enable real streaming mode (default since v2.7.7).
-
-```bash
-argo-proxy --real-stream
-argo-proxy -rs
-```
-
-- **Override**: Explicitly enables real streaming even if `real_stream: false` in config
-- **Default**: Real streaming is the default behavior since v2.7.7
-
-#### `--pseudo-stream, -ps`
-
-Enable pseudo streaming mode.
-
-```bash
-argo-proxy --pseudo-stream
-argo-proxy -ps
-```
-
-- **Override**: Enables pseudo streaming even if `real_stream: true` or omitted in config
-- **Mutually exclusive**: Cannot be used with `--real-stream`
-
-### Tool Calling Configuration
-
-#### `--tool-prompting`
-
-Enable prompting-based tool calls/function calling.
-
-```bash
-argo-proxy --tool-prompting
-```
-
-- **Behavior**: Uses prompting-based approach instead of native tool calls
-- **Default**: Native tool calls are used when this flag is not set
-
-#### `--provider-tool-format` **(Experimental)**
-
-Enable provider-specific tool format.
-
-```bash
-argo-proxy --provider-tool-format
-```
-
-- **Behavior**: Preserves provider-specific tool call formats (e.g., Anthropic, Google)
-- **Default**: All tool calls are converted to OpenAI format when this flag is not set
-- **Use case**: When you need to handle tool calls in their native provider format
-
-#### `--enable-leaked-tool-fix` **(Experimental)**
-
-Enable AST-based leaked tool call detection and fixing (experimental).
-
-```bash
-argo-proxy --enable-leaked-tool-fix
-```
-
-- **Behavior**: Automatically detects and fixes leaked tool calls in Claude responses using AST parsing
-- **Logging**: Leaked tool calls are **always logged** regardless of this flag setting
-- **Default**: When disabled, leaked tool calls are logged but not automatically fixed
-- **Experimental**: This is an experimental feature for handling edge cases in Claude's tool call responses
-- **Related**: Use with `--collect-leaked-logs` to gather all logged cases for debugging
-
-### Advanced Configuration
-
-#### `--username-passthrough`
-
-Enable username passthrough mode.
-
-```bash
-argo-proxy --username-passthrough
-```
-
-- **Behavior**: Uses API key from request headers as the user field
-- **Use case**: When you want to allow different users making requests through the proxy
-
-#### `--native-openai`
-
-Enable native OpenAI endpoint passthrough mode.
-
-```bash
-argo-proxy --native-openai
-```
-
-- **Behavior**: Directly forwards requests to native OpenAI endpoints without transformation
-- **Use case**: When you want to use Argo's native OpenAI-compatible endpoints
-- **Note**: See [Native OpenAI Passthrough](../native-openai-passthrough.md) for more details
-
-### Configuration Management
-
-#### `--edit, -e`
+#### `config edit`
 
 Open the configuration file in the system's default editor.
 
 ```bash
-argo-proxy --edit
-argo-proxy -e
+argo-proxy config edit
+argo-proxy config edit /path/to/config.yaml
 ```
 
-- **Search**: If no config file specified, searches default locations
-- **Editors**: Tries common editors (nano, vi, vim on Unix; notepad on Windows)
-- **No server start**: Only opens editor, doesn't start the proxy server
+#### `config validate`
 
-#### `--validate, -vv`
-
-Validate the configuration file and exit.
+Validate the configuration file and test connectivity.
 
 ```bash
-argo-proxy --validate
-argo-proxy -vv
+argo-proxy config validate
 ```
 
-- **Validation**: Checks config syntax and connectivity
-- **No server start**: Exits after validation without starting server
-- **Useful for**: Deployment scripts and configuration testing
+In universal mode, validates connectivity to the native OpenAI models endpoint (`GET /v1/models`). In legacy mode, validates the ARGO gateway chat and embedding endpoints.
 
-#### `--show, -s`
+#### `config show`
 
-Show the current configuration during launch.
+Display the fully resolved configuration.
 
 ```bash
-argo-proxy --show
-argo-proxy -s
+argo-proxy config show
 ```
 
-- **Display**: Shows fully resolved configuration including defaults
-- **Combination**: Can be used with `--validate` to display without starting server
+Shows different fields depending on mode:
 
-### Debugging and Diagnostics
+- **Universal mode**: `argo_base_url`, `native_openai_base_url`, `native_anthropic_base_url`
+- **Legacy mode**: `argo_url`, `argo_stream_url`, `argo_embedding_url`
 
-#### `--collect-leaked-logs`
+#### `config migrate`
 
-Collect all leaked tool call logs into a tar.gz archive for analysis.
+Migrate configuration from v1/v2 format to v3 format.
 
 ```bash
-argo-proxy --collect-leaked-logs
+argo-proxy config migrate
 ```
 
-- **Behavior**: Creates a timestamped tar.gz archive containing all leaked tool call logs
-- **Location**: Archive is created in the current working directory
-- **Purpose**: Helps maintainers analyze and fix edge cases in tool call handling
-- **No server start**: Only collects logs, doesn't start the proxy server
-- **Note**: Leaked tool calls are **always logged** regardless of the `--enable-leaked-tool-fix` flag
+This will:
 
-## Usage Examples
+1. Create a `.bak` backup of the original file
+2. Set `config_version: "3"`
+3. Remove deprecated keys (`use_native_openai`, `use_native_anthropic`, `provider_tool_format`)
+4. Add `native_openai_base_url` and `native_anthropic_base_url` derived from `argo_base_url`
 
-### Basic Usage
+---
+
+## `logs` — Collect Diagnostic Logs
+
+Collect leaked tool call logs for analysis and debugging.
 
 ```bash
-# Start with default configuration (real streaming since v2.7.7)
-argo-proxy
-
-# Start with specific config file
-argo-proxy /path/to/config.yaml
-
-# Start with custom host and port
-argo-proxy --host 127.0.0.1 --port 8080
-
-# Use legacy pseudo streaming
-argo-proxy --pseudo-stream
-
-# Enable tool prompting mode
-argo-proxy --tool-prompting
-
-# Combine multiple options
-argo-proxy --pseudo-stream --tool-prompting --verbose
-
-# Validate configuration without starting server
-argo-proxy --validate --show
+argo-proxy logs {collect} [config]
 ```
 
-### Advanced Usage
+### Actions
+
+#### `logs collect`
+
+Collect all leaked tool call logs into a timestamped tar.gz archive.
 
 ```bash
-# Enable native OpenAI passthrough mode
-argo-proxy --native-openai
-
-# Use provider-specific tool formats
-argo-proxy --provider-tool-format
-
-# Enable username passthrough for user tracking
-argo-proxy --username-passthrough
-
-# Enable experimental leaked tool call fixing
-argo-proxy --enable-leaked-tool-fix
-
-# Collect leaked tool call logs for debugging
-argo-proxy --collect-leaked-logs
-
-# Combine advanced options
-argo-proxy --native-openai --username-passthrough --verbose
+argo-proxy logs collect
 ```
 
-### Debugging Tool Call Issues
+---
+
+## `update` — Check and Install Updates
+
+Check for new versions and install updates.
 
 ```bash
-# Run with leaked tool call logging (default behavior)
-argo-proxy
-
-# Run with automatic leaked tool call fixing (experimental)
-argo-proxy --enable-leaked-tool-fix
-
-# After running, collect logs for analysis
-argo-proxy --collect-leaked-logs
+argo-proxy update {check,install} [options]
 ```
+
+### Actions
+
+#### `update check`
+
+Check for available stable and pre-release versions on PyPI.
+
+```bash
+argo-proxy update check
+```
+
+Example output:
+
+```
+argo-proxy v3.0.0b3 (installed)
+
+  Stable:      v2.8.9  (installed is newer)
+  Pre-release: v3.0.0b3  (up to date)
+
+  Changelog:    https://argo-proxy.readthedocs.io/en/latest/changelog/
+```
+
+#### `update install`
+
+Install the latest version.
+
+```bash
+# Install latest stable
+argo-proxy update install
+
+# Install latest pre-release
+argo-proxy update install --pre
+```
+
+Automatically detects `uv`, `pip`, or `python -m pip` for installation.
+
+---
+
+## `models` — List Available Models
+
+List all available upstream models with their aliases and family classification.
+
+```bash
+argo-proxy models [config] [--json]
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `config` | Path to configuration file (optional) |
+| `--json` | Output in JSON format |
+
+### Examples
+
+```bash
+# List models in table format
+argo-proxy models
+
+# Output as JSON
+argo-proxy models --json
+```
+
+Example output:
+
+```
+Available models: 22 models, 50 aliases
+
+  OpenAI (8 models)
+    gpt4o                          argo:gpt-4o
+    gpt4omini                      argo:gpt-4o-mini
+    ...
+
+  Anthropic (5 models)
+    claudesonnet4                  argo:claude-4-sonnet, argo:claude-sonnet-4
+    claudeopus4                    argo:claude-4-opus, argo:claude-opus-4
+    ...
+
+  Google (4 models)
+    gemini25flash                  argo:gemini-2.5-flash
+    ...
+```
+
+---
+
+## Environment Variables
+
+The following environment variables override configuration file settings:
+
+| Variable | Description |
+|----------|-------------|
+| `CONFIG_PATH` | Path to config file |
+| `PORT` | Server port |
+| `VERBOSE` | Enable/disable verbose logging |
+| `ARGO_BASE_URL` | Override the Argo base URL |
+| `USE_LEGACY_ARGO` | Enable legacy ARGO gateway mode |
+| `SKIP_URL_VALIDATION` | Skip URL validation at startup |
+
+!!! note "Deprecated Environment Variables"
+    The following variables are deprecated in v3.0.0 and will be ignored with a warning:
+
+    - `USE_NATIVE_OPENAI` — native endpoints are now used by default
+    - `USE_NATIVE_ANTHROPIC` — native endpoints are now used by default
+    - `PROVIDER_TOOL_FORMAT` — format conversion is handled by llm-rosetta

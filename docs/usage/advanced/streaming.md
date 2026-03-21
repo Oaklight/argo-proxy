@@ -1,28 +1,27 @@
 # Streaming Modes
 
-Argo Proxy supports two streaming modes for Chat Completions, Legacy Completions and Responses endpoints. Each mode has its own advantages and use cases. This guide explains the differences between the two modes and helps you choose the right one for your needs.
+## Universal Mode (v3 Default)
 
-Why use stream mode?
-Some applications - llm clients, IDE extensions (like cline, continue.dev) and many chat-based tools—require stream mode to function correctly. Stream mode also allows you to create apps that provide a "flowing" feeling, letting users see responses generated word-by-word or line-by-line in real time, rather than waiting for the full output. This can greatly improve the responsiveness and perceived performance of your application.
+In v3 universal mode, **real streaming is always used**. Requests are streamed through the native upstream endpoints (OpenAI-compatible or Anthropic), which provide full streaming support including tool calls.
 
-## Real Stream (Default since v2.7.7)
+The streaming mode options (`--real-stream`, `--pseudo-stream`, `real_stream` config) are **legacy-only** and have no effect in universal mode.
 
-- **Default behavior**: Enabled by default starting from v2.7.7 (omitted or `real_stream: true` in config)
-- **How it works**: Directly streams chunks from the upstream API as they arrive
+## Legacy Mode Streaming
+
+When running in legacy mode (`--legacy-argo`), two streaming modes are available:
+
+### Real Stream (Default)
+
+- **Default behavior**: Enabled by default (omitted or `real_stream: true` in config)
+- **How it works**: Directly streams chunks from the upstream ARGO API as they arrive
 - **Status**: Production-ready and stable since v2.7.7
 
-### Advantages
-
-- True real-time streaming behavior
-- Lower latency for streaming responses
-- More responsive user experience
-
-### Configuration
+#### Configuration
 
 **Via config file:**
 
 ```yaml
-# Use default real streaming (since v2.7.7)
+# Use default real streaming
 # Simply omit the setting (defaults to true)
 
 # Or explicitly enable real streaming
@@ -32,67 +31,47 @@ real_stream: true
 **Via CLI:**
 
 ```bash
-# Use default real streaming (since v2.7.7)
-argo-proxy
+argo-proxy serve --legacy-argo --real-stream
 ```
 
-## Pseudo Stream
+### Pseudo Stream
 
-- **Enable via**: Set `real_stream: false` in config file
+- **Enable via**: Set `real_stream: false` in config file or `--pseudo-stream` CLI flag
 - **How it works**: Receives the complete response from upstream, then simulates streaming by sending chunks to the client
-- **Status**: available for compatibility and specific use cases
+- **Status**: Available for compatibility and specific use cases
 
-### When to Use
+#### When to Use
 
-- When you find glitches or issues with real streaming
+- When you find glitches or issues with real streaming in legacy mode
 
-### Advantages
-
-- More stable and reliable experience
-- Better error handling and recovery
-- Consistent performance
-
-### Disadvantages
-
-- "Hard task" for LLM may take longer to start streaming
-
-### Configuration
+#### Configuration
 
 **Via config file:**
 
 ```yaml
-# Explicitly enable pseudo streaming (legacy)
 real_stream: false
 ```
 
-## Function Calling Behavior
+**Via CLI:**
 
-When using function calling (tool calls):
-
-- **Pseudo stream is automatically enforced** regardless of your configuration
-- This ensures reliable function call processing with the current prompting-based implementation
-- Users will not notice this automatic switch as the experience remains smooth
-- Native function calling support is work in progress (WIP)
+```bash
+argo-proxy serve --legacy-argo --pseudo-stream
+```
 
 ## Choosing the Right Mode
 
-### Use Real Stream When (Default since v2.7.7)
+For most users, **universal mode with default streaming** is the best choice. The legacy streaming options exist only for backward compatibility.
 
-- Running in production environments
-- You want the best streaming performance
-- Most general use cases
-- When you need true real-time streaming behavior
-
-### Use Pseudo Stream When
-
-- You experience issues with real streaming
-- Network conditions are highly variable
-- You prefer the previous behavior
+| Mode | Streaming | Tool Calls | Recommendation |
+|------|-----------|------------|----------------|
+| Universal (v3) | Real streaming via native endpoints | Full support | **Recommended** |
+| Legacy + Real Stream | Real streaming via ARGO gateway | Limited | Only if needed |
+| Legacy + Pseudo Stream | Simulated streaming | Limited | Only for compatibility |
 
 ## Troubleshooting
 
 ### Common Issues
 
-- **Streaming stops unexpectedly**: Switch to pseudo stream mode for more reliable results.
+- **Streaming stops unexpectedly in legacy mode**: Switch to pseudo stream mode for more reliable results, or switch to universal mode.
 - **High latency in pseudo mode**: Normal behavior if your task is relatively hard for the model, or you require longer responses.
-- **Connection timeouts in real mode**: Consider switching to pseudo stream for better reliability
+- **Connection timeouts**: Consider increasing `connection_test_timeout` in your config or switching to universal mode.

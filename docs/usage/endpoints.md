@@ -1,50 +1,68 @@
 # API Endpoints
 
-Argo Proxy provides multiple types of endpoints to accommodate different use cases and compatibility requirements.
+Argo Proxy provides a universal API gateway that serves all major LLM API formats. In v3 universal mode (default), requests are automatically routed to the optimal upstream endpoint based on the model family.
 
-Here we assume the service is running on `localhost:44497`. You should replace it with your actual service address.
+Here we assume the service is running on `localhost:44497`. Replace with your actual service address.
 
-## OpenAI Compatible Endpoints
+## Universal Endpoints (v3)
 
-These endpoints convert responses from the ARGO API to be compatible with OpenAI's format, allowing you to use existing OpenAI client libraries and tools.
+These endpoints are always available and support all models through automatic format translation via [llm-rosetta](https://github.com/Oaklight/llm-rosetta).
 
-### `/v1/chat/completions`
+### `/v1/chat/completions` — OpenAI Chat
 
-Chat Completions API - the primary endpoint for conversational AI.
+The primary endpoint for OpenAI Chat Completions API.
 
 ```bash
 POST http://localhost:44497/v1/chat/completions
 ```
 
-### `/v1/completions`
+Supports all models (GPT, Claude, Gemini). Requests for Claude models are automatically translated to native Anthropic format upstream, while GPT and Gemini models use the native OpenAI-compatible upstream.
 
-Legacy Completions API for text completion tasks.
+### `/v1/responses` — OpenAI Responses
 
-```bash
-POST http://localhost:44497/v1/completions
-```
-
-**Note**: This is the legacy format. Use `/v1/chat/completions` for new applications.
-
-### `/v1/embeddings`
-
-Embedding API for generating text embeddings.
-
-```bash
-POST http://localhost:44497/v1/embeddings
-```
-
-### `/v1/responses`
-
-**Available from**: v2.7.0
-
-Response API - OpenAI's next generation API endpoint for handling response-based interactions. Experimental, use with caution.
+OpenAI's Responses API endpoint.
 
 ```bash
 POST http://localhost:44497/v1/responses
 ```
 
-### `/v1/models`
+Supports all models. Cross-format translation is handled automatically.
+
+### `/v1/messages` — Anthropic Messages
+
+Native Anthropic Messages API endpoint. Use this with the Anthropic SDK, Claude Code, or any Anthropic-compatible client.
+
+```bash
+POST http://localhost:44497/v1/messages
+```
+
+Supports all models. Requests for non-Claude models are automatically translated to OpenAI Chat format upstream.
+
+### `/v1beta/models/{model}:generateContent` — Google GenAI
+
+Google GenAI (Gemini) content generation endpoint.
+
+```bash
+POST http://localhost:44497/v1beta/models/gemini-2.5-flash:generateContent
+```
+
+### `/v1beta/models/{model}:streamGenerateContent` — Google GenAI (Streaming)
+
+Google GenAI streaming endpoint.
+
+```bash
+POST http://localhost:44497/v1beta/models/gemini-2.5-flash:streamGenerateContent
+```
+
+### `/v1/embeddings` — Embeddings
+
+OpenAI-compatible embedding API. Passed through to the native OpenAI endpoint.
+
+```bash
+POST http://localhost:44497/v1/embeddings
+```
+
+### `/v1/models` — Model List
 
 Lists available models in OpenAI-compatible format.
 
@@ -52,15 +70,28 @@ Lists available models in OpenAI-compatible format.
 GET http://localhost:44497/v1/models
 ```
 
-**Response**: Returns a list of available chat and embedding models with OpenAI-compatible naming.
+**Response**: Returns a list of available chat and embedding models with their aliases.
 
-## Direct ARGO API Endpoints
+## Routing Logic
 
-These endpoints interact directly with the ARGO API and do not convert responses to OpenAI's format. Use these when you need direct access to ARGO-specific features or response formats.
+In universal mode, argo-proxy routes requests to the optimal upstream based on the model family:
+
+| Model Family | Upstream | Reason |
+|---|---|---|
+| OpenAI (GPT) | OpenAI Chat endpoint | Natural fit |
+| Google (Gemini) | OpenAI Chat endpoint | Only option on ARGO |
+| Anthropic (Claude) | Anthropic native endpoint | Avoids tool call issues on OpenAI-compat |
+| Unknown | OpenAI Chat endpoint | Best-effort default |
+
+When the client format matches the upstream format (e.g., OpenAI client + GPT model), requests pass through directly without conversion. When formats differ (e.g., Anthropic client + GPT model), llm-rosetta handles the translation.
+
+## Legacy Endpoints
+
+These endpoints are only available when legacy mode is enabled (`--legacy-argo` or `use_legacy_argo: true`).
 
 ### `/v1/chat`
 
-Proxies requests to the ARGO API without conversion.
+Proxies requests directly to the legacy ARGO Chat API without format conversion.
 
 ```bash
 POST http://localhost:44497/v1/chat
@@ -68,10 +99,18 @@ POST http://localhost:44497/v1/chat
 
 ### `/v1/embed`
 
-Proxies requests to the ARGO Embedding API without conversion.
+Proxies requests directly to the legacy ARGO Embedding API.
 
 ```bash
 POST http://localhost:44497/v1/embed
+```
+
+### `/v1/completions`
+
+Legacy Completions API (text completion). Only available in legacy mode.
+
+```bash
+POST http://localhost:44497/v1/completions
 ```
 
 ## Utility Endpoints
@@ -84,17 +123,11 @@ Health check endpoint for monitoring and load balancing.
 GET http://localhost:44497/health
 ```
 
-**Response**: Returns `200 OK` if the server is running properly.
-
-**Use cases:**
-
-- Service discovery
+**Response**: Returns `200 OK` with `{"status": "healthy"}` if the server is running.
 
 ### `/version`
 
-**Available from**: v2.7.0.post1
-
-Returns version information and update notifications.
+Returns version information and update availability.
 
 ```bash
 GET http://localhost:44497/version
@@ -102,15 +135,13 @@ GET http://localhost:44497/version
 
 **Response**:
 
-- Current ArgoProxy version
-- Notification if a new version is available
-- Version comparison information
+- Current argo-proxy version
+- Latest version on PyPI
+- Update instructions if a newer version is available
 
 ### `/refresh`
 
-**Available from**: v2.8.6
-
-Reloads the model list from the upstream ARGO API without restarting the instance. Useful when new models are added upstream and you want to pick them up immediately.
+Reloads the model list from the upstream ARGO API without restarting.
 
 ```bash
 POST http://localhost:44497/refresh
@@ -134,8 +165,3 @@ POST http://localhost:44497/refresh
     }
 }
 ```
-
-**Use cases:**
-
-- Picking up newly added upstream models without downtime
-- Recovering from a stale model list after transient network issues

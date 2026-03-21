@@ -1,6 +1,6 @@
 # Installation
 
-![PyPI - Version](https://img.shields.io/pypi/v/argo-proxy)
+[![PyPI version](https://img.shields.io/pypi/v/argo-proxy?color=green)](https://pypi.org/project/argo-proxy/)
 
 ## Prerequisites
 
@@ -19,13 +19,30 @@ Install the current stable version from PyPI:
 pip install argo-proxy
 ```
 
-### Upgrade to Latest Version
+### Pre-release Installation
 
-To upgrade to the latest version:
+To install the latest pre-release (e.g., v3.0.0 beta):
 
 ```bash
-argo-proxy --version  # Display current version
-# Check against PyPI version
+pip install --pre argo-proxy
+```
+
+### Upgrade to Latest Version
+
+```bash
+# Check current version and available updates
+argo-proxy update check
+
+# Install latest stable
+argo-proxy update install
+
+# Install latest pre-release
+argo-proxy update install --pre
+```
+
+Or manually:
+
+```bash
 pip install argo-proxy --upgrade
 ```
 
@@ -33,20 +50,12 @@ pip install argo-proxy --upgrade
 
 If you decide to use the development version (make sure you are at the root of the repo cloned):
 
-![GitHub Release](https://img.shields.io/github/v/release/Oaklight/argo-proxy)
+[![GitHub Release](https://img.shields.io/github/v/release/Oaklight/argo-proxy)](https://github.com/Oaklight/argo-proxy/releases)
 
 ```bash
 git clone https://github.com/Oaklight/argo-proxy.git
 cd argo-proxy
 pip install .
-```
-
-## Function Calling Support
-
-Function calling is available for Chat Completions endpoint starting from `v2.7.5`. To use function calling features:
-
-```bash
-pip install "argo-proxy>=2.7.5"
 ```
 
 ## Verification
@@ -57,4 +66,4 @@ After installation, verify that argo-proxy is installed correctly:
 argo-proxy --version
 ```
 
-This should display the installed version number.
+This should display the installed version number and check for updates.
