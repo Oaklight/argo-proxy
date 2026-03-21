@@ -769,11 +769,18 @@ def _update_check():
     stable = versions.get("stable")
     pre = versions.get("pre")
 
+    cur_parsed = version.parse(current)
+
     if stable:
         try:
-            if version.parse(stable) > version.parse(current):
+            stable_parsed = version.parse(stable)
+            if stable_parsed > cur_parsed:
                 log_info(
                     f"  Stable:      v{stable}  ← upgrade available", context="cli"
+                )
+            elif cur_parsed > stable_parsed:
+                log_info(
+                    f"  Stable:      v{stable}  (installed is newer)", context="cli"
                 )
             else:
                 log_info(f"  Stable:      v{stable}  (up to date)", context="cli")
@@ -783,17 +790,26 @@ def _update_check():
         log_warning("  Stable:      (unable to fetch)", context="cli")
 
     if pre:
-        log_info(f"  Pre-release: v{pre}", context="cli")
+        try:
+            pre_parsed = version.parse(pre)
+            if pre_parsed > cur_parsed:
+                log_info(f"  Pre-release: v{pre}  ← upgrade available", context="cli")
+            elif pre_parsed == cur_parsed:
+                log_info(f"  Pre-release: v{pre}  (up to date)", context="cli")
+            else:
+                log_info(f"  Pre-release: v{pre}  (installed is newer)", context="cli")
+        except Exception:
+            log_info(f"  Pre-release: v{pre}", context="cli")
     else:
         log_info("  Pre-release: (none available)", context="cli")
 
     print()
     pip_cmd = " ".join(_detect_pip_command())
-    if stable and version.parse(stable) > version.parse(current):
+    if stable and version.parse(stable) > cur_parsed:
         log_info(
             f"  Update:       {pip_cmd} install --upgrade argo-proxy", context="cli"
         )
-    if pre:
+    if pre and version.parse(pre) > cur_parsed:
         log_info(
             f"  Pre-release:  {pip_cmd} install --upgrade --pre argo-proxy",
             context="cli",
