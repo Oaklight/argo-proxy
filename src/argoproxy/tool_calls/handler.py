@@ -271,7 +271,7 @@ class Tool(BaseModel):
             origin_tool = ToolParam.model_validate(tool)
             # Ensure input_schema is in dictionary format
             if hasattr(origin_tool.input_schema, "model_dump"):
-                parameters = origin_tool.input_schema.model_dump()
+                parameters = origin_tool.input_schema.model_dump()  # ty: ignore[call-non-callable]
             elif isinstance(origin_tool.input_schema, dict):
                 parameters = origin_tool.input_schema
             else:

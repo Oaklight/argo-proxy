@@ -75,7 +75,7 @@ class StaticOverrideResolver(aiohttp.abc.AbstractResolver):
                     "flags": socket.AI_NUMERICHOST,
                 }
             ]
-        return await self._fallback.resolve(host, port, family)
+        return await self._fallback.resolve(host, port, family)  # ty: ignore[invalid-argument-type]
 
     async def close(self) -> None:
         """Close the fallback resolver."""
