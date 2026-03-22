@@ -6,8 +6,9 @@ This page records the major version changes and important feature updates of the
 
 ### Fixed
 
+- **Same-format passthrough tool schema sanitization**: Added `_sanitize_tool_schemas()` to sanitize tool parameter schemas in the passthrough path (when `source_provider == target_provider`). Upstreams like Vertex AI reject unsupported JSON Schema keywords even in passthrough mode (#76)
 - **Stream termination fallback**: Added fallback in `_convert_streaming()` — when the upstream stream ends without sending a `StreamEndEvent` trigger (empty-choices chunk), synthesize termination events (`message_delta`, `message_stop`) so the client receives a complete Anthropic SSE event sequence (#79)
-- **Bumped llm-rosetta to v0.2.2**: Picks up Gemini tool schema sanitization and streaming `content_block_stop` fixes (Oaklight/llm-rosetta#76, Oaklight/llm-rosetta#77)
+- **Bumped llm-rosetta to v0.2.2**: Picks up comprehensive tool schema sanitization across all converters, `$ref`/`$defs` resolution, streaming tool call argument accumulation fixes, and Anthropic `content_block_stop` fix (Oaklight/llm-rosetta#76, #77, #80, #81)
 
 ## v3.0.0 (2026-03-21)
 
