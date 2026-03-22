@@ -24,7 +24,6 @@ from .models import ModelRegistry
 from .performance import (
     OptimizedHTTPSession,
     get_performance_config,
-    optimize_event_loop,
 )
 from .utils.logging import log_debug, log_error, log_info, log_warning
 
@@ -91,9 +90,6 @@ async def prepare_app(app):
     )
     log_info("   └─ Model availability refreshed successfully", context="app")
     log_info("=" * 60, context="app")
-
-    # Apply event loop optimizations
-    await optimize_event_loop()
 
     # Get performance configuration
     perf_config = get_performance_config()
