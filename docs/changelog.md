@@ -13,7 +13,7 @@ This page records the major version changes and important feature updates of the
 
 ### Changed
 
-- **Bumped llm-rosetta to v0.2.5**: Picks up full-stack Google GenAI camelCase support (content, tools, config, response fields), cross-format image passthrough fixes, tool_call_id reconciliation by function name, tool_call_id length fix (29 chars), role mapping normalization, mixed content ordering fix, and built-in tool handling (Oaklight/llm-rosetta v0.2.4–v0.2.5)
+- **Bumped llm-rosetta to v0.2.5**: Picks up full-stack Google GenAI camelCase support, cross-format image passthrough fixes, tool_call_id reconciliation, `input_schema` type default for parameterless tools, and built-in tool handling (Oaklight/llm-rosetta v0.2.4–v0.2.5)
 - **Refactored `dispatch.py`**: Merged 4 identical SSE formatters into 2, extracted `_write_sse_chunks()` / `_ensure_user_field()` helpers, defined `_STREAMING_HEADERS` constant, added `Callable` type hint to `_SSE_FORMATTERS`
 - **Modernized typing imports**: Replaced `typing.List`, `Dict`, `Tuple`, `Set` with Python 3.10+ built-in generics via ruff UP006 (525 auto-fixes across 31 files); removed `typing_extensions.Literal` in favor of `typing.Literal`
 - **Added ruff and ty configuration**: `pyproject.toml` now includes `[tool.ruff]` (target-version py310, select E/F/UP, ignore UP007/E501) and `[tool.ty]` (python-version 3.10, unresolved-import ignore) sections
