@@ -2,6 +2,16 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v3.0.0b7 (2026-03-22)
+
+### Fixed
+
+- **Orphaned tool_calls cause 400 on OpenAI upstream**: When a tool call is interrupted (e.g. user cancels mid-execution in Claude Code), the `tool_calls` entry remains in conversation history without a matching `role: "tool"` response. OpenAI API strictly rejects this. Now fixed via `fix_orphaned_tool_calls()` from llm-rosetta — applied in both passthrough and cross-format paths (#82)
+
+### Changed
+
+- **Bumped llm-rosetta to v0.2.4**: Picks up `fix_orphaned_tool_calls()` utility and auto-application in `OpenAIChatConverter.request_to_provider()` (Oaklight/llm-rosetta#82)
+
 ## v3.0.0b6 (2026-03-22)
 
 ### Changed
