@@ -376,6 +376,11 @@ async def _convert_non_streaming(
     if warnings:
         log_info(f"Conversion warnings: {warnings}", context="dispatch")
 
+    # Inject user into converted body (cross-format IR round-trips
+    # produce a fresh target_body without the user field).
+    if "user" not in target_body:
+        target_body["user"] = config.user
+
     # Log the converted body
     log_converted_request(target_body, verbose=config.verbose)
 
@@ -468,6 +473,11 @@ async def _convert_streaming(
     # 3. Inject stream flags
     target_body = _inject_stream_flags(target_body, target_provider)
     log_converted_request(target_body, verbose=config.verbose)
+
+    # Inject user into converted body (cross-format IR round-trips
+    # produce a fresh target_body without the user field).
+    if "user" not in target_body:
+        target_body["user"] = config.user
 
     format_sse = _SSE_FORMATTERS[source_provider]
 
