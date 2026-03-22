@@ -2,15 +2,17 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
-## v3.0.0b7 (2026-03-22)
+## v3.0.0b7 (2026-03-23)
 
 ### Fixed
 
-- **Orphaned tool_calls cause 400 on OpenAI upstream**: When a tool call is interrupted (e.g. user cancels mid-execution in Claude Code), the `tool_calls` entry remains in conversation history without a matching `role: "tool"` response. OpenAI API strictly rejects this. Now fixed via `fix_orphaned_tool_calls()` from llm-rosetta — applied in both passthrough and cross-format paths (#82)
+- **Orphaned tool_calls cause 400 on strict upstreams**: When a tool call is interrupted (e.g. user cancels mid-execution in Claude Code), the `tool_calls` entry remains in conversation history without a matching `role: "tool"` response. OpenAI and Anthropic APIs strictly reject this. Now fixed via `fix_orphaned_tool_calls()` from llm-rosetta — applied in both passthrough and cross-format paths for **all three strict-pairing providers** (OpenAI Chat, OpenAI Responses, Anthropic) (#82)
+- **Missing `user` field in cross-format requests**: Cross-format IR round-trips produce a fresh request body that drops the `user` field, causing upstream auth/tracking to lose the user identity. Now injected automatically in both streaming and non-streaming conversion paths
 
 ### Changed
 
-- **Bumped llm-rosetta to v0.2.4**: Picks up `fix_orphaned_tool_calls()` utility and auto-application in `OpenAIChatConverter.request_to_provider()` (Oaklight/llm-rosetta#82)
+- **Bumped llm-rosetta to v0.2.5**: Picks up full-stack Google GenAI camelCase support (content, tools, config, response fields), cross-format image passthrough fixes, tool_call_id reconciliation by function name, tool_call_id length fix (29 chars), role mapping normalization, mixed content ordering fix, and built-in tool handling (Oaklight/llm-rosetta v0.2.4–v0.2.5)
+- **Refactored `dispatch.py`**: Merged 4 identical SSE formatters into 2, extracted `_write_sse_chunks()` / `_ensure_user_field()` helpers, defined `_STREAMING_HEADERS` constant, added `Callable` type hint to `_SSE_FORMATTERS`
 
 ## v3.0.0b6 (2026-03-22)
 
