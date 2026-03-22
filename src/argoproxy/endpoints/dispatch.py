@@ -42,6 +42,7 @@ from ..utils.logging import (
     log_info,
     log_original_request,
     log_upstream_error,
+    log_warning,
 )
 from ..utils.misc import apply_username_passthrough
 
@@ -271,6 +272,72 @@ async def _write_sse_chunks(
         await response.write(format_sse(source_chunks).encode("utf-8"))
 
 
+def _source_request_explicitly_omits_tools(
+    source_provider: ProviderType,
+    body: dict[str, Any],
+) -> bool:
+    """Whether the source request omitted tool definitions entirely.
+
+    This is intentionally source-format aware because not every provider
+    encodes tool definitions under the same top-level key.
+    """
+    if source_provider in ("openai_chat", "openai_responses", "anthropic"):
+        return "tools" not in body
+
+    if source_provider == "google":
+        config = body.get("config")
+        if isinstance(config, dict) and "tools" in config:
+            return False
+        return "tools" not in body
+
+    return True
+
+
+def _strip_orphaned_tool_fields(
+    ir_request: dict[str, Any],
+    *,
+    source_provider: ProviderType,
+    body: dict[str, Any],
+) -> list[str]:
+    """Remove tool-related IR fields only when the source omitted tools.
+
+    Returns the list of stripped field names for logging/testing.
+    """
+    if not _source_request_explicitly_omits_tools(source_provider, body):
+        return []
+    if "tools" in ir_request:
+        return []
+
+    stripped = [k for k in ("tool_choice", "tool_config") if k in ir_request]
+    for key in stripped:
+        ir_request.pop(key)
+    return stripped
+
+
+def _should_log_upstream_tool_chunk(chunk_data: dict[str, Any]) -> bool:
+    """Whether an upstream SSE chunk carries tool-call related data."""
+    chunk_type = chunk_data.get("type", "")
+    if chunk_type in {
+        "response.output_item.added",
+        "response.function_call_arguments.delta",
+        "response.function_call_arguments.done",
+    }:
+        return True
+
+    choices = chunk_data.get("choices", [])
+    if isinstance(choices, list):
+        for choice in choices:
+            if not isinstance(choice, dict):
+                continue
+            delta = choice.get("delta", {})
+            if isinstance(delta, dict) and delta.get("tool_calls"):
+                return True
+
+    return False
+
+
+
+
 # ---------------------------------------------------------------------------
 # Image preprocessing (runs BEFORE format conversion)
 # ---------------------------------------------------------------------------
@@ -366,25 +433,15 @@ async def _convert_non_streaming(
     session: aiohttp.ClientSession,
     upstream_url: str,
     headers: dict[str, str],
-    body: dict[str, Any],
+    ir_request: dict[str, Any],
+    source_converter: Any,
+    target_converter: Any,
     source_provider: ProviderType,
     target_provider: ProviderType,
     config: ArgoConfig,
 ) -> web.Response:
-    """Non-streaming: source → IR → target → upstream → IR → source."""
-    source_converter = get_converter_for_provider(source_provider)
-    target_converter = get_converter_for_provider(target_provider)
-
-    # 1. Source → IR
-    try:
-        ir_request = source_converter.request_from_provider(body)
-    except Exception as exc:
-        return _error_response(source_provider, 400, f"Failed to parse request: {exc}")
-
-    if config.verbose:
-        log_debug(f"IR request keys: {list(ir_request.keys())}", context="dispatch")
-
-    # 2. IR → Target
+    """Non-streaming: IR → target → upstream → IR → source."""
+    # 1. IR → Target
     try:
         convert_kwargs: dict[str, str] = {}
         if target_provider == "google":
@@ -400,8 +457,8 @@ async def _convert_non_streaming(
 
     _ensure_user_field(target_body, config.user)
 
-    # Log the converted body
-    log_converted_request(target_body, verbose=config.verbose)
+    if config.verbose:
+        log_converted_request(target_body, verbose=True)
 
     # 3. Forward to upstream
     try:
@@ -459,23 +516,16 @@ async def _convert_streaming(
     session: aiohttp.ClientSession,
     upstream_url: str,
     headers: dict[str, str],
-    body: dict[str, Any],
+    ir_request: dict[str, Any],
+    source_converter: Any,
+    target_converter: Any,
     source_provider: ProviderType,
     target_provider: ProviderType,
     request: web.Request,
     config: ArgoConfig,
 ) -> web.StreamResponse:
-    """Streaming: source → IR → target → upstream SSE → IR events → source SSE."""
-    source_converter = get_converter_for_provider(source_provider)
-    target_converter = get_converter_for_provider(target_provider)
-
-    # 1. Source → IR
-    try:
-        ir_request = source_converter.request_from_provider(body)
-    except Exception as exc:
-        return _error_response(source_provider, 400, f"Failed to parse request: {exc}")
-
-    # 2. IR → Target
+    """Streaming: IR → target → upstream SSE → IR events → source SSE."""
+    # 1. IR → Target
     try:
         convert_kwargs: dict[str, str] = {}
         if target_provider == "google":
@@ -486,12 +536,13 @@ async def _convert_streaming(
     except Exception as exc:
         return _error_response(source_provider, 400, f"Conversion error: {exc}")
 
-    if warnings:
-        log_info(f"Conversion warnings: {warnings}", context="dispatch")
-
     # 3. Inject stream flags
     target_body = _inject_stream_flags(target_body, target_provider)
-    log_converted_request(target_body, verbose=config.verbose)
+
+    if warnings:
+        log_info(f"Conversion warnings: {warnings}", context="dispatch")
+    if config.verbose:
+        log_converted_request(target_body, verbose=True)
 
     _ensure_user_field(target_body, config.user)
 
@@ -564,6 +615,12 @@ async def _convert_streaming(
 
                     chunk_count += 1
 
+                    if config.verbose and _should_log_upstream_tool_chunk(chunk_data):
+                        log_debug(
+                            f"Upstream tool chunk: {json.dumps(chunk_data)}",
+                            context="dispatch",
+                        )
+
                     # Upstream chunk → IR events
                     ir_events = target_converter.stream_response_from_provider(
                         chunk_data, context=from_ctx
@@ -571,6 +628,15 @@ async def _convert_streaming(
 
                     # IR events → source-format chunks
                     for ir_event in ir_events:
+                        # Log IR tool-call events
+                        if config.verbose:
+                            _etype = ir_event.get("type", "")
+                            if "tool_call" in _etype:
+                                log_debug(
+                                    f"IR event: {json.dumps(ir_event)}",
+                                    context="dispatch",
+                                )
+
                         source_chunks = source_converter.stream_response_to_provider(
                             ir_event, context=to_ctx
                         )
@@ -744,12 +810,51 @@ async def proxy_request(
                 context="dispatch",
             )
 
+        # Source → IR (shared by streaming and non-streaming paths)
+        source_converter = get_converter_for_provider(source_provider)
+        target_converter = get_converter_for_provider(target_provider)
+
+        try:
+            ir_request = source_converter.request_from_provider(body)
+        except Exception as exc:
+            return _error_response(
+                source_provider, 400, f"Failed to parse request: {exc}"
+            )
+
+        # Strip orphaned tool_choice/tool_config only when the original
+        # request omitted tool definitions entirely.
+        # Codex sends tool_choice during context compaction even after
+        # dropping all tool definitions; upstream rejects this as a 400.
+        stripped = _strip_orphaned_tool_fields(
+            ir_request,
+            source_provider=source_provider,
+            body=body,
+        )
+        if stripped and config.verbose:
+            log_debug(
+                f"Stripped orphaned {', '.join(stripped)} (no tools present)",
+                context="dispatch",
+            )
+        if stripped:
+            log_warning(
+                f"Stripped orphaned {', '.join(stripped)} from request with no tool "
+                "definitions (workaround for Codex CLI context compaction)",
+                context="dispatch",
+            )
+
+        if config.verbose:
+            log_debug(
+                f"IR request keys: {list(ir_request.keys())}", context="dispatch"
+            )
+
         if stream:
             return await _convert_streaming(
                 session,
                 upstream_url,
                 headers,
-                body,
+                ir_request,
+                source_converter,
+                target_converter,
                 source_provider,
                 target_provider,
                 request,
@@ -760,7 +865,9 @@ async def proxy_request(
             session,
             upstream_url,
             headers,
-            body,
+            ir_request,
+            source_converter,
+            target_converter,
             source_provider,
             target_provider,
             config,
