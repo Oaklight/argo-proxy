@@ -2,6 +2,13 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v3.0.0b5 (2026-03-22)
+
+### Fixed
+
+- **Stream termination fallback**: Added fallback in `_convert_streaming()` — when the upstream stream ends without sending a `StreamEndEvent` trigger (empty-choices chunk), synthesize termination events (`message_delta`, `message_stop`) so the client receives a complete Anthropic SSE event sequence (#79)
+- **Bumped llm-rosetta to v0.2.2**: Picks up Gemini tool schema sanitization and streaming `content_block_stop` fixes (Oaklight/llm-rosetta#76, Oaklight/llm-rosetta#77)
+
 ## v3.0.0 (2026-03-21)
 
 ### Major Features
