@@ -2,13 +2,20 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v3.0.0b6 (2026-03-22)
+
+### Changed
+
+- **Bumped llm-rosetta to v0.2.3**: Picks up tool schema sanitization across all converters (#80), `$ref`/`$defs` resolution (#80), streaming tool call argument accumulation fixes (#81), and `sanitize_schema` extraction to shared base module (#66)
+- **Updated `sanitize_schema` import path**: `dispatch.py` now imports `sanitize_schema` from `llm_rosetta.converters.base.tools` instead of `llm_rosetta.converters.openai_chat.tool_ops` (follows upstream refactoring in Oaklight/llm-rosetta#66)
+
 ## v3.0.0b5 (2026-03-22)
 
 ### Fixed
 
 - **Same-format passthrough tool schema sanitization**: Added `_sanitize_tool_schemas()` to sanitize tool parameter schemas in the passthrough path (when `source_provider == target_provider`). Upstreams like Vertex AI reject unsupported JSON Schema keywords even in passthrough mode (#76)
 - **Stream termination fallback**: Added fallback in `_convert_streaming()` — when the upstream stream ends without sending a `StreamEndEvent` trigger (empty-choices chunk), synthesize termination events (`message_delta`, `message_stop`) so the client receives a complete Anthropic SSE event sequence (#79)
-- **Bumped llm-rosetta to v0.2.2**: Picks up comprehensive tool schema sanitization across all converters, `$ref`/`$defs` resolution, streaming tool call argument accumulation fixes, and Anthropic `content_block_stop` fix (Oaklight/llm-rosetta#76, #77, #80, #81)
+- **Bumped llm-rosetta to v0.2.2**: Picks up Anthropic `content_block_stop` fix and upstream preflight chunk handling (Oaklight/llm-rosetta#77)
 
 ## v3.0.0 (2026-03-21)
 
