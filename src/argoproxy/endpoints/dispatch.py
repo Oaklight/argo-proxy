@@ -20,6 +20,7 @@ from aiohttp import web
 from llm_rosetta import get_converter_for_provider
 from llm_rosetta.auto_detect import ProviderType
 from llm_rosetta.converters.base.stream_context import StreamContext
+from llm_rosetta.converters.openai_chat.tool_ops import _sanitize_schema
 
 from ..config import ArgoConfig
 from ..models import ModelRegistry
@@ -132,6 +133,41 @@ def _detect_stream(source_provider: ProviderType, body: dict[str, Any]) -> bool:
         return bool(body.get("stream", False))
     # Google streaming is determined by URL, not body
     return False
+
+
+def _sanitize_tool_schemas(body: dict[str, Any]) -> dict[str, Any]:
+    """Sanitize tool parameter schemas for upstream compatibility.
+
+    Strips unsupported JSON Schema keywords and flattens combination keywords
+    (``anyOf``/``oneOf``/``allOf``) that upstreams like Vertex AI reject.
+    Operates on both OpenAI-format (``function.parameters``) and
+    Anthropic-format (``input_schema``) tool definitions.
+
+    Args:
+        body: The request body (modified in-place for tool schemas).
+
+    Returns:
+        The same body dict with sanitized tool schemas.
+    """
+    tools = body.get("tools")
+    if not tools or not isinstance(tools, list):
+        return body
+
+    for tool in tools:
+        # OpenAI Chat format: tools[].function.parameters
+        func = tool.get("function")
+        if isinstance(func, dict):
+            params = func.get("parameters")
+            if isinstance(params, dict):
+                func["parameters"] = _sanitize_schema(params)
+            continue
+
+        # Anthropic format: tools[].input_schema
+        schema = tool.get("input_schema")
+        if isinstance(schema, dict):
+            tool["input_schema"] = _sanitize_schema(schema)
+
+    return body
 
 
 def _build_upstream_headers(
@@ -653,6 +689,10 @@ async def proxy_request(
         if source_provider == target_provider:
             if config.verbose:
                 log_debug("Same-format passthrough (no conversion)", context="dispatch")
+
+            # Sanitize tool schemas even in passthrough mode — upstreams
+            # like Vertex AI reject unsupported JSON Schema keywords.
+            _sanitize_tool_schemas(body)
 
             if stream:
                 return await _passthrough_streaming(
