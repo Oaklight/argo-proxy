@@ -272,6 +272,7 @@ def sanitize_request_data(
     max_tool_desc_length: int = 100,
     truncate_tools: bool = True,
     truncate_messages: bool = True,
+    max_history_items: int = 3,
 ) -> dict[str, Any]:
     """
     Sanitizes request data for logging by truncating long content.
@@ -283,6 +284,8 @@ def sanitize_request_data(
         max_tool_desc_length: Maximum length to show for tool descriptions.
         truncate_tools: Whether to truncate tool definitions.
         truncate_messages: Whether to truncate message content.
+        max_history_items: Keep only the last N items from input/messages
+            arrays. Earlier items are replaced with a count summary.
 
     Returns:
         Sanitized data dictionary with truncated content for cleaner logging.
@@ -290,13 +293,23 @@ def sanitize_request_data(
     # Deep copy to avoid modifying original data
     sanitized = copy.deepcopy(data)
 
+    # Truncate conversation history to the last few items.
+    # Responses API uses "input", Chat Completions uses "messages".
+    # The full history is sent with every request (stateless protocol),
+    # so logging it all every time is redundant and noisy.
+    for key in ("input", "messages"):
+        items = sanitized.get(key)
+        if isinstance(items, list) and len(items) > max_history_items:
+            skipped = len(items) - max_history_items
+            sanitized[key] = [
+                f"[... {skipped} earlier items omitted ...]",
+                *items[-max_history_items:],
+            ]
+
     # Process messages if they exist
-    if (
-        truncate_messages
-        and "messages" in sanitized
-        and isinstance(sanitized["messages"], list)
-    ):
-        for message in sanitized["messages"]:
+    messages = sanitized.get("messages")
+    if truncate_messages and isinstance(messages, list):
+        for message in messages:
             if isinstance(message, dict) and "content" in message:
                 content = message["content"]
 
@@ -330,6 +343,27 @@ def sanitize_request_data(
                                     content_part["text"], max_content_length
                                 )
 
+    # Truncate Responses API input items the same way as messages
+    input_items = sanitized.get("input")
+    if truncate_messages and isinstance(input_items, list):
+        for item in input_items:
+            if not isinstance(item, dict):
+                continue
+            content = item.get("content")
+            if isinstance(content, list):
+                for part in content:
+                    if (
+                        isinstance(part, dict)
+                        and part.get("type") in ("input_text", "output_text")
+                        and isinstance(part.get("text"), str)
+                        and len(part["text"]) > max_content_length
+                    ):
+                        part["text"] = truncate_string(
+                            part["text"], max_content_length
+                        )
+            elif isinstance(content, str) and len(content) > max_content_length:
+                item["content"] = truncate_string(content, max_content_length)
+
     # Process tools if they exist and truncation is enabled
     if truncate_tools and "tools" in sanitized and isinstance(sanitized["tools"], list):
         tool_count = len(sanitized["tools"])
@@ -355,10 +389,13 @@ def create_request_summary(data: dict[str, Any]) -> str:
     if "model" in data:
         summary_parts.append(f"model={data['model']}")
 
-    # Message count
+    # Message / input item count
     if "messages" in data and isinstance(data["messages"], list):
         msg_count = len(data["messages"])
         summary_parts.append(f"messages={msg_count}")
+    elif "input" in data and isinstance(data["input"], list):
+        input_count = len(data["input"])
+        summary_parts.append(f"input={input_count}")
 
     # Tools
     if "tools" in data and isinstance(data["tools"], list):
