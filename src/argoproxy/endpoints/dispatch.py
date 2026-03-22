@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import time
 import traceback
+from collections.abc import Callable
 from typing import Any, Union
 
 import aiohttp
@@ -49,29 +50,22 @@ from ..utils.misc import apply_username_passthrough
 # ---------------------------------------------------------------------------
 
 
-def _format_sse_openai_chat(chunk: dict[str, Any]) -> str:
+def _format_sse_data_only(chunk: dict[str, Any]) -> str:
+    """SSE with data field only (OpenAI Chat, Google)."""
     return f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
 
 
-def _format_sse_openai_responses(chunk: dict[str, Any]) -> str:
+def _format_sse_event_data(chunk: dict[str, Any]) -> str:
+    """SSE with event + data fields (Anthropic, OpenAI Responses)."""
     event_type = chunk.get("type", "unknown")
     return f"event: {event_type}\ndata: {json.dumps(chunk, ensure_ascii=False)}\n\n"
 
 
-def _format_sse_anthropic(chunk: dict[str, Any]) -> str:
-    event_type = chunk.get("type", "unknown")
-    return f"event: {event_type}\ndata: {json.dumps(chunk, ensure_ascii=False)}\n\n"
-
-
-def _format_sse_google(chunk: dict[str, Any]) -> str:
-    return f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
-
-
-_SSE_FORMATTERS: dict[str, Any] = {
-    "openai_chat": _format_sse_openai_chat,
-    "openai_responses": _format_sse_openai_responses,
-    "anthropic": _format_sse_anthropic,
-    "google": _format_sse_google,
+_SSE_FORMATTERS: dict[str, Callable[[dict[str, Any]], str]] = {
+    "openai_chat": _format_sse_data_only,
+    "openai_responses": _format_sse_event_data,
+    "anthropic": _format_sse_event_data,
+    "google": _format_sse_data_only,
 }
 
 
@@ -242,6 +236,35 @@ def _apply_anthropic_user_id(data: dict[str, Any], user: str) -> None:
     data["metadata"]["user_id"] = data.get("user", user)
 
 
+def _ensure_user_field(body: dict[str, Any], user: str) -> None:
+    """Inject ``user`` field if missing (cross-format IR round-trips drop it)."""
+    if "user" not in body:
+        body["user"] = user
+
+
+_STREAMING_HEADERS: dict[str, str] = {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+}
+
+
+async def _write_sse_chunks(
+    response: web.StreamResponse,
+    source_chunks: dict[str, Any] | list[dict[str, Any]] | None,
+    format_sse: Callable[[dict[str, Any]], str],
+) -> None:
+    """Write formatted SSE chunks to the streaming response."""
+    if not source_chunks:
+        return
+    if isinstance(source_chunks, list):
+        for sc in source_chunks:
+            if sc:
+                await response.write(format_sse(sc).encode("utf-8"))
+    else:
+        await response.write(format_sse(source_chunks).encode("utf-8"))
+
+
 # ---------------------------------------------------------------------------
 # Image preprocessing (runs BEFORE format conversion)
 # ---------------------------------------------------------------------------
@@ -316,14 +339,7 @@ async def _passthrough_streaming(
                 content_type="application/json",
             )
 
-        response = web.StreamResponse(
-            status=200,
-            headers={
-                "Content-Type": "text/event-stream",
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-            },
-        )
+        response = web.StreamResponse(status=200, headers=_STREAMING_HEADERS)
         response.enable_chunked_encoding()
         await response.prepare(request)
 
@@ -376,10 +392,7 @@ async def _convert_non_streaming(
     if warnings:
         log_info(f"Conversion warnings: {warnings}", context="dispatch")
 
-    # Inject user into converted body (cross-format IR round-trips
-    # produce a fresh target_body without the user field).
-    if "user" not in target_body:
-        target_body["user"] = config.user
+    _ensure_user_field(target_body, config.user)
 
     # Log the converted body
     log_converted_request(target_body, verbose=config.verbose)
@@ -474,10 +487,7 @@ async def _convert_streaming(
     target_body = _inject_stream_flags(target_body, target_provider)
     log_converted_request(target_body, verbose=config.verbose)
 
-    # Inject user into converted body (cross-format IR round-trips
-    # produce a fresh target_body without the user field).
-    if "user" not in target_body:
-        target_body["user"] = config.user
+    _ensure_user_field(target_body, config.user)
 
     format_sse = _SSE_FORMATTERS[source_provider]
 
@@ -502,14 +512,7 @@ async def _convert_streaming(
                 )
 
             # Prepare streaming response
-            response = web.StreamResponse(
-                status=200,
-                headers={
-                    "Content-Type": "text/event-stream",
-                    "Cache-Control": "no-cache",
-                    "Connection": "keep-alive",
-                },
-            )
+            response = web.StreamResponse(status=200, headers=_STREAMING_HEADERS)
             response.enable_chunked_encoding()
             await response.prepare(request)
 
@@ -565,14 +568,7 @@ async def _convert_streaming(
                         source_chunks = source_converter.stream_response_to_provider(
                             ir_event, context=to_ctx
                         )
-                        if isinstance(source_chunks, list):
-                            for sc in source_chunks:
-                                if sc:
-                                    await response.write(format_sse(sc).encode("utf-8"))
-                        elif source_chunks:
-                            await response.write(
-                                format_sse(source_chunks).encode("utf-8")
-                            )
+                        await _write_sse_chunks(response, source_chunks, format_sse)
 
             # ----------------------------------------------------------
             # Fallback: ensure stream is properly terminated.
@@ -595,12 +591,7 @@ async def _convert_streaming(
                 source_chunks = source_converter.stream_response_to_provider(
                     end_event, context=to_ctx
                 )
-                if isinstance(source_chunks, list):
-                    for sc in source_chunks:
-                        if sc:
-                            await response.write(format_sse(sc).encode("utf-8"))
-                elif source_chunks:
-                    await response.write(format_sse(source_chunks).encode("utf-8"))
+                await _write_sse_chunks(response, source_chunks, format_sse)
 
             # Emit end-of-stream marker for OpenAI Chat
             if source_provider == "openai_chat":
