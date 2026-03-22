@@ -21,6 +21,9 @@ from llm_rosetta import get_converter_for_provider
 from llm_rosetta.auto_detect import ProviderType
 from llm_rosetta.converters.base.stream_context import StreamContext
 from llm_rosetta.converters.base.tools import sanitize_schema
+from llm_rosetta.converters.anthropic.tool_ops import (
+    fix_orphaned_tool_calls as fix_orphaned_tool_calls_anthropic,
+)
 from llm_rosetta.converters.openai_chat.tool_ops import (
     fix_orphaned_tool_calls as fix_orphaned_tool_calls_chat,
 )
@@ -700,12 +703,12 @@ async def proxy_request(
             # like Vertex AI reject unsupported JSON Schema keywords.
             _sanitize_tool_schemas(body)
 
-            # Fix orphaned tool_calls in passthrough mode — both OpenAI
-            # Chat and Responses APIs reject requests where tool_call_ids
-            # lack matching tool results (e.g. from interrupted tool
-            # executions).  For cross-format conversion this is handled
-            # automatically by llm-rosetta's converters at the IR level.
-            # See: https://llm-rosetta.readthedocs.io/en/latest/guide/converters/#orphaned-tool-calls
+            # Fix orphaned tool_calls/results in passthrough mode — OpenAI
+            # and Anthropic strictly require bidirectional pairing between
+            # tool calls and results (Google is lenient).  For cross-format
+            # conversion this is handled at the IR level by llm-rosetta's
+            # converters.
+            # See: https://llm-rosetta.readthedocs.io/en/latest/guide/converters/#tool-call-result-pairing
             if target_provider == "openai_chat":
                 messages = body.get("messages")
                 if messages and isinstance(messages, list):
@@ -714,6 +717,10 @@ async def proxy_request(
                 input_items = body.get("input")
                 if input_items and isinstance(input_items, list):
                     body["input"] = fix_orphaned_tool_calls_responses(input_items)
+            elif target_provider == "anthropic":
+                messages = body.get("messages")
+                if messages and isinstance(messages, list):
+                    body["messages"] = fix_orphaned_tool_calls_anthropic(messages)
 
             if stream:
                 return await _passthrough_streaming(
