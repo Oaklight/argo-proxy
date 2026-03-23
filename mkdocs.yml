@@ -97,10 +97,10 @@ nav:
       - Running: usage/running.md
       - Endpoints: usage/endpoints.md
       - Models: usage/models.md
-      - "CLI Tools Guide": usage/cli-tools.md
+      - "AI Coding Tools": usage/cli-tools.md
       - Basics:
           - usage/basics/index.md
-          - "CLI": usage/basics/cli.md
+          - "CLI Reference": usage/basics/cli.md
           - "Configuration": usage/basics/configuration.md
           - "Network": usage/basics/network.md
           - "Timeout Examples": usage/basics/timeout_examples.md
