@@ -11,7 +11,7 @@ hide:
 # Argo Proxy
 
 [![PyPI version](https://img.shields.io/pypi/v/argo-proxy?color=green)](https://pypi.org/project/argo-proxy/)
-[![GitHub pre-release](https://img.shields.io/github/v/release/Oaklight/argo-proxy?include_prereleases&label=pre-release&color=orange)](https://github.com/Oaklight/argo-proxy/releases)
+[![PyPI pre-release](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/Oaklight/c6a14fa27347321adfed1a01964b17c1/raw/pypi-badge.json)](https://pypi.org/project/argo-proxy/#history)
 
 **A universal API gateway for LLM services via Argo** — translates between OpenAI, Anthropic, and Google GenAI formats, routing requests to the optimal upstream ARGO endpoint automatically.
 
