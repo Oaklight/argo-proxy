@@ -14,18 +14,11 @@ jobs:
         run: |
           VERSION=$(python3 -c "
           import urllib.request, json
-          data = json.loads(urllib.request.urlopen('https://pypi.org/pypi/argo-proxy/json').read())
-          versions = list(data['releases'].keys())
           from packaging.version import Version
-          latest = max(versions, key=Version)
-          stable = data['info']['version']
-          is_pre = (latest != stable)
-          print(f'version={latest}')
-          print(f'is_pre={str(is_pre).lower()}')
-          " | tee /dev/stderr)
-          eval "$VERSION"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "is_pre=$is_pre" >> "$GITHUB_OUTPUT"
+          data = json.loads(urllib.request.urlopen('https://pypi.org/pypi/argo-proxy/json').read())
+          print(max(data['releases'], key=Version))
+          ")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Update badge gist
         uses: schneegans/dynamic-badges-action@v1.7.0
@@ -35,4 +28,4 @@ jobs:
           filename: pypi-badge.json
           label: pypi pre-release
           message: ${{ steps.pypi.outputs.version }}
-          color: ${{ steps.pypi.outputs.is_pre == 'true' && 'orange' || 'green' }}
+          color: green
