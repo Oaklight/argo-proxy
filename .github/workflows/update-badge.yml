@@ -1,0 +1,38 @@
+name: Update PyPI Pre-release Badge
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  update-badge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get latest PyPI version (including pre-releases)
+        id: pypi
+        run: |
+          VERSION=$(python3 -c "
+          import urllib.request, json
+          data = json.loads(urllib.request.urlopen('https://pypi.org/pypi/argo-proxy/json').read())
+          versions = list(data['releases'].keys())
+          from packaging.version import Version
+          latest = max(versions, key=Version)
+          stable = data['info']['version']
+          is_pre = (latest != stable)
+          print(f'version={latest}')
+          print(f'is_pre={str(is_pre).lower()}')
+          " | tee /dev/stderr)
+          eval "$VERSION"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "is_pre=$is_pre" >> "$GITHUB_OUTPUT"
+
+      - name: Update badge gist
+        uses: schneegans/dynamic-badges-action@v1.7.0
+        with:
+          auth: ${{ secrets.GIST_SECRET }}
+          gistID: c6a14fa27347321adfed1a01964b17c1
+          filename: pypi-badge.json
+          label: pypi pre-release
+          message: ${{ steps.pypi.outputs.version }}
+          color: ${{ steps.pypi.outputs.is_pre == 'true' && 'orange' || 'green' }}
