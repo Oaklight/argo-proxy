@@ -1,14 +1,5 @@
 # Tool Calls (Function Calling)
 
-```{toctree}
-:maxdepth: 2
-:caption: Tool Calls Documentation
-
-getting-started
-openai-parameters
-toolregistry
-```
-
 Tool calls, also known as function calling, enable AI models to request the execution of external functions. This powerful feature allows you to extend AI capabilities by integrating with APIs, databases, file systems, and other external services.
 
 ## Overview
