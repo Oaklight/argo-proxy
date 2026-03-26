@@ -85,6 +85,18 @@ In universal mode, argo-proxy routes requests to the optimal upstream based on t
 
 When the client format matches the upstream format (e.g., OpenAI client + GPT model), requests pass through directly without conversion. When formats differ (e.g., Anthropic client + GPT model), llm-rosetta handles the translation.
 
+## Upstream Authentication
+
+The ARGO backend identifies users through different fields depending on the upstream endpoint format:
+
+| Upstream Format | Auth Field | Location |
+|---|---|---|
+| OpenAI (Chat, Responses, Embeddings) | `user` | Request body |
+| Anthropic (Messages) | `x-api-key` | HTTP header |
+| Legacy ARGO (Chat, StreamChat) | `user` | Request body |
+
+Argo-proxy automatically populates these fields using the `user` value from your configuration. When `--username-passthrough` is enabled, the API key provided by the downstream client is used instead.
+
 ## Legacy Endpoints
 
 These endpoints are only available when legacy mode is enabled (`--legacy-argo` or `use_legacy_argo: true`).
