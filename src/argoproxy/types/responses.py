@@ -16,6 +16,7 @@ class ResponseError(BaseModel):
         "rate_limit_exceeded",
         "invalid_prompt",
         "vector_store_timeout",
+        "argo_auth_warning",
         "invalid_image",
         "invalid_image_format",
         "invalid_base64_image",

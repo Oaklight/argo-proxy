@@ -13,7 +13,11 @@ from tqdm.asyncio import tqdm_asyncio
 
 from .utils.logging import log_error, log_info, log_warning
 from .utils.misc import get_random_port, is_port_available, make_bar, str_to_bool
-from .utils.transports import validate_api_async, validate_url_get_async
+from .utils.transports import (
+    validate_api_async,
+    validate_url_get_async,
+    validate_user_async,
+)
 
 PATHS_TO_TRY = [
     "./config.yaml",
@@ -255,8 +259,50 @@ class ArgoConfig:
         return hash_original != hash_after_validation
 
     def _validate_user(self) -> None:
-        """Validate and update the user attribute using the helper function."""
-        self.user = _get_valid_username(self.user)
+        """Validate and update the user attribute.
+
+        First checks local format rules (non-empty, no spaces, not 'cels'),
+        then validates the username against the upstream ARGO API by making
+        a test request and checking for the authentication warning.
+        """
+        while True:
+            self.user = _get_valid_username(self.user)
+
+            if self._skip_url_validation:
+                break
+
+            # Validate against upstream ARGO
+            chat_url = f"{self.native_openai_base_url}/chat/completions"
+            try:
+                is_valid = asyncio.run(
+                    validate_user_async(
+                        chat_url,
+                        self.user,
+                        timeout=self.connection_test_timeout,
+                        resolver_overrides=self.resolve_overrides or None,
+                    )
+                )
+            except Exception:
+                log_warning(
+                    "Could not validate username against ARGO upstream "
+                    "(network may be unavailable). Skipping user validation.",
+                    context="config",
+                )
+                break
+
+            if is_valid:
+                log_info(
+                    f"Username '{self.user}' validated against ARGO.",
+                    context="config",
+                )
+                break
+
+            log_error(
+                f"Username '{self.user}' is not registered in ARGO. "
+                "Please enter a valid ANL username.",
+                context="config",
+            )
+            self.user = ""  # Reset to trigger re-prompt
 
     def _validate_port(self) -> None:
         """Validate and patch the port attribute."""
