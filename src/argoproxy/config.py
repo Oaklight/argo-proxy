@@ -612,6 +612,56 @@ def _get_valid_username(username: str = "") -> str:
     return username
 
 
+def _format_config_yaml(data: dict) -> str:
+    """Format config dict as grouped YAML with section comments."""
+    # Define logical groups with optional section headers
+    groups: list[tuple[str, list[str]]] = [
+        ("# Core settings", ["config_version", "user", "host", "port", "verbose"]),
+        ("# Upstream", ["argo_base_url"]),
+        (
+            "# Network & validation",
+            ["connection_test_timeout", "resolve_overrides"],
+        ),
+        (
+            "# Image processing",
+            [
+                "enable_payload_control",
+                "max_payload_size",
+                "image_timeout",
+                "concurrent_downloads",
+            ],
+        ),
+    ]
+
+    lines: list[str] = []
+    written_keys: set[str] = set()
+
+    for header, keys in groups:
+        section_lines: list[str] = []
+        for key in keys:
+            if key in data:
+                section_lines.append(
+                    yaml.dump({key: data[key]}, default_flow_style=False).strip()
+                )
+                written_keys.add(key)
+        if section_lines:
+            if lines:
+                lines.append("")  # blank line between groups
+            lines.append(header)
+            lines.extend(section_lines)
+
+    # Append any remaining keys not in the groups
+    remaining = {k: v for k, v in sorted(data.items()) if k not in written_keys}
+    if remaining:
+        if lines:
+            lines.append("")
+        lines.append("# Other")
+        lines.append(yaml.dump(remaining, default_flow_style=False).strip())
+
+    lines.append("")  # trailing newline
+    return "\n".join(lines)
+
+
 def save_config(
     config_data: ArgoConfig, config_path: Union[str, Path] | None = None
 ) -> str:
@@ -634,7 +684,7 @@ def save_config(
 
     os.makedirs(os.path.dirname(config_path), exist_ok=True)
     with open(config_path, "w") as f:
-        yaml.dump(config_data.to_persistent_dict(), f)
+        f.write(_format_config_yaml(config_data.to_persistent_dict()))
 
     return str(config_path)
 
