@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any, Literal, Union, overload
 
 import yaml
-from tqdm.asyncio import tqdm_asyncio
 
 from .utils.logging import log_error, log_info, log_warning
 from .utils.misc import get_random_port, is_port_available, make_bar, str_to_bool
@@ -365,12 +364,7 @@ class ArgoConfig:
                 f"{self.native_openai_base_url}/models",
             ]
 
-        total = len(post_urls) + len(get_urls)
-        log_info(
-            f"Validating {total} URL connectivity with timeout {timeout}s "
-            f"and {attempts} attempts ...",
-            context="config",
-        )
+        log_info("Validating URL connectivity...", context="config")
 
         async def _validate_post(url: str, payload: dict) -> None:
             if not url.startswith(("http://", "https://")):
@@ -408,10 +402,7 @@ class ArgoConfig:
             tasks = [_validate_post(url, payload) for url, payload in post_urls] + [
                 _validate_get(url) for url in get_urls
             ]
-            for fut in tqdm_asyncio.as_completed(
-                tasks, total=len(tasks), desc="Validating URLs"
-            ):
-                await fut
+            await asyncio.gather(*tasks)
 
         try:
             asyncio.run(_main())
@@ -937,30 +928,5 @@ def validate_config(
 
     if show_config:
         config_data.show()
-
-    # Display mode information with styling
-    log_info(make_bar(), context="config")
-    if config_data.use_legacy_argo:
-        log_warning("⚠️  LEGACY ARGO MODE: [ENABLED]", context="config")
-        log_info("   └─ Using legacy ARGO gateway endpoints", context="config")
-        log_warning(
-            "   ⚠️  Legacy mode has limited streaming and tool call support",
-            context="config",
-        )
-        if not config_data.pseudo_stream:
-            log_warning("   📡 Stream Mode: [REAL]", context="config")
-        else:
-            log_warning("   📡 Stream Mode: [PSEUDO]", context="config")
-    else:
-        log_warning("🌐 UNIVERSAL MODE: [ENABLED]", context="config")
-        log_info(
-            "   └─ All API formats supported (OpenAI Chat, Responses, Anthropic, Google GenAI)",
-            context="config",
-        )
-        log_info(
-            "   └─ Model-based routing to native upstreams via llm-rosetta",
-            context="config",
-        )
-    log_info(make_bar(), context="config")
 
     return config_data
