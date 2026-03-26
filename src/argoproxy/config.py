@@ -209,15 +209,29 @@ class ArgoConfig:
         instance = cls(**valid_fields)
         return instance
 
+    def to_persistent_dict(self) -> dict:
+        """Return only the fields that should be persisted to config file.
+
+        Excludes runtime-derived fields (mode, native endpoint URLs) that
+        are computed from ``argo_base_url`` at load time.
+        """
+        serialized = asdict(self)
+        # Drop private fields
+        serialized = {k: v for k, v in serialized.items() if not k.startswith("_")}
+
+        # Add the user-configurable base URL (stored as private field)
+        if self._argo_base_url:
+            serialized["argo_base_url"] = self.argo_base_url
+
+        return dict(sorted(serialized.items()))
+
     def to_dict(self) -> dict:
-        """Convert ArgoConfig instance to a dictionary.
+        """Convert ArgoConfig instance to a dictionary for display.
 
         In v3 universal mode, exposes native endpoint URLs and mode info.
         In legacy mode, exposes the classic ARGO gateway URLs.
         """
-        serialized = asdict(self)
-        # drop all private fields
-        serialized = {k: v for k, v in serialized.items() if not k.startswith("_")}
+        serialized = self.to_persistent_dict()
 
         if self.use_legacy_argo:
             # Legacy mode: show ARGO gateway URLs
@@ -227,15 +241,11 @@ class ArgoConfig:
             serialized["mode"] = "legacy"
         else:
             # Universal mode: show native endpoint URLs
-            serialized["argo_base_url"] = self.argo_base_url
             serialized["native_openai_base_url"] = self.native_openai_base_url
             serialized["native_anthropic_base_url"] = self.native_anthropic_base_url
             serialized["mode"] = "universal"
 
-        # sort keys
-        serialized = dict(sorted(serialized.items()))
-
-        return serialized
+        return dict(sorted(serialized.items()))
 
     def validate(self) -> bool:
         """Validate and patch all configuration aspects.
@@ -624,7 +634,7 @@ def save_config(
 
     os.makedirs(os.path.dirname(config_path), exist_ok=True)
     with open(config_path, "w") as f:
-        yaml.dump(config_data.to_dict(), f)
+        yaml.dump(config_data.to_persistent_dict(), f)
 
     return str(config_path)
 
@@ -697,7 +707,7 @@ def create_config(config_path: str | None = None) -> ArgoConfig:
     )
 
     # Create config with base URL and port so _validate_user() can reach upstream
-    config_data = ArgoConfig(_argo_base_url=base_url, port=port)
+    config_data = ArgoConfig(_argo_base_url=base_url, port=port, config_version="3")
     config_data._validate_user()
 
     config_data.verbose = _get_yes_no_input(prompt="Enable verbose mode? [Y/n] ")
