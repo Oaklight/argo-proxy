@@ -92,7 +92,7 @@ The ARGO backend identifies users through different fields depending on the upst
 | Upstream Format | Primary Auth Field | Fallback | Location |
 |---|---|---|---|
 | OpenAI (Chat, Responses, Embeddings) | `user` | `Authorization: Bearer` | Body / Header |
-| Anthropic (Messages) | `x-api-key` | — | Header |
+| Anthropic (Messages) | `x-api-key` | `Authorization: Bearer` | Header |
 | Legacy ARGO (Chat, StreamChat) | `user` | — | Body |
 
 Argo-proxy automatically populates these fields using the `user` value from your configuration. When `--username-passthrough` is enabled, the API key provided by the downstream client is used instead.
