@@ -2,6 +2,31 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## Unreleased
+
+### Fixed
+
+- **Banner version check for pre-release versions**: When the installed version is a pre-release (e.g. `3.0.0b7`), the startup banner now compares against the latest pre-release on PyPI instead of only the latest stable version. Previously it would incorrectly show "(Latest)" even when a newer pre-release was available. Extracted shared `get_pypi_versions()` async function and deduplicated version-fetching logic between the banner display and `update check` handler
+
+## v3.0.0b8 (2026-03-27)
+
+### Features
+
+- **ARGO authentication warning detection**: Detects the upstream `AUTHENTICATION NOTICE FROM ARGO` warning injected into responses when a username is not registered, and returns a `403 Forbidden` error with code `argo_auth_warning` instead of forwarding the polluted content to the client. Covers all endpoint types (OpenAI, Anthropic, legacy ARGO) in both streaming and non-streaming modes
+- **Startup username validation**: During initialization, argo-proxy now validates the configured username against the upstream ARGO API by making a test request. If the username is not registered, it rejects the input and re-prompts — invalid usernames can no longer slip through to runtime
+- **Interactive init flow improvements**: First-time setup now prompts for the upstream base URL before username/port, validates upstream connectivity (GET `/v1/models`) immediately, and loops until a reachable URL is given. The verbose mode prompt is moved to the end, after all validations pass
+- **Config YAML formatting**: Saved config files now use logical section grouping (Core settings, Upstream, Network & validation, Image processing) with comments and blank lines for readability
+
+### Changed
+
+- **Streaming passthrough buffering**: Passthrough streaming handlers (`native_openai`, `native_anthropic`, `dispatch`) now buffer initial chunks (up to 2 KB or the first complete SSE event) before committing to the streaming response, enabling early detection of upstream auth warnings
+- **Added `argo_auth_warning` error code**: New error code added to `ResponseError` literal type for programmatic detection of ARGO authentication issues
+- **Extended `validate_user_async()` transport utility**: New async function in `utils/transports.py` that validates a username by sending a lightweight chat request and inspecting the response for authentication warnings
+- **Config persistence cleanup**: `save_config()` now uses `to_persistent_dict()` which excludes runtime-derived fields (`mode`, `native_openai_base_url`, `native_anthropic_base_url`). New configs are created with `config_version: "3"`. Config is saved to the user-specified path instead of always defaulting to `~/.config/argoproxy/config.yaml`
+- **Removed tqdm progress bar from startup**: URL validation no longer shows a progress bar — replaced with a simple log message. The redundant mode display block at the end of `validate_config()` is also removed (already shown in the banner)
+- **Refactored `config.py` into `config/` subpackage**: Split the ~1000-line monolithic config module into `model.py` (ArgoConfig dataclass), `io.py` (load/save/migrate), `validation.py` (user/port/URL checks), and `interactive.py` (user prompts and `create_config`)
+- **Refactored `cli.py` into `cli/` subpackage**: Split the ~1050-line monolithic CLI module into `parser.py` (argparse construction), `display.py` (banner and version check), and `handlers.py` (subcommand handlers)
+
 ## v3.0.0b7 (2026-03-23)
 
 ### Fixed
