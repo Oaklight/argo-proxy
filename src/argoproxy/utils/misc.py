@@ -1,6 +1,8 @@
 import os
 import random
+import re
 import socket
+from typing import Any
 
 from aiohttp import web
 
@@ -173,3 +175,77 @@ def apply_username_passthrough(
     # Fallback to the provided user
     data["user"] = fallback_user
     return fallback_user
+
+
+# ---------------------------------------------------------------------------
+# ARGO authentication warning detection
+# ---------------------------------------------------------------------------
+
+_ARGO_AUTH_WARNING_PATTERN = re.compile(
+    r"AUTHENTICATION NOTICE FROM ARGO", re.IGNORECASE
+)
+
+ARGO_AUTH_ERROR_MESSAGE = (
+    "ARGO authentication error: the username is not registered in ARGO. "
+    "Please verify your username and update your argo-proxy configuration."
+)
+
+
+def contains_argo_auth_warning(text: str) -> bool:
+    """Check whether *text* contains the ARGO authentication warning.
+
+    Args:
+        text: Response text to inspect.
+
+    Returns:
+        True if the ARGO authentication notice pattern is found.
+    """
+    return bool(_ARGO_AUTH_WARNING_PATTERN.search(text))
+
+
+def extract_text_from_response(response_data: dict[str, Any], provider: str) -> str:
+    """Best-effort extraction of assistant text from a parsed upstream JSON.
+
+    Supports OpenAI Chat, Anthropic Messages, and legacy ARGO formats.
+
+    Args:
+        response_data: Parsed JSON body from upstream.
+        provider: One of ``"openai"``, ``"anthropic"``, or ``"legacy"``.
+
+    Returns:
+        The extracted text, or ``""`` if extraction fails.
+    """
+    try:
+        if provider == "openai":
+            # choices[0].message.content  (non-streaming)
+            # choices[0].delta.content    (streaming chunk)
+            choice = response_data.get("choices", [{}])[0]
+            msg = choice.get("message") or choice.get("delta") or {}
+            return msg.get("content") or ""
+        elif provider == "anthropic":
+            # content[0].text
+            content = response_data.get("content", [{}])
+            if content and isinstance(content, list):
+                return content[0].get("text") or ""
+        elif provider == "legacy":
+            resp = response_data.get("response", "")
+            return resp if isinstance(resp, str) else ""
+    except (IndexError, TypeError, AttributeError):
+        pass
+    return ""
+
+
+def check_response_for_argo_warning(
+    response_data: dict[str, Any], provider: str
+) -> bool:
+    """Convenience: extract text from response and check for auth warning.
+
+    Args:
+        response_data: Parsed JSON body from upstream.
+        provider: One of ``"openai"``, ``"anthropic"``, or ``"legacy"``.
+
+    Returns:
+        True if the ARGO authentication warning is detected.
+    """
+    text = extract_text_from_response(response_data, provider)
+    return contains_argo_auth_warning(text)

@@ -24,7 +24,12 @@ from ...utils.logging import (
     log_original_request,
     log_upstream_error,
 )
-from ...utils.misc import apply_username_passthrough
+from ...utils.misc import (
+    ARGO_AUTH_ERROR_MESSAGE,
+    apply_username_passthrough,
+    check_response_for_argo_warning,
+    contains_argo_auth_warning,
+)
 from ...utils.models import determine_model_family
 
 
@@ -201,10 +206,35 @@ async def _handle_non_streaming_passthrough(
             except (aiohttp.ContentTypeError, json.JSONDecodeError):
                 # If response is not JSON, return as text
                 response_text = await upstream_resp.text()
+                if contains_argo_auth_warning(response_text):
+                    log_error(ARGO_AUTH_ERROR_MESSAGE, context="native_anthropic")
+                    return web.json_response(
+                        {
+                            "type": "error",
+                            "error": {
+                                "type": "argo_auth_error",
+                                "message": ARGO_AUTH_ERROR_MESSAGE,
+                            },
+                        },
+                        status=HTTPStatus.FORBIDDEN,
+                    )
                 return web.Response(
                     text=response_text,
                     status=upstream_resp.status,
                     content_type=upstream_resp.content_type or "text/plain",
+                )
+
+            if check_response_for_argo_warning(response_data, "anthropic"):
+                log_error(ARGO_AUTH_ERROR_MESSAGE, context="native_anthropic")
+                return web.json_response(
+                    {
+                        "type": "error",
+                        "error": {
+                            "type": "argo_auth_error",
+                            "message": ARGO_AUTH_ERROR_MESSAGE,
+                        },
+                    },
+                    status=HTTPStatus.FORBIDDEN,
                 )
 
             return web.json_response(
@@ -301,12 +331,43 @@ async def _handle_streaming_passthrough(
             )
 
             response.enable_chunked_encoding()
-            await response.prepare(request)
 
-            # Stream the response chunks directly
+            # Buffer initial chunks to detect ARGO auth warning
+            buffered: list[bytes] = []
+            prepared = False
+
             async for chunk in upstream_resp.content.iter_any():
-                if chunk:
-                    await response.write(chunk)
+                if not chunk:
+                    continue
+
+                if not prepared:
+                    buffered.append(chunk)
+                    joined = b"".join(buffered)
+                    text = joined.decode("utf-8", errors="replace")
+                    if contains_argo_auth_warning(text):
+                        log_error(ARGO_AUTH_ERROR_MESSAGE, context="native_anthropic")
+                        return web.json_response(
+                            {
+                                "type": "error",
+                                "error": {
+                                    "type": "argo_auth_error",
+                                    "message": ARGO_AUTH_ERROR_MESSAGE,
+                                },
+                            },
+                            status=HTTPStatus.FORBIDDEN,
+                        )
+                    if len(joined) > 2048 or b"\n\n" in joined:
+                        await response.prepare(request)
+                        await response.write(joined)
+                        prepared = True
+                    continue
+
+                await response.write(chunk)
+
+            if not prepared:
+                await response.prepare(request)
+                if buffered:
+                    await response.write(b"".join(buffered))
 
             await response.write_eof()
             return response

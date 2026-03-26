@@ -131,6 +131,125 @@ async def validate_api_async(
     raise ValueError("API validation failed after all attempts")
 
 
+async def _fetch_first_model(
+    models_url: str,
+    timeout: int = 5,
+    resolver_overrides: dict[str, str] | None = None,
+) -> str | None:
+    """Fetch the first available model ID from an OpenAI-compatible ``/models`` endpoint.
+
+    Returns:
+        A model ID string, or None if the request fails.
+    """
+    from ..performance import StaticOverrideResolver
+
+    connector = None
+    if resolver_overrides:
+        resolver = StaticOverrideResolver(resolver_overrides)
+        connector = aiohttp.TCPConnector(resolver=resolver)
+
+    try:
+        async with aiohttp.ClientSession(
+            connector=connector,
+            timeout=aiohttp.ClientTimeout(total=timeout),
+        ) as session:
+            async with session.get(models_url) as resp:
+                if resp.status != 200:
+                    return None
+                data = await resp.json()
+                models = data.get("data", [])
+                if models:
+                    m = models[0]
+                    return m.get("internal_id") or m.get("id")
+    except Exception:
+        pass
+    return None
+
+
+async def validate_user_async(
+    chat_url: str,
+    user: str,
+    timeout: int = 10,
+    attempts: int = 2,
+    resolver_overrides: dict[str, str] | None = None,
+) -> bool:
+    """Validate that *user* is registered in ARGO by making a lightweight
+    chat request and checking the response for the authentication warning.
+
+    The model name is auto-detected from the ``/models`` endpoint so that
+    the function works against both native ARGO upstreams and transparent
+    dev-mode proxies (which require internal model IDs).
+
+    Args:
+        chat_url: The native OpenAI chat completions endpoint URL.
+        user: The username to validate.
+        timeout: Request timeout seconds.
+        attempts: Total attempts (including the first).
+        resolver_overrides: Optional DNS override mapping.
+
+    Returns:
+        True if the user is valid (no auth warning), False otherwise.
+
+    Raises:
+        ValueError: If connectivity fails after all attempts.
+    """
+    from ..performance import StaticOverrideResolver
+    from .misc import contains_argo_auth_warning, extract_text_from_response
+
+    # Auto-detect a valid model name from the upstream
+    models_url = chat_url.rsplit("/chat/completions", 1)[0] + "/models"
+    model = await _fetch_first_model(
+        models_url, timeout=timeout, resolver_overrides=resolver_overrides
+    )
+    if not model:
+        model = "gpt-4o-latest"  # fallback
+
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": "say ok"}],
+        "user": user,
+        "max_tokens": 5,
+    }
+
+    connector = None
+    if resolver_overrides:
+        resolver = StaticOverrideResolver(resolver_overrides)
+        connector = aiohttp.TCPConnector(resolver=resolver)
+
+    client_timeout = aiohttp.ClientTimeout(total=timeout)
+
+    last_err: Exception | None = None
+    for attempt in range(attempts + 1):
+        try:
+            async with aiohttp.ClientSession(
+                connector=connector,
+                timeout=client_timeout,
+            ) as session:
+                async with session.post(
+                    chat_url,
+                    json=payload,
+                    headers={"Content-Type": "application/json"},
+                ) as response:
+                    if response.status != 200:
+                        raise ValueError(f"API returned status code {response.status}")
+                    data = await response.json()
+                    text = extract_text_from_response(data, "openai")
+                    return not contains_argo_auth_warning(text)
+        except Exception as e:
+            last_err = e
+            if attempt < attempts:
+                await asyncio.sleep(0.5)
+            if resolver_overrides and attempt < attempts:
+                resolver = StaticOverrideResolver(resolver_overrides)
+                connector = aiohttp.TCPConnector(resolver=resolver)
+            else:
+                connector = None
+
+    if last_err is not None:
+        raise last_err
+    raise ValueError("User validation failed after all attempts")
+
+
 async def validate_url_get_async(
     url: str,
     timeout: int = 5,

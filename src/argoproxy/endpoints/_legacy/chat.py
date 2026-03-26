@@ -40,7 +40,11 @@ from ...utils.logging import (
     log_upstream_error,
     log_warning,
 )
-from ...utils.misc import apply_username_passthrough
+from ...utils.misc import (
+    ARGO_AUTH_ERROR_MESSAGE,
+    apply_username_passthrough,
+    contains_argo_auth_warning,
+)
 from ...utils.models import apply_claude_max_tokens_limit, determine_model_family
 from ...utils.tokens import (
     calculate_prompt_tokens_async,
@@ -323,6 +327,22 @@ async def send_non_streaming_request(
                     status=502,
                 )
 
+            # Check for ARGO auth warning in legacy response
+            if isinstance(response_content, str) and contains_argo_auth_warning(
+                response_content
+            ):
+                log_error(ARGO_AUTH_ERROR_MESSAGE, context="chat")
+                return web.json_response(
+                    {
+                        "error": {
+                            "message": ARGO_AUTH_ERROR_MESSAGE,
+                            "type": "argo_auth_error",
+                            "code": "argo_auth_warning",
+                        }
+                    },
+                    status=HTTPStatus.FORBIDDEN,
+                )
+
             if not convert_to_openai:  # direct pass-through
                 return web.json_response(
                     response_data,
@@ -391,6 +411,8 @@ async def _handle_pseudo_stream(
         Callable[..., dict[str, Any]],
         Callable[..., Awaitable[dict[str, Any]]],
     ],
+    prefetched_data: dict[str, Any] | None = None,
+    prefetched_content: str | None = None,
 ) -> None:
     """
     Handles fake streaming by simulating chunked responses.
@@ -403,18 +425,23 @@ async def _handle_pseudo_stream(
         prompt_tokens: The number of tokens in the input prompt.
         convert_to_openai: If True, converts the response to OpenAI format.
         openai_compat_fn: Function for conversion to OpenAI-compatible format.
+        prefetched_data: Pre-read upstream JSON (avoids double-read).
+        prefetched_content: Pre-extracted response content string.
     """
     log_warning("Pseudo streaming!", context="chat")
 
-    try:
-        response_data = await upstream_resp.json()
-        response_content = response_data.get("response", "")
-    except (aiohttp.ContentTypeError, json.JSONDecodeError) as e:
-        response_content = await upstream_resp.text()
-        log_warning(
-            f"Upstream response is not JSON in pseudo_stream mode: {e}",
-            context="chat.pseudo_stream",
-        )
+    if prefetched_content is not None:
+        response_content = prefetched_content
+    else:
+        try:
+            response_data = await upstream_resp.json()
+            response_content = response_data.get("response", "")
+        except (aiohttp.ContentTypeError, json.JSONDecodeError) as e:
+            response_content = await upstream_resp.text()
+            log_warning(
+                f"Upstream response is not JSON in pseudo_stream mode: {e}",
+                context="chat.pseudo_stream",
+            )
     if convert_to_openai:
         # Generate a shared ID for all chunks in this stream
         shared_id = str(uuid.uuid4().hex)
@@ -738,9 +765,33 @@ async def send_streaming_request(
             )
 
             response.enable_chunked_encoding()
-            await response.prepare(request)
 
             if pseudo_stream:
+                # Pseudo-stream: upstream returns full JSON. Read and
+                # check for ARGO auth warning before committing to stream.
+                try:
+                    resp_json = await upstream_resp.json()
+                    resp_content = resp_json.get("response", "")
+                except (aiohttp.ContentTypeError, json.JSONDecodeError):
+                    resp_content = await upstream_resp.text()
+                    resp_json = None
+
+                if isinstance(resp_content, str) and contains_argo_auth_warning(
+                    resp_content
+                ):
+                    log_error(ARGO_AUTH_ERROR_MESSAGE, context="chat")
+                    return web.json_response(
+                        {
+                            "error": {
+                                "message": ARGO_AUTH_ERROR_MESSAGE,
+                                "type": "argo_auth_error",
+                                "code": "argo_auth_warning",
+                            }
+                        },
+                        status=HTTPStatus.FORBIDDEN,
+                    )
+
+                await response.prepare(request)
                 await _handle_pseudo_stream(
                     response,
                     upstream_resp,
@@ -749,8 +800,11 @@ async def send_streaming_request(
                     prompt_tokens,
                     convert_to_openai,
                     openai_compat_fn,
+                    prefetched_data=resp_json,
+                    prefetched_content=resp_content,
                 )
             else:
+                await response.prepare(request)
                 await _handle_real_stream(
                     response,
                     upstream_resp,

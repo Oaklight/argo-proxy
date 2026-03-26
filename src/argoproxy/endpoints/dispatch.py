@@ -43,7 +43,12 @@ from ..utils.logging import (
     log_original_request,
     log_upstream_error,
 )
-from ..utils.misc import apply_username_passthrough
+from ..utils.misc import (
+    ARGO_AUTH_ERROR_MESSAGE,
+    apply_username_passthrough,
+    check_response_for_argo_warning,
+    contains_argo_auth_warning,
+)
 
 # ---------------------------------------------------------------------------
 # SSE formatting (IR events → source-format SSE text)
@@ -300,6 +305,7 @@ async def _passthrough_non_streaming(
     upstream_url: str,
     headers: dict[str, str],
     data: dict[str, Any],
+    source_provider: ProviderType = "openai_chat",
 ) -> web.Response:
     """Forward request to upstream and return response without conversion."""
     async with session.post(upstream_url, headers=headers, json=data) as upstream_resp:
@@ -307,11 +313,21 @@ async def _passthrough_non_streaming(
             response_data = await upstream_resp.json()
         except (aiohttp.ContentTypeError, json.JSONDecodeError):
             response_text = await upstream_resp.text()
+            if contains_argo_auth_warning(response_text):
+                log_error(ARGO_AUTH_ERROR_MESSAGE, context="dispatch")
+                return _error_response(source_provider, 403, ARGO_AUTH_ERROR_MESSAGE)
             return web.Response(
                 text=response_text,
                 status=upstream_resp.status,
                 content_type=upstream_resp.content_type or "text/plain",
             )
+
+        # Detect provider for content extraction based on URL heuristic
+        upstream_provider = "anthropic" if "/messages" in upstream_url else "openai"
+        if check_response_for_argo_warning(response_data, upstream_provider):
+            log_error(ARGO_AUTH_ERROR_MESSAGE, context="dispatch")
+            return _error_response(source_provider, 403, ARGO_AUTH_ERROR_MESSAGE)
+
         return web.json_response(
             response_data,
             status=upstream_resp.status,
@@ -326,6 +342,7 @@ async def _passthrough_streaming(
     data: dict[str, Any],
     request: web.Request,
     target_provider: ProviderType,
+    source_provider: ProviderType = "openai_chat",
 ) -> web.StreamResponse:
     """Forward streaming request to upstream and pipe bytes directly."""
     data = _inject_stream_flags(data, target_provider)
@@ -347,11 +364,36 @@ async def _passthrough_streaming(
 
         response = web.StreamResponse(status=200, headers=_STREAMING_HEADERS)
         response.enable_chunked_encoding()
-        await response.prepare(request)
+
+        # Buffer initial chunks to detect ARGO auth warning
+        buffered: list[bytes] = []
+        prepared = False
 
         async for chunk in upstream_resp.content.iter_any():
-            if chunk:
-                await response.write(chunk)
+            if not chunk:
+                continue
+
+            if not prepared:
+                buffered.append(chunk)
+                joined = b"".join(buffered)
+                text = joined.decode("utf-8", errors="replace")
+                if contains_argo_auth_warning(text):
+                    log_error(ARGO_AUTH_ERROR_MESSAGE, context="dispatch")
+                    return _error_response(
+                        source_provider, 403, ARGO_AUTH_ERROR_MESSAGE
+                    )
+                if len(joined) > 2048 or b"\n\n" in joined:
+                    await response.prepare(request)
+                    await response.write(joined)
+                    prepared = True
+                continue
+
+            await response.write(chunk)
+
+        if not prepared:
+            await response.prepare(request)
+            if buffered:
+                await response.write(b"".join(buffered))
 
         await response.write_eof()
         return response
@@ -429,6 +471,12 @@ async def _convert_non_streaming(
                 return _error_response(
                     source_provider, 502, "Upstream returned non-JSON response"
                 )
+
+            # Check for ARGO auth warning before conversion
+            upstream_fmt = "anthropic" if target_provider == "anthropic" else "openai"
+            if check_response_for_argo_warning(upstream_json, upstream_fmt):
+                log_error(ARGO_AUTH_ERROR_MESSAGE, context="dispatch")
+                return _error_response(source_provider, 403, ARGO_AUTH_ERROR_MESSAGE)
 
             try:
                 ir_response = target_converter.response_from_provider(upstream_json)
@@ -517,15 +565,16 @@ async def _convert_streaming(
                     content_type="application/json",
                 )
 
-            # Prepare streaming response
+            # Prepare streaming response (deferred until first chunk validated)
             response = web.StreamResponse(status=200, headers=_STREAMING_HEADERS)
             response.enable_chunked_encoding()
-            await response.prepare(request)
+            prepared = False
 
             from_ctx = StreamContext()  # upstream → IR
             to_ctx = StreamContext()  # IR → source
             chunk_count = 0
             t0 = time.monotonic()
+            _auth_checked = False
 
             # Buffer for partial SSE lines from byte chunks
             line_buffer = ""
@@ -533,6 +582,21 @@ async def _convert_streaming(
             async for raw_chunk in upstream_resp.content.iter_any():
                 if not raw_chunk:
                     continue
+
+                # Check the first raw bytes for ARGO auth warning before
+                # committing to the streaming response.
+                if not _auth_checked:
+                    raw_text = raw_chunk.decode("utf-8", errors="replace")
+                    if contains_argo_auth_warning(raw_text):
+                        log_error(ARGO_AUTH_ERROR_MESSAGE, context="dispatch")
+                        return _error_response(
+                            source_provider, 403, ARGO_AUTH_ERROR_MESSAGE
+                        )
+                    _auth_checked = True
+
+                if not prepared:
+                    await response.prepare(request)
+                    prepared = True
 
                 # Decode bytes and split into SSE lines
                 text = line_buffer + raw_chunk.decode("utf-8", errors="replace")
@@ -575,6 +639,10 @@ async def _convert_streaming(
                             ir_event, context=to_ctx
                         )
                         await _write_sse_chunks(response, source_chunks, format_sse)
+
+            # Ensure response is prepared even if no chunks were received
+            if not prepared:
+                await response.prepare(request)
 
             # ----------------------------------------------------------
             # Fallback: ensure stream is properly terminated.
@@ -731,10 +799,16 @@ async def proxy_request(
 
             if stream:
                 return await _passthrough_streaming(
-                    session, upstream_url, headers, body, request, target_provider
+                    session,
+                    upstream_url,
+                    headers,
+                    body,
+                    request,
+                    target_provider,
+                    source_provider,
                 )
             return await _passthrough_non_streaming(
-                session, upstream_url, headers, body
+                session, upstream_url, headers, body, source_provider
             )
 
         # Cross-format conversion
