@@ -635,12 +635,37 @@ def save_config(
     return str(config_path)
 
 
+def _get_base_url_input(default: str) -> str:
+    """Prompt user for the upstream base URL with a default value.
+
+    Args:
+        default: The default URL shown in brackets.
+
+    Returns:
+        The user-provided URL or the default if input is empty.
+    """
+    while True:
+        url = input(f"Enter upstream base URL [{default}]: ").strip()
+        if not url:
+            return default
+        if not url.startswith(("http://", "https://")):
+            log_warning(
+                "Invalid URL: must start with http:// or https://", context="config"
+            )
+            continue
+        return url.rstrip("/")
+
+
 def create_config() -> ArgoConfig:
     """Interactive method to create and persist config."""
     log_info("Creating new configuration...", context="config")
 
+    default_base = ArgoConfig._argo_dev_base
+    base_url = _get_base_url_input(default_base)
+
     random_port = get_random_port(49152, 65535)
     config_data = ArgoConfig(
+        _argo_base_url=base_url,
         port=_get_user_port_choice(
             prompt=f"Use port [{random_port}]? [Y/n/<port>]: ",
             default_port=random_port,
