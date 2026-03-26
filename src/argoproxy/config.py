@@ -71,6 +71,7 @@ class ArgoConfig:
 
     # Validation and resolver settings
     _skip_url_validation: bool = False
+    _user_validated: bool = False  # Set after upstream user validation passes
     connection_test_timeout: int = 5  # seconds per URL validation request
     resolve_overrides: dict = field(default_factory=dict)
 
@@ -268,7 +269,7 @@ class ArgoConfig:
         while True:
             self.user = _get_valid_username(self.user)
 
-            if self._skip_url_validation:
+            if self._skip_url_validation or self._user_validated:
                 break
 
             # Validate against upstream ARGO
@@ -288,6 +289,7 @@ class ArgoConfig:
                     "(network may be unavailable). Skipping user validation.",
                     context="config",
                 )
+                self._user_validated = True
                 break
 
             if is_valid:
@@ -295,6 +297,7 @@ class ArgoConfig:
                     f"Username '{self.user}' validated against ARGO.",
                     context="config",
                 )
+                self._user_validated = True
                 break
 
             log_error(
@@ -656,23 +659,52 @@ def _get_base_url_input(default: str) -> str:
         return url.rstrip("/")
 
 
+def _validate_base_url(base_url: str, timeout: int = 5) -> bool:
+    """Validate upstream base URL connectivity via GET /v1/models.
+
+    Args:
+        base_url: The upstream base URL to validate.
+        timeout: Request timeout seconds.
+
+    Returns:
+        True if the endpoint is reachable, False otherwise.
+    """
+    models_url = f"{base_url.rstrip('/')}/v1/models"
+    try:
+        asyncio.run(validate_url_get_async(models_url, timeout=timeout, attempts=2))
+        return True
+    except Exception:
+        return False
+
+
 def create_config() -> ArgoConfig:
     """Interactive method to create and persist config."""
     log_info("Creating new configuration...", context="config")
 
     default_base = ArgoConfig._argo_dev_base
-    base_url = _get_base_url_input(default_base)
+    while True:
+        base_url = _get_base_url_input(default_base)
+        log_info("Validating upstream connectivity...", context="config")
+        if _validate_base_url(base_url):
+            log_info(f"Upstream {base_url} is reachable.", context="config")
+            break
+        log_error(
+            f"Cannot reach {base_url}/v1/models. "
+            "Check the URL and your network connection.",
+            context="config",
+        )
 
     random_port = get_random_port(49152, 65535)
-    config_data = ArgoConfig(
-        _argo_base_url=base_url,
-        port=_get_user_port_choice(
-            prompt=f"Use port [{random_port}]? [Y/n/<port>]: ",
-            default_port=random_port,
-        ),
-        user=_get_valid_username(),
-        verbose=_get_yes_no_input(prompt="Enable verbose mode? [Y/n] "),
+    port = _get_user_port_choice(
+        prompt=f"Use port [{random_port}]? [Y/n/<port>]: ",
+        default_port=random_port,
     )
+
+    # Create config with base URL and port so _validate_user() can reach upstream
+    config_data = ArgoConfig(_argo_base_url=base_url, port=port)
+    config_data._validate_user()
+
+    config_data.verbose = _get_yes_no_input(prompt="Enable verbose mode? [Y/n] ")
 
     config_path = save_config(config_data)
     log_info(f"Created new configuration at: {config_path}", context="config")
