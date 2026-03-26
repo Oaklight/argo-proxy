@@ -228,7 +228,10 @@ async def validate_user_async(
                 async with session.post(
                     chat_url,
                     json=payload,
-                    headers={"Content-Type": "application/json"},
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {user}",
+                    },
                 ) as response:
                     if response.status != 200:
                         raise ValueError(f"API returned status code {response.status}")
