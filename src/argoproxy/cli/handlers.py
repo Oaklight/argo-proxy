@@ -333,49 +333,11 @@ def _get_pypi_versions() -> dict[str, str | None]:
         Dict with keys ``stable`` and ``pre``, values are version strings
         or None.
     """
-    import urllib.request
+    import asyncio
 
-    url = "https://pypi.org/pypi/argo-proxy/json"
-    result: dict[str, str | None] = {"stable": None, "pre": None}
+    from ..endpoints.extras import get_pypi_versions
 
-    try:
-        req = urllib.request.Request(
-            url, headers={"Cache-Control": "no-cache", "Pragma": "no-cache"}
-        )
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            import json as _json
-
-            data = _json.loads(resp.read())
-    except Exception:
-        return result
-
-    # Latest stable is in info.version
-    result["stable"] = data.get("info", {}).get("version")
-
-    # Find the latest pre-release by scanning all releases
-    all_versions = list(data.get("releases", {}).keys())
-    pre_versions = []
-    for v in all_versions:
-        try:
-            pv = version.parse(v)
-            if pv.is_prerelease or pv.is_devrelease:
-                pre_versions.append(pv)
-        except Exception:
-            continue
-
-    if pre_versions:
-        latest_pre = max(pre_versions)
-        # Only show pre-release if it's newer than stable
-        if result["stable"]:
-            try:
-                if latest_pre > version.parse(result["stable"]):
-                    result["pre"] = str(latest_pre)
-            except Exception:
-                result["pre"] = str(latest_pre)
-        else:
-            result["pre"] = str(latest_pre)
-
-    return result
+    return asyncio.run(get_pypi_versions())
 
 
 def _detect_pip_command() -> list[str]:

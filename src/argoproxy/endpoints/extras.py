@@ -59,19 +59,54 @@ async def refresh_models(request: web.Request):
     )
 
 
-async def get_latest_pypi_version() -> str | None:
+async def get_pypi_versions() -> dict[str, str | None]:
+    """Query PyPI for the latest stable and pre-release versions.
+
+    Returns:
+        Dict with keys ``stable`` and ``pre``, values are version strings
+        or None.
+    """
+    from packaging import version as pkg_version
+
+    result: dict[str, str | None] = {"stable": None, "pre": None}
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
                 "https://pypi.org/pypi/argo-proxy/json",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "Pragma": "no-cache",
-                },  # Add these headers
+                headers={"Cache-Control": "no-cache", "Pragma": "no-cache"},
                 timeout=5,
             ) as response:
                 response.raise_for_status()
                 data = await response.json()
-                return data["info"]["version"]
     except Exception:
-        return None
+        return result
+
+    result["stable"] = data.get("info", {}).get("version")
+
+    pre_versions = []
+    for v in data.get("releases", {}).keys():
+        try:
+            pv = pkg_version.parse(v)
+            if pv.is_prerelease or pv.is_devrelease:
+                pre_versions.append(pv)
+        except Exception:
+            continue
+
+    if pre_versions:
+        latest_pre = max(pre_versions)
+        if result["stable"]:
+            try:
+                if latest_pre > pkg_version.parse(result["stable"]):
+                    result["pre"] = str(latest_pre)
+            except Exception:
+                result["pre"] = str(latest_pre)
+        else:
+            result["pre"] = str(latest_pre)
+
+    return result
+
+
+async def get_latest_pypi_version() -> str | None:
+    """Convenience wrapper returning just the latest stable version."""
+    versions = await get_pypi_versions()
+    return versions["stable"]

@@ -6,7 +6,7 @@ import os
 from packaging import version
 
 from ..__init__ import __version__
-from ..endpoints.extras import get_latest_pypi_version
+from ..endpoints.extras import get_pypi_versions
 from ..utils.logging import log_info, log_warning
 
 # ReadTheDocs changelog URL
@@ -25,6 +25,33 @@ def get_ascii_banner() -> str:
 """
 
 
+def _pick_relevant_latest(
+    versions: dict[str, str | None],
+) -> str | None:
+    """Pick the version to compare against based on installed version.
+
+    If the installed version is a pre-release, compare against the latest
+    pre-release (or stable if no pre-release is newer). Otherwise compare
+    against stable only.
+    """
+    cur = version.parse(__version__)
+    stable = versions.get("stable")
+    pre = versions.get("pre")
+
+    if cur.is_prerelease or cur.is_devrelease:
+        # Compare against whichever is newer: stable or pre-release
+        candidates = []
+        if stable:
+            candidates.append(version.parse(stable))
+        if pre:
+            candidates.append(version.parse(pre))
+        if candidates:
+            best = max(candidates)
+            return str(best)
+        return None
+    return stable
+
+
 def version_check() -> str:
     """Check installed version against latest PyPI release.
 
@@ -32,14 +59,17 @@ def version_check() -> str:
         A multi-line string with version info and upgrade hint if available.
     """
     ver_content = [__version__]
-    latest = asyncio.run(get_latest_pypi_version())
+    versions = asyncio.run(get_pypi_versions())
+    latest = _pick_relevant_latest(versions)
 
     if latest:
         if version.parse(latest) > version.parse(__version__):
+            is_pre = version.parse(latest).is_prerelease
+            pip_flag = " --pre" if is_pre else ""
             ver_content.extend(
                 [
                     f"New version available: {latest}",
-                    "Update with `pip install --upgrade argo-proxy`",
+                    f"Update with `pip install --upgrade{pip_flag} argo-proxy`",
                     f"Changelog: {CHANGELOG_URL}",
                 ]
             )
@@ -57,13 +87,19 @@ def display_startup_banner(no_banner: bool = False):
         banner = get_ascii_banner()
         print(banner)
 
-    latest = asyncio.run(get_latest_pypi_version())
+    versions = asyncio.run(get_pypi_versions())
+    latest = _pick_relevant_latest(versions)
 
     log_info("=" * 80, context="cli")
     if latest and version.parse(latest) > version.parse(__version__):
+        is_pre = version.parse(latest).is_prerelease
+        pip_flag = " --pre" if is_pre else ""
         log_warning(f"\U0001f680 ARGO PROXY v{__version__}", context="cli")
         log_warning(f"\U0001f195 UPDATE AVAILABLE: v{latest}", context="cli")
-        log_info("   \u251c\u2500 Run: pip install --upgrade argo-proxy", context="cli")
+        log_info(
+            f"   \u251c\u2500 Run: pip install --upgrade{pip_flag} argo-proxy",
+            context="cli",
+        )
         log_info(f"   \u2514\u2500 Changelog: {CHANGELOG_URL}", context="cli")
     else:
         log_warning(f"\U0001f680 ARGO PROXY v{__version__} (Latest)", context="cli")
