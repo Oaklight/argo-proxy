@@ -677,8 +677,13 @@ def _validate_base_url(base_url: str, timeout: int = 5) -> bool:
         return False
 
 
-def create_config() -> ArgoConfig:
-    """Interactive method to create and persist config."""
+def create_config(config_path: str | None = None) -> ArgoConfig:
+    """Interactive method to create and persist config.
+
+    Args:
+        config_path: Optional path to save the config file. If not
+            provided, saves to the default location.
+    """
     log_info("Creating new configuration...", context="config")
 
     default_base = ArgoConfig._argo_dev_base
@@ -706,8 +711,8 @@ def create_config() -> ArgoConfig:
 
     config_data.verbose = _get_yes_no_input(prompt="Enable verbose mode? [Y/n] ")
 
-    config_path = save_config(config_data)
-    log_info(f"Created new configuration at: {config_path}", context="config")
+    saved_path = save_config(config_data, config_path)
+    log_info(f"Created new configuration at: {saved_path}", context="config")
 
     return config_data
 
@@ -898,7 +903,9 @@ def validate_config(
             "Would you like to create it from config.sample.yaml? [Y/n]: "
         )
         if user_decision:
-            config_data = create_config()
+            config_data = create_config(config_path=optional_path)
+            # Re-load to get the actual saved path
+            _, actual_path = load_config(optional_path, verbose=False)
             show_config = True
         else:
             log_warning(
