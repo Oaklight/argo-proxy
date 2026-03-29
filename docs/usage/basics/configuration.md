@@ -7,21 +7,25 @@ If you don't have a configuration file, the [First-Time Setup](../running.md#fir
 The application uses `config.yaml` for configuration. Here's the v3 format:
 
 ```yaml
-# Config version (for migration tracking)
-config_version: "3"
-
-host: "0.0.0.0"
+# Core settings
+config_version: '3'
+user: your_username
+host: 0.0.0.0
 port: 44497
-user: "your_username"
-
-# Argo API base URL - all endpoint URLs are derived from this
-argo_base_url: "https://apps-dev.inside.anl.gov/argoapi"
-
-# Native upstream endpoint URLs (derived from argo_base_url if not set)
-# native_openai_base_url: "https://apps-dev.inside.anl.gov/argoapi/v1"
-# native_anthropic_base_url: "https://apps-dev.inside.anl.gov/argoapi"
-
 verbose: true
+
+# Upstream
+argo_base_url: https://apps-dev.inside.anl.gov/argoapi
+
+# Network & validation
+connection_test_timeout: 5
+resolve_overrides: {}
+
+# Image processing
+enable_payload_control: false
+max_payload_size: 20
+image_timeout: 30
+concurrent_downloads: 10
 ```
 
 In most cases, you only need to set `argo_base_url` — the native upstream URLs are automatically derived:
@@ -29,26 +33,51 @@ In most cases, you only need to set `argo_base_url` — the native upstream URLs
 - `native_openai_base_url` defaults to `{argo_base_url}/v1`
 - `native_anthropic_base_url` defaults to `{argo_base_url}` itself
 
+### Upstream Environments
+
+Three ARGO API environments are available:
+
+| Environment | Base URL |
+|-------------|----------|
+| Production  | `https://apps.inside.anl.gov/argoapi` |
+| Development | `https://apps-dev.inside.anl.gov/argoapi` (default) |
+| Test        | `https://apps-test.inside.anl.gov/argoapi` |
+
+You can switch environments with the CLI:
+
+```bash
+argo-proxy config env prod    # switch to production
+argo-proxy config env dev     # switch to development
+argo-proxy config env test    # switch to test
+```
+
 ## Configuration Options Reference
 
 | Option | Description | Default |
 |--------|-------------|---------|
 | `config_version` | Config format version (set to `"3"` for v3) | `""` |
-| `argo_base_url` | Base URL for the Argo API | Dev URL |
-| `native_openai_base_url` | Base URL for OpenAI-compatible endpoints | `{argo_base_url}/v1` |
-| `native_anthropic_base_url` | Base URL for Anthropic endpoint | `{argo_base_url}` |
+| `user` | Your ANL username | (Set during setup) |
 | `host` | Host address to bind the server to | `0.0.0.0` |
 | `port` | Application port | Randomly assigned |
-| `user` | Your ANL username | (Set during setup) |
 | `verbose` | Debug logging | `true` |
-| `use_legacy_argo` | Enable legacy ARGO gateway mode | `false` |
-| `skip_url_validation` | Skip URL connectivity check at startup | `false` |
+| `argo_base_url` | Base URL for the Argo API (see [Upstream Environments](#upstream-environments)) | Dev URL |
 | `connection_test_timeout` | Timeout (seconds) per URL validation request | `5` |
 | `resolve_overrides` | DNS resolution overrides (see [DNS Resolution](../advanced/dns-resolution.md)) | `{}` |
 | `enable_payload_control` | Enable automatic image payload size control | `false` |
 | `max_payload_size` | Max payload size in MB (total for all images) | `20` |
 | `image_timeout` | Image download timeout in seconds | `30` |
 | `concurrent_downloads` | Max parallel image downloads | `10` |
+
+### Conditional Fields
+
+The following fields are only persisted to the config file when set to non-default values:
+
+| Option | Description | Condition |
+|--------|-------------|-----------|
+| `use_legacy_argo` | Enable legacy ARGO gateway mode | Only when `true` |
+| `skip_url_validation` | Skip URL connectivity check at startup | Only when `true` |
+| `native_openai_base_url` | Base URL for OpenAI-compatible endpoints | Only when explicitly set and differs from `{argo_base_url}/v1` |
+| `native_anthropic_base_url` | Base URL for Anthropic endpoint | Only when explicitly set and differs from `argo_base_url` |
 
 ## Configuration File Locations
 
@@ -110,8 +139,7 @@ Backup saved: /home/user/.config/argoproxy/config.yaml.bak
 Migration complete:
   - config_version: (none) -> 3
   - removed deprecated key: use_native_openai
-  - added native_openai_base_url: https://apps-dev.inside.anl.gov/argoapi/v1
-  - added native_anthropic_base_url: https://apps-dev.inside.anl.gov/argoapi
+  - inferred argo_base_url from endpoint URLs
 ============================================================
 ```
 
