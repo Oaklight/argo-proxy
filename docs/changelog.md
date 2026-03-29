@@ -17,6 +17,7 @@ This page records the major version changes and important feature updates of the
 
 - **Auth credential fallback in dispatch upstream headers**: When clients (e.g. Codex CLI) send no auth headers, upstream requests were missing credentials entirely, causing 401 errors. Added `_extract_client_credential()` with provider-aware header priority (Anthropic prefers `x-api-key`, OpenAI prefers `Authorization: Bearer`) and `_build_upstream_headers()` with `fallback_user` parameter — without `--username-passthrough`, always uses `config.user`; with it, extracts from client request first, falls back to `config.user`
 - **Graceful client disconnect handling**: Client disconnects during streaming no longer produce noisy tracebacks — `ConnectionResetError` is caught and logged cleanly
+- **Catch aiohttp `ClientConnectionResetError` in dispatch**: aiohttp's `ClientConnectionResetError` (raised when writing to a closing transport) is not a subclass of stdlib `ConnectionResetError`, so it was falling through to the generic exception handler and logging as `ERROR`. Now caught explicitly alongside stdlib connection errors and logged as a warning
 
 ### Changed
 
