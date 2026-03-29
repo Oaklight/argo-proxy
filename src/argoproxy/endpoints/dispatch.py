@@ -902,6 +902,18 @@ async def _convert_streaming(
 
                     chunk_count += 1
 
+                    # Log first chunk and error chunks for diagnostics
+                    if chunk_count == 1 and config.verbose:
+                        log_debug(
+                            f"First upstream chunk: {json.dumps(chunk_data)[:500]}",
+                            context="dispatch",
+                        )
+                    if "error" in chunk_data:
+                        log_warning(
+                            f"Upstream error in stream chunk: {json.dumps(chunk_data)[:500]}",
+                            context="dispatch",
+                        )
+
                     # Upstream chunk → IR events
                     ir_events = target_converter.stream_response_from_provider(
                         chunk_data, context=from_ctx
