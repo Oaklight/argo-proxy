@@ -4,6 +4,10 @@ This page records the major version changes and important feature updates of the
 
 ## Unreleased
 
+### Changed
+
+- **Updated `config.sample.yaml` and configuration docs**: Reorganized sample config with logical section grouping matching `_format_config_yaml()` output. Added upstream environment table (prod/dev/test URLs), conditional fields documentation, and removed legacy endpoint examples
+
 ### Fixed
 
 - **Force streaming for Anthropic non-streaming requests**: Anthropic API requires streaming for operations that may exceed 10 minutes, causing `500` errors (`"Streaming is required for operations that may take longer than 10 minutes"`) for non-streaming requests from clients like Claude Code. Solved transparently at the proxy layer: all non-streaming requests targeting Anthropic are now sent with `stream: true` upstream, SSE events are aggregated into a complete Messages API response, and standard JSON is returned to the client. Covers both same-format passthrough (Anthropic → Anthropic) and cross-format conversion (e.g. OpenAI → Anthropic) paths
