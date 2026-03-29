@@ -12,6 +12,7 @@ This page records the major version changes and important feature updates of the
 ### Improved
 
 - **Request logging — history truncation and Responses API support** *([@caidao22](https://github.com/caidao22))*: Conversation history in logs is now truncated to the last 5 items (configurable via `max_history_items`) with a `[... N earlier items omitted ...]` placeholder. Added sanitization for Responses API `input` items (`input_text`/`output_text` truncation). Request summary now includes `input=N` for Responses API requests. `log_converted_request` gated behind verbose check to skip unnecessary deep copies
+- **Per-request user tagging in logs**: When `USERNAME_PASSTHROUGH=true`, all dispatch log entries now include `user=<identity>` so operators can trace requests back to individual users for debugging. Uses `contextvars` to tag all log calls within a request's lifetime — covers `[ORIGINAL]`, `[CONVERTED]`, `[UPSTREAM ERROR]`, `[ModelRegistry]`, and all dispatch-level messages
 
 ### Fixed
 
