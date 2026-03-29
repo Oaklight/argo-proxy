@@ -36,6 +36,7 @@ from ..config import ArgoConfig
 from ..models import ModelRegistry
 from ..utils.image_processing import process_anthropic_images, process_openai_images
 from ..utils.logging import (
+    clear_request_user,
     log_converted_request,
     log_debug,
     log_error,
@@ -43,6 +44,7 @@ from ..utils.logging import (
     log_original_request,
     log_upstream_error,
     log_warning,
+    set_request_user,
 )
 from ..utils.misc import (
     ARGO_AUTH_ERROR_MESSAGE,
@@ -1052,6 +1054,12 @@ async def proxy_request(
     except Exception:
         return _error_response(source_provider, 400, "Invalid JSON body")
 
+    # Apply username passthrough early so all subsequent logs carry the user tag
+    apply_username_passthrough(body, request, config.user)
+    user_token = None
+    if should_use_username_passthrough():
+        user_token = set_request_user(body.get("user", ""))
+
     try:
         log_original_request(body, verbose=config.verbose)
 
@@ -1087,9 +1095,6 @@ async def proxy_request(
 
         # Preprocess images (format-specific, before conversion)
         body = await _preprocess_images(session, body, source_provider, config)
-
-        # Apply username passthrough
-        apply_username_passthrough(body, request, config.user)
 
         # Anthropic target: also set metadata.user_id
         if target_provider == "anthropic":
@@ -1214,3 +1219,6 @@ async def proxy_request(
             context="dispatch",
         )
         return _error_response(source_provider, 500, f"Internal error: {exc}")
+    finally:
+        if user_token is not None:
+            clear_request_user(user_token)

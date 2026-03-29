@@ -5,6 +5,7 @@ This module provides utilities for logging request/response data in a clean,
 configurable manner using Python's standard logging library with colorized output.
 """
 
+import contextvars
 import copy
 import gzip
 import json
@@ -14,6 +15,28 @@ import shutil
 import sys
 from logging.handlers import RotatingFileHandler
 from typing import Any
+
+# ---------------------------------------------------------------------------
+# Per-request user context (for username-passthrough logging)
+# ---------------------------------------------------------------------------
+_request_user: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "request_user", default=""
+)
+
+
+def set_request_user(user: str) -> contextvars.Token[str]:
+    """Set the current request's user for log tagging.
+
+    Returns:
+        A token that must be passed to ``clear_request_user`` to restore
+        the previous value.
+    """
+    return _request_user.set(user)
+
+
+def clear_request_user(token: contextvars.Token[str]) -> None:
+    """Restore the request user contextvar to its previous value."""
+    _request_user.reset(token)
 
 
 # ANSI color codes for terminal output
@@ -486,7 +509,7 @@ def log_request(
     """
     if show_summary:
         summary = create_request_summary(data)
-        _logger.info(f"[{label}] {summary}")
+        log_info(summary, context=label)
 
     if show_full:
         if sanitize:
@@ -593,7 +616,7 @@ def log_request_diff(
         diffs.append(f"user: added ({converted['user']})")
 
     if diffs:
-        _logger.info(f"[CHANGES] {', '.join(diffs)}")
+        log_info(", ".join(diffs), context="CHANGES")
 
 
 def log_upstream_error(
@@ -613,66 +636,43 @@ def log_upstream_error(
         is_streaming: Whether this was a streaming request.
     """
     request_type = "streaming" if is_streaming else "non-streaming"
-    _logger.error(
-        f"[UPSTREAM ERROR] endpoint={endpoint}, type={request_type}, "
-        f"status={status_code}, error={error_text}"
+    log_error(
+        f"endpoint={endpoint}, type={request_type}, "
+        f"status={status_code}, error={error_text}",
+        context="UPSTREAM ERROR",
     )
 
 
-def log_warning(message: str, *, context: str = "") -> None:
-    """
-    Log a warning message in a consistent format.
-
-    Args:
-        message: The warning message to log.
-        context: Optional context information (e.g., function name, module).
-    """
+def _format_log(message: str, context: str) -> str:
+    """Format a log message with optional context and per-request user tag."""
+    user = _request_user.get()
+    if context and user:
+        return f"[{context}] user={user} | {message}"
     if context:
-        _logger.warning(f"[{context}] {message}")
-    else:
-        _logger.warning(message)
+        return f"[{context}] {message}"
+    if user:
+        return f"user={user} | {message}"
+    return message
+
+
+def log_warning(message: str, *, context: str = "") -> None:
+    """Log a warning message in a consistent format."""
+    _logger.warning(_format_log(message, context))
 
 
 def log_error(message: str, *, context: str = "") -> None:
-    """
-    Log an error message in a consistent format.
-
-    Args:
-        message: The error message to log.
-        context: Optional context information (e.g., function name, module).
-    """
-    if context:
-        _logger.error(f"[{context}] {message}")
-    else:
-        _logger.error(message)
+    """Log an error message in a consistent format."""
+    _logger.error(_format_log(message, context))
 
 
 def log_info(message: str, *, context: str = "") -> None:
-    """
-    Log an info message in a consistent format.
-
-    Args:
-        message: The info message to log.
-        context: Optional context information (e.g., function name, module).
-    """
-    if context:
-        _logger.info(f"[{context}] {message}")
-    else:
-        _logger.info(message)
+    """Log an info message in a consistent format."""
+    _logger.info(_format_log(message, context))
 
 
 def log_debug(message: str, *, context: str = "") -> None:
-    """
-    Log a debug message in a consistent format.
-
-    Args:
-        message: The debug message to log.
-        context: Optional context information (e.g., function name, module).
-    """
-    if context:
-        _logger.debug(f"[{context}] {message}")
-    else:
-        _logger.debug(message)
+    """Log a debug message in a consistent format."""
+    _logger.debug(_format_log(message, context))
 
 
 def _make_bar(message: str = "", bar_length: int = 40) -> str:
