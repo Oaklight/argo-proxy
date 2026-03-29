@@ -49,6 +49,7 @@ from ..utils.misc import (
     apply_username_passthrough,
     check_response_for_argo_warning,
     contains_argo_auth_warning,
+    should_use_username_passthrough,
 )
 
 # ---------------------------------------------------------------------------
@@ -179,46 +180,88 @@ def _sanitize_tool_schemas(body: dict[str, Any]) -> dict[str, Any]:
     return body
 
 
+def _extract_client_credential(
+    request: web.Request, target_provider: ProviderType
+) -> str | None:
+    """Extract auth credential from the client request, prioritised by target.
+
+    When the target is ``anthropic``, ``x-api-key`` is checked first; otherwise
+    ``Authorization`` (Bearer) is checked first.  Google-specific headers and
+    the ``?key=`` query parameter are checked as fallbacks.
+
+    Args:
+        request: The incoming client request.
+        target_provider: The upstream provider we are routing to.
+
+    Returns:
+        The extracted credential string, or ``None`` if none found.
+    """
+
+    def _header_value(hdr: str) -> str | None:
+        val = request.headers.get(hdr, "")
+        if not val:
+            return None
+        if val.lower().startswith("bearer "):
+            return val[7:].strip() or None
+        return val.strip() or None
+
+    if target_provider == "anthropic":
+        order = ["x-api-key", "authorization"]
+    else:
+        order = ["authorization", "x-api-key"]
+
+    for hdr in order:
+        key = _header_value(hdr)
+        if key:
+            return key
+
+    goog = _header_value("x-goog-api-key")
+    if goog:
+        return goog
+    if "key" in request.query:
+        return request.query["key"]
+
+    return None
+
+
 def _build_upstream_headers(
     request: web.Request,
     target_provider: ProviderType,
     *,
+    fallback_user: str,
     stream: bool = False,
 ) -> dict[str, str]:
-    """Build headers for the upstream request.
+    """Build HTTP headers for the upstream API request.
 
-    Handles cross-format auth header translation:
-    - Anthropic uses ``x-api-key``, OpenAI uses ``Authorization: Bearer ...``
-    - When crossing formats, the auth credential is mapped automatically.
+    Auth credential logic:
+    - Without ``--username-passthrough``: always use *fallback_user*.
+    - With ``--username-passthrough``: extract from client request first,
+      fall back to *fallback_user*.
+
+    Args:
+        request: The incoming client request.
+        target_provider: The upstream provider (determines header format).
+        fallback_user: Value from ``config.user`` used when no client cred.
+        stream: Whether this is a streaming request.
+
+    Returns:
+        A dict of HTTP headers ready for the upstream request.
     """
     headers: dict[str, str] = {"Content-Type": "application/json"}
 
-    # Collect the auth credential from whichever header/param the client sent
-    api_key: str | None = None
-    if "Authorization" in request.headers:
-        auth_val = request.headers["Authorization"]
-        api_key = auth_val.removeprefix("Bearer ").strip() if auth_val else None
-    if "x-api-key" in request.headers:
-        api_key = request.headers["x-api-key"]
-    # Google GenAI SDK sends API key via x-goog-api-key header
-    if not api_key and "x-goog-api-key" in request.headers:
-        api_key = request.headers["x-goog-api-key"]
-    # Google GenAI clients may also pass the API key as a ?key= query parameter
-    if not api_key and "key" in request.query:
-        api_key = request.query["key"]
+    if should_use_username_passthrough():
+        api_key = _extract_client_credential(request, target_provider) or fallback_user
+    else:
+        api_key = fallback_user
 
     if target_provider == "anthropic":
-        if api_key:
-            headers["x-api-key"] = api_key
+        headers["x-api-key"] = api_key
         if "anthropic-version" in request.headers:
             headers["anthropic-version"] = request.headers["anthropic-version"]
         else:
-            # Provide a default version header for cross-format requests
             headers["anthropic-version"] = "2023-06-01"
     else:
-        # OpenAI-style target
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
+        headers["Authorization"] = f"Bearer {api_key}"
 
     if stream:
         headers["Accept"] = "text/event-stream"
@@ -617,7 +660,8 @@ async def _convert_non_streaming(
     _ensure_user_field(target_body, config.user)
 
     # Log the converted body
-    log_converted_request(target_body, verbose=config.verbose)
+    if config.verbose:
+        log_converted_request(target_body, verbose=True)
 
     # 3. Forward to upstream
     try:
@@ -716,7 +760,8 @@ async def _convert_buffered_streaming(
 
     # 3. Inject stream flags and update headers for streaming
     target_body = _inject_stream_flags(target_body, target_provider)
-    log_converted_request(target_body, verbose=config.verbose)
+    if config.verbose:
+        log_converted_request(target_body, verbose=True)
 
     headers = dict(headers)
     headers["Accept"] = "text/event-stream"
@@ -813,7 +858,8 @@ async def _convert_streaming(
 
     # 3. Inject stream flags
     target_body = _inject_stream_flags(target_body, target_provider)
-    log_converted_request(target_body, verbose=config.verbose)
+    if config.verbose:
+        log_converted_request(target_body, verbose=True)
 
     _ensure_user_field(target_body, config.user)
 
@@ -1053,7 +1099,9 @@ async def proxy_request(
         stream = force_stream or _detect_stream(source_provider, body)
 
         # Build upstream headers
-        headers = _build_upstream_headers(request, target_provider, stream=stream)
+        headers = _build_upstream_headers(
+            request, target_provider, fallback_user=config.user, stream=stream
+        )
 
         # Same-format passthrough: skip conversion entirely
         if source_provider == target_provider:

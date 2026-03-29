@@ -109,14 +109,7 @@ def str_to_bool(value: str) -> bool:
 
 
 def extract_api_key_from_request(request: web.Request) -> str | None:
-    """
-    Extract API key from request headers for username passthrough functionality.
-
-    Args:
-        request: The web request object containing headers
-
-    Returns:
-        The extracted API key if found, None otherwise
+    """Extract API key from request headers.
 
     Note:
         Supports multiple header formats:
@@ -124,55 +117,40 @@ def extract_api_key_from_request(request: web.Request) -> str | None:
         - Authorization: <token>
         - X-API-Key: <token>
         - API-Key: <token>
+        - x-goog-api-key: <token>  (Google GenAI SDK)
+        - ?key= query parameter   (Google GenAI client)
     """
-    # Try to get API key from various common header names
-    for header_name in ["authorization", "x-api-key", "api-key"]:
+    for header_name in ["authorization", "x-api-key", "api-key", "x-goog-api-key"]:
         header_value = request.headers.get(header_name, "")
         if header_value:
-            # Handle "Bearer <token>" format
             if header_value.lower().startswith("bearer "):
                 api_key = header_value[7:].strip()
             else:
                 api_key = header_value.strip()
-
-            # Return the first non-empty API key found
             if api_key:
                 return api_key
+
+    if "key" in request.query:
+        return request.query["key"]
 
     return None
 
 
 def should_use_username_passthrough() -> bool:
-    """
-    Check if username passthrough mode is enabled via environment variable.
-
-    Returns:
-        True if username passthrough is enabled, False otherwise
-    """
+    """Check if username passthrough mode is enabled via environment variable."""
     return os.getenv("USERNAME_PASSTHROUGH", "False").lower() == "true"
 
 
 def apply_username_passthrough(
     data: dict, request: web.Request, fallback_user: str
 ) -> str:
-    """
-    Apply username passthrough logic to determine the user field value.
-
-    Args:
-        data: The request data dictionary (will be modified in place)
-        request: The web request object
-        fallback_user: The fallback user value if no API key is found
-
-    Returns:
-        The user value that was applied
-    """
+    """Apply username passthrough logic to the request body ``user`` field."""
     if should_use_username_passthrough():
         api_key = extract_api_key_from_request(request)
         if api_key:
             data["user"] = api_key
             return api_key
 
-    # Fallback to the provided user
     data["user"] = fallback_user
     return fallback_user
 
