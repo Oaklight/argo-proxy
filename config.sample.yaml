@@ -1,50 +1,54 @@
-# Config version (for migration tracking)
-config_version: "3"
-
-host: "0.0.0.0"
-port: 44497
-user: "" # you should replace it with your username
-
-# Argo API base URL - all endpoint URLs are derived from this
-# This is the recommended way to configure URLs
-argo_base_url: "https://apps-dev.inside.anl.gov/argoapi"
-
-# Native upstream endpoint URLs (derived from argo_base_url if not set)
-# native_openai_base_url: "https://apps-dev.inside.anl.gov/argoapi/v1"
-# native_anthropic_base_url: "https://apps-dev.inside.anl.gov/argoapi"
-
-# Legacy ARGO gateway mode (default: false)
-# When enabled, uses the old ARGO gateway endpoints instead of universal dispatch.
-# Only enable this if you need backward compatibility with the legacy pipeline.
-# use_legacy_argo: false
-
-# Legacy ARGO gateway endpoint URLs (only used when use_legacy_argo is true)
-# argo_url: "https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/chat/"
-# argo_stream_url: "https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/streamchat/"
-# argo_embedding_url: "https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/embed/"
-
+# Core settings
+config_version: '3'
+user: ''            # your ANL username (required)
+host: 0.0.0.0
+port: 44497         # or any available port; init generates a random one
 verbose: true
 
-# Skip URL validation at startup (default: false)
-# Useful for non-interactive environments (CI/CD, containers) or when
-# connectivity is known to be unavailable at startup time
-# Can also be set via SKIP_URL_VALIDATION environment variable
-# skip_url_validation: false
+# Upstream
+#
+# argo_base_url controls all upstream endpoint routing.
+# All native endpoint URLs are derived from this value:
+#   - native_openai_base_url    = {argo_base_url}/v1
+#   - native_anthropic_base_url = {argo_base_url}
+#
+# Available environments:
+#   Production : https://apps.inside.anl.gov/argoapi
+#   Development: https://apps-dev.inside.anl.gov/argoapi   (default)
+#   Test       : https://apps-test.inside.anl.gov/argoapi
+#
+# Switch with: argo-proxy config env prod|dev|test
+argo_base_url: https://apps-dev.inside.anl.gov/argoapi
 
-# Timeout in seconds for each URL connectivity test at startup (default: 5)
-# Increase this if connecting through SSH tunnels or high-latency networks
-# connection_test_timeout: 5
-
-# DNS resolution overrides (similar to curl --resolve)
+# Network & validation
+connection_test_timeout: 5    # seconds per URL connectivity test at startup
+# skip_url_validation: false  # set true for CI/CD or offline environments
+resolve_overrides: {}
+# DNS resolution overrides (similar to curl --resolve).
 # Maps "host:port" to IP address for custom DNS resolution.
 # Useful when accessing Argo API through SSH tunnels or port forwarding,
 # where the original hostname must be preserved for TLS certificate validation.
-# Example: route apps-dev.inside.anl.gov:443 through localhost SSH tunnel
-# resolve_overrides:
-#   "apps-dev.inside.anl.gov:443": "127.0.0.1"
+# Example:
+#   resolve_overrides:
+#     "apps-dev.inside.anl.gov:443": "127.0.0.1"
 
-# Image processing settings
-enable_payload_control: false  # Enable automatic payload size control
-max_payload_size: 20  # MB default (total for all images)
-image_timeout: 30  # seconds
-concurrent_downloads: 10  # parallel downloads
+# Image processing
+enable_payload_control: false
+max_payload_size: 20          # MB (total for all images in a request)
+image_timeout: 30             # seconds
+concurrent_downloads: 10      # parallel image downloads
+
+# --- Conditional fields (only appear when set to non-default values) ---
+#
+# use_legacy_argo: true
+#   Enable legacy ARGO gateway mode (individual chat/stream/embed endpoints).
+#   Only needed for backward compatibility with the old pipeline.
+#
+# skip_url_validation: true
+#   Skip upstream URL connectivity checks at startup.
+#
+# native_openai_base_url: "https://custom-openai-endpoint/v1"
+#   Only persisted when explicitly set AND differs from {argo_base_url}/v1.
+#
+# native_anthropic_base_url: "https://custom-anthropic-endpoint"
+#   Only persisted when explicitly set AND differs from argo_base_url.
