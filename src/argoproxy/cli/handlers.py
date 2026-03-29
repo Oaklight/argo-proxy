@@ -95,9 +95,14 @@ def handle_serve(args: argparse.Namespace):
 
 
 def _migrate_config(config_path: str | None = None):
-    """Migrate configuration file from v1/v2 to v3 format in place.
+    """Migrate configuration file to v3 format in place.
 
-    Creates a .bak backup before writing changes.
+    Loads the config through the standard ``ArgoConfig`` pipeline (which
+    normalizes fields, infers ``argo_base_url``, drops unknown keys, and
+    bumps the version to v3), then writes it back using the canonical
+    ``_format_config_yaml`` formatter.
+
+    Creates a ``.bak`` backup before writing changes.
 
     Args:
         config_path: Optional explicit path to the config file.
@@ -105,6 +110,8 @@ def _migrate_config(config_path: str | None = None):
     import shutil
 
     import yaml
+
+    from ..config.io import _format_config_yaml, load_config
 
     paths = [config_path] if config_path else PATHS_TO_TRY
     found_path = None
@@ -119,50 +126,50 @@ def _migrate_config(config_path: str | None = None):
 
     log_info(f"Migrating config: {found_path}", context="cli")
 
+    # Read original content
     with open(found_path, encoding="utf-8") as f:
-        raw = f.read()
+        original_content = f.read()
 
-    data = yaml.safe_load(raw) or {}
-    current_version = data.get("config_version", "")
+    original_data = yaml.safe_load(original_content) or {}
 
-    if current_version == "3":
-        log_info("Config is already v3. Nothing to do.", context="cli")
+    # Load through standard pipeline (applies _migrate_config + from_dict)
+    config, _ = load_config(found_path, env_override=False, verbose=False)
+    if config is None:
+        log_error(f"Failed to load config from {found_path}", context="cli")
+        sys.exit(1)
+
+    # Produce canonical output
+    persistent = config.to_persistent_dict()
+    migrated_yaml = _format_config_yaml(persistent)
+
+    # Check if anything actually changed
+    if migrated_yaml.strip() == original_content.strip():
+        log_info(
+            "Config is already in canonical v3 format. Nothing to do.", context="cli"
+        )
         return
 
+    # Create backup
     backup_path = found_path + ".bak"
     shutil.copy2(found_path, backup_path)
     log_info(f"Backup saved: {backup_path}", context="cli")
 
-    changes: list[str] = []
-
-    old_ver = current_version or "(none)"
-    data["config_version"] = "3"
-    changes.append(f"config_version: {old_ver} -> 3")
-
-    deprecated_keys = [
-        "use_native_openai",
-        "use_native_anthropic",
-        "provider_tool_format",
-    ]
-    for key in deprecated_keys:
-        if key in data:
-            data.pop(key)
-            changes.append(f"removed deprecated key: {key}")
-
-    base_url = data.get("argo_base_url", "")
-    if base_url:
-        base = base_url.rstrip("/")
-        if "native_openai_base_url" not in data:
-            data["native_openai_base_url"] = f"{base}/v1"
-            changes.append(f"added native_openai_base_url: {base}/v1")
-        if "native_anthropic_base_url" not in data:
-            data["native_anthropic_base_url"] = base
-            changes.append(f"added native_anthropic_base_url: {base}")
-
+    # Write migrated config
     with open(found_path, "w", encoding="utf-8") as f:
-        yaml.dump(
-            data, f, default_flow_style=False, sort_keys=False, allow_unicode=True
-        )
+        f.write(migrated_yaml)
+
+    # Report changes
+    changes: list[str] = []
+    old_ver = original_data.get("config_version", "") or "(none)"
+    new_ver = persistent.get("config_version", "3")
+    if old_ver != new_ver:
+        changes.append(f"config_version: {old_ver} -> {new_ver}")
+
+    for key in sorted(set(original_data) - set(persistent)):
+        changes.append(f"removed: {key}")
+
+    for key in sorted(set(persistent) - set(original_data)):
+        changes.append(f"added: {key}: {persistent[key]}")
 
     log_info("=" * 60, context="cli")
     log_info("Migration complete:", context="cli")

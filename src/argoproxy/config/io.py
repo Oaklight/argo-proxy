@@ -24,10 +24,18 @@ def _format_config_yaml(data: dict) -> str:
     # Define logical groups with optional section headers
     groups: list[tuple[str, list[str]]] = [
         ("# Core settings", ["config_version", "user", "host", "port", "verbose"]),
-        ("# Upstream", ["argo_base_url"]),
+        (
+            "# Upstream",
+            [
+                "argo_base_url",
+                "native_openai_base_url",
+                "native_anthropic_base_url",
+                "use_legacy_argo",
+            ],
+        ),
         (
             "# Network & validation",
-            ["connection_test_timeout", "resolve_overrides"],
+            ["connection_test_timeout", "skip_url_validation", "resolve_overrides"],
         ),
         (
             "# Image processing",
@@ -150,8 +158,39 @@ def _apply_env_overrides(config_data: ArgoConfig) -> ArgoConfig:
     return config_data
 
 
+def _infer_base_url(config_dict: dict) -> str:
+    """Infer ``argo_base_url`` from individual endpoint URLs.
+
+    Strips known path suffixes from legacy URL fields to recover the base.
+    Priority: ``argo_url`` > ``argo_stream_url`` > ``argo_embedding_url``.
+
+    Args:
+        config_dict: Raw config dictionary.
+
+    Returns:
+        Inferred base URL, or empty string if none could be determined.
+    """
+    url_suffixes = [
+        ("argo_url", "/api/v1/resource/chat/"),
+        ("argo_stream_url", "/api/v1/resource/streamchat/"),
+        ("argo_embedding_url", "/api/v1/resource/embed/"),
+    ]
+    for field, suffix in url_suffixes:
+        url = config_dict.get(field, "")
+        if not url:
+            continue
+        url = url.rstrip("/") + "/"  # normalize trailing slash
+        if url.endswith(suffix):
+            return url[: -len(suffix)]
+    return ""
+
+
 def _migrate_config(config_dict: dict) -> dict:
     """Apply config migrations for backward compatibility.
+
+    Normalizes v1/v2 configs to v3 in memory: infers ``argo_base_url``
+    from individual URL fields when missing, bumps ``config_version``
+    to ``"3"``, and removes deprecated keys.
 
     Args:
         config_dict: The raw config dictionary loaded from YAML.
@@ -162,30 +201,41 @@ def _migrate_config(config_dict: dict) -> dict:
     version = config_dict.get("config_version", "")
 
     if not version:
-        # Legacy config without version - compatible, just log a hint
         log_info(
             "Config file has no 'config_version' field. "
-            "Consider adding 'config_version: \"3\"' and using 'argo_base_url' "
-            "instead of individual URL fields.",
+            "Run 'argo-proxy config migrate' to update the file to v3 format.",
             context="config",
         )
 
-    # Migrate v2 → v3: remove deprecated native mode toggles
-    if version and version < "3":
-        deprecated_keys = [
-            "use_native_openai",
-            "use_native_anthropic",
-            "provider_tool_format",
-        ]
-        found = [k for k in deprecated_keys if k in config_dict]
-        if found:
-            log_warning(
-                f"Config keys {found} are deprecated in v3.0.0 and will be ignored. "
-                "Native endpoints are now used by default via universal dispatch.",
+    # Infer argo_base_url from individual endpoint URLs if not set
+    if not config_dict.get("argo_base_url"):
+        inferred = _infer_base_url(config_dict)
+        if inferred:
+            config_dict["argo_base_url"] = inferred
+            log_info(
+                f"Inferred argo_base_url from endpoint URLs: {inferred}",
                 context="config",
             )
-            for k in found:
-                config_dict.pop(k, None)
+
+    # Bump version to v3
+    if not version or version < "3":
+        config_dict["config_version"] = "3"
+
+    # Remove deprecated native mode toggles
+    deprecated_keys = [
+        "use_native_openai",
+        "use_native_anthropic",
+        "provider_tool_format",
+    ]
+    found = [k for k in deprecated_keys if k in config_dict]
+    if found:
+        log_warning(
+            f"Config keys {found} are deprecated in v3.0.0 and will be ignored. "
+            "Native endpoints are now used by default via universal dispatch.",
+            context="config",
+        )
+        for k in found:
+            config_dict.pop(k, None)
 
     return config_dict
 

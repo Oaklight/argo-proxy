@@ -196,7 +196,8 @@ class ArgoConfig:
         """Return only the fields that should be persisted to config file.
 
         Excludes runtime-derived fields (mode, native endpoint URLs) that
-        are computed from ``argo_base_url`` at load time.
+        are computed from ``argo_base_url`` at load time.  User-configurable
+        optional fields are included when they differ from their defaults.
         """
         serialized = asdict(self)
         # Drop private fields
@@ -205,6 +206,26 @@ class ArgoConfig:
         # Add the user-configurable base URL (stored as private field)
         if self._argo_base_url:
             serialized["argo_base_url"] = self.argo_base_url
+
+        # Persist optional flags only when set to non-default values
+        if self._use_legacy_argo:
+            serialized["use_legacy_argo"] = True
+        if self._skip_url_validation:
+            serialized["skip_url_validation"] = True
+
+        # Persist native URLs only when explicitly overridden (differ from
+        # the values that would be derived from argo_base_url)
+        base = self.argo_base_url
+        if (
+            self._native_openai_base_url
+            and self._native_openai_base_url.rstrip("/") != f"{base}/v1"
+        ):
+            serialized["native_openai_base_url"] = self.native_openai_base_url
+        if (
+            self._native_anthropic_base_url
+            and self._native_anthropic_base_url.rstrip("/") != base
+        ):
+            serialized["native_anthropic_base_url"] = self.native_anthropic_base_url
 
         return dict(sorted(serialized.items()))
 

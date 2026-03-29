@@ -1,0 +1,10 @@
+# v1 config: mixed dev/prod base URLs, no version
+# Source: lambda11 config-ozan.yaml
+# Note: embedding uses prod, chat/stream use dev
+argo_embedding_url: https://apps.inside.anl.gov/argoapi/api/v1/resource/embed/
+argo_stream_url: https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/streamchat/
+argo_url: https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/chat/
+host: 0.0.0.0
+port: 55625
+user: ogokdemir
+verbose: true

@@ -1,0 +1,17 @@
+# v3 config: already migrated, has extra fields that shouldn't be persisted
+# Source: ~/.config/argoproxy/config.test.yaml (shows the current bug)
+argo_base_url: http://localhost:44500
+concurrent_downloads: 10
+config_version: '3'
+connection_test_timeout: 5
+enable_payload_control: false
+host: 0.0.0.0
+image_timeout: 30
+max_payload_size: 20
+mode: universal
+native_anthropic_base_url: http://localhost:44500
+native_openai_base_url: http://localhost:44500/v1
+port: 56835
+resolve_overrides: {}
+user: pding
+verbose: true

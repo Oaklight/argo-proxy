@@ -1,0 +1,9 @@
+# v1 config: individual URLs, no version, no base_url
+# Source: lambda11 config.yaml.bak
+port: 44500
+argo_url: "https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/chat/"
+argo_stream_url: "https://apps-dev.inside.anl.gov/argoapi/api/v1/resource/streamchat/"
+argo_embedding_url: "https://apps.inside.anl.gov/argoapi/api/v1/resource/embed/"
+user: "pding"
+verbose: false
+num_workers: 10

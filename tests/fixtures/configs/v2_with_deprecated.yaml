@@ -1,0 +1,11 @@
+# v2 config: has deprecated keys (use_native_openai, etc.)
+# Synthetic test case combining real patterns
+config_version: "2"
+argo_base_url: "https://apps-dev.inside.anl.gov/argoapi"
+host: 0.0.0.0
+port: 44501
+user: pding
+verbose: true
+use_native_openai: true
+use_native_anthropic: true
+provider_tool_format: "native"

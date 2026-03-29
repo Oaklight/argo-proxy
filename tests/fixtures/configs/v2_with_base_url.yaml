@@ -1,0 +1,8 @@
+# v2 config: has config_version and argo_base_url, no individual URLs
+# Source: lambda11 config.yaml (current production)
+config_version: "2"
+argo_base_url: "https://apps-dev.inside.anl.gov/argoapi"
+host: 0.0.0.0
+port: 44500
+user: pding
+verbose: true
