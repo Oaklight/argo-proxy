@@ -1192,7 +1192,11 @@ async def proxy_request(
             target_provider,
             config,
         )
-    except (ConnectionResetError, ConnectionAbortedError) as exc:
+    except (
+        ConnectionResetError,
+        ConnectionAbortedError,
+        aiohttp.ClientConnectionResetError,
+    ) as exc:
         log_warning(
             f"Client disconnected during request: {exc}",
             context="dispatch",
