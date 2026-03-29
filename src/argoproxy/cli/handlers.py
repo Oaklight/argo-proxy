@@ -237,6 +237,88 @@ def handle_config(args: argparse.Namespace):
             sys.exit(1)
     elif args.config_action == "migrate":
         _migrate_config(config_path)
+    elif args.config_action == "init":
+        _handle_init(config_path, force=args.force)
+    elif args.config_action == "env":
+        _handle_env(getattr(args, "environment", None), config_path)
+
+
+def _handle_init(config_path: str | None = None, force: bool = False):
+    """Create a new config interactively, optionally overwriting an existing one.
+
+    Args:
+        config_path: Optional path to save the config file.
+        force: If True, skip overwrite confirmation for existing files.
+    """
+    from ..config.interactive import _get_yes_no_input, create_config
+
+    # Check if target already exists
+    target = config_path
+    if target is None:
+        home_dir = os.getenv("HOME") or os.path.expanduser("~")
+        target = os.path.join(home_dir, ".config", "argoproxy", "config.yaml")
+
+    if os.path.exists(target) and not force:
+        log_warning(f"Config already exists: {target}", context="cli")
+        overwrite = _get_yes_no_input(
+            "Overwrite with a new interactive session? [y/N]: ",
+            default_choice="n",
+        )
+        if not overwrite:
+            log_info("Aborted.", context="cli")
+            return
+
+    create_config(config_path=config_path)
+
+
+def _handle_env(env_name: str | None = None, config_path: str | None = None):
+    """Show or switch the upstream ARGO environment.
+
+    Args:
+        env_name: Target environment (prod/dev/test), or None to show current.
+        config_path: Optional explicit path to the config file.
+    """
+    from ..config.io import load_config, save_config
+    from ..config.model import ArgoConfig
+
+    envs = ArgoConfig.ENVIRONMENTS
+
+    config, actual_path = load_config(config_path, env_override=False, verbose=False)
+    if config is None or actual_path is None:
+        log_error(
+            "No configuration file found. Run 'argo-proxy config init' first.",
+            context="cli",
+        )
+        sys.exit(1)
+
+    current_url = config.argo_base_url
+    current_env = next((k for k, v in envs.items() if v == current_url), None)
+
+    if env_name is None:
+        # Show current environment
+        label = current_env if current_env else "custom"
+        log_info(f"Current environment: {label}", context="cli")
+        log_info(f"  argo_base_url: {current_url}", context="cli")
+        log_info("", context="cli")
+        log_info("Available environments:", context="cli")
+        for name, url in envs.items():
+            marker = " (active)" if name == current_env else ""
+            log_info(f"  {name:<6s} {url}{marker}", context="cli")
+        return
+
+    target_url = envs[env_name]
+    if target_url == current_url:
+        log_info(f"Already on '{env_name}' environment. Nothing to do.", context="cli")
+        return
+
+    config._argo_base_url = target_url
+    # Clear derived native URLs so they re-derive from new base
+    config._native_openai_base_url = ""
+    config._native_anthropic_base_url = ""
+
+    save_config(config, actual_path)
+    log_info(f"Switched to '{env_name}' environment.", context="cli")
+    log_info(f"  argo_base_url: {target_url}", context="cli")
 
 
 # ---------------------------------------------------------------------------

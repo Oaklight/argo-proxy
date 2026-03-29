@@ -2,20 +2,30 @@
 
 import json
 from dataclasses import asdict, dataclass, field
+from typing import ClassVar
 
 
 from ..utils.logging import log_info
 from ..utils.misc import make_bar
+
+# ARGO API environment URLs
+ENVIRONMENTS: dict[str, str] = {
+    "prod": "https://apps.inside.anl.gov/argoapi",
+    "dev": "https://apps-dev.inside.anl.gov/argoapi",
+    "test": "https://apps-test.inside.anl.gov/argoapi",
+}
 
 
 @dataclass
 class ArgoConfig:
     """Configuration values with validation and interactive methods."""
 
-    REQUIRED_KEYS = [
+    REQUIRED_KEYS: ClassVar[list[str]] = [
         "port",
         "user",
     ]
+
+    ENVIRONMENTS: ClassVar[dict[str, str]] = ENVIRONMENTS
 
     # Configuration fields with default values
     host: str = "0.0.0.0"  # Default to 0.0.0.0
@@ -24,8 +34,8 @@ class ArgoConfig:
     verbose: bool = True
 
     _argo_base_url: str = ""  # User-configurable base URL, overrides _argo_dev_base
-    _argo_dev_base: str = "https://apps-dev.inside.anl.gov/argoapi"
-    _argo_prod_base: str = "https://apps.inside.anl.gov/argoapi"
+    _argo_dev_base: str = ENVIRONMENTS["dev"]
+    _argo_prod_base: str = ENVIRONMENTS["prod"]
 
     # Derived fields (to be constructed from base URL if not provided)
     _argo_url: str = ""

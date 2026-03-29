@@ -129,6 +129,32 @@ def _add_config_subparsers(parser: argparse.ArgumentParser) -> None:
         "config", nargs="?", default=None, help="Config file path"
     )
 
+    init_parser = sub.add_parser(
+        "init", help="Create a new config interactively (overwrites if exists)"
+    )
+    init_parser.add_argument("config", nargs="?", default=None, help="Config file path")
+    init_parser.add_argument(
+        "--force",
+        "-f",
+        action="store_true",
+        default=False,
+        help="Overwrite existing config without confirmation",
+    )
+
+    env_parser = sub.add_parser(
+        "env", help="Show or switch upstream environment (prod/dev/test)"
+    )
+    env_parser.add_argument(
+        "environment",
+        nargs="?",
+        default=None,
+        choices=["prod", "dev", "test"],
+        help="Target environment to switch to",
+    )
+    env_parser.add_argument(
+        "--config", "-c", default=None, dest="config", help="Config file path"
+    )
+
 
 def _add_logs_subparsers(parser: argparse.ArgumentParser) -> None:
     """Add sub-subcommands for the ``logs`` subcommand."""
