@@ -11,6 +11,7 @@ This page records the major version changes and important feature updates of the
 
 ### Changed
 
+- **ReadTheDocs links in CLI help**: Each subcommand's `--help` now includes a `Docs:` URL pointing to the corresponding ReadTheDocs page
 - **Updated `config.sample.yaml` and configuration docs**: Reorganized sample config with logical section grouping matching `_format_config_yaml()` output. Added upstream environment table (prod/dev/test URLs), conditional fields documentation, and removed legacy endpoint examples
 
 ### Fixed
