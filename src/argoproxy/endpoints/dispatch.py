@@ -42,6 +42,7 @@ from ..utils.logging import (
     log_info,
     log_original_request,
     log_upstream_error,
+    log_warning,
 )
 from ..utils.misc import (
     ARGO_AUTH_ERROR_MESSAGE,
@@ -1131,7 +1132,19 @@ async def proxy_request(
             target_provider,
             config,
         )
+    except (ConnectionResetError, ConnectionAbortedError) as exc:
+        log_warning(
+            f"Client disconnected during request: {exc}",
+            context="dispatch",
+        )
+        return _error_response(source_provider, 499, "Client closed connection")
     except Exception as exc:
+        if "Cannot write to closing transport" in str(exc):
+            log_warning(
+                f"Client disconnected during request: {exc}",
+                context="dispatch",
+            )
+            return _error_response(source_provider, 499, "Client closed connection")
         log_error(
             f"Unhandled dispatch error: {exc}\n{traceback.format_exc()}",
             context="dispatch",
