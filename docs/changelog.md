@@ -2,6 +2,26 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v3.0.0b10 (2026-03-29)
+
+### Features
+
+- **File logging with gzip rotation**: New `log_to_file` config option enables structured file logging to `~/.local/share/argoproxy/logs/` with automatic daily rotation and gzip compression of old files. Console output remains unchanged
+- **Diagnostic logging for streaming chunks**: Verbose mode now logs the first upstream chunk and stream completion stats (chunk count, duration) for easier debugging
+
+### Improved
+
+- **Request logging — history truncation and Responses API support**: Conversation history in logs is now truncated to the last 5 items (configurable via `max_history_items`) with a `[... N earlier items omitted ...]` placeholder. Added sanitization for Responses API `input` items (`input_text`/`output_text` truncation). Request summary now includes `input=N` for Responses API requests. `log_converted_request` gated behind verbose check to skip unnecessary deep copies
+
+### Fixed
+
+- **Auth credential fallback in dispatch upstream headers**: When clients (e.g. Codex CLI) send no auth headers, upstream requests were missing credentials entirely, causing 401 errors. Added `_extract_client_credential()` with provider-aware header priority (Anthropic prefers `x-api-key`, OpenAI prefers `Authorization: Bearer`) and `_build_upstream_headers()` with `fallback_user` parameter — without `--username-passthrough`, always uses `config.user`; with it, extracts from client request first, falls back to `config.user`
+- **Graceful client disconnect handling**: Client disconnects during streaming no longer produce noisy tracebacks — `ConnectionResetError` is caught and logged cleanly
+
+### Changed
+
+- **Bumped llm-rosetta to v0.2.6**: Picks up orphaned tool_call IR-level fix, parallel tool_call_index propagation, Responses streaming item_id tracking, non-function tool name preservation, orphaned tool_choice stripping, and stream event ordering fixes (Oaklight/llm-rosetta v0.2.6)
+
 ## v3.0.0b9 (2026-03-29)
 
 ### Features
