@@ -9,6 +9,13 @@ from .display import version_check
 # Known subcommands -- used for default-subcommand detection
 _SUBCOMMANDS = {"serve", "config", "logs", "update", "models"}
 
+_DOCS_BASE = "https://argo-proxy.readthedocs.io/en/latest"
+
+
+def _docs_epilog(path: str) -> str:
+    """Build a help epilog line pointing to the ReadTheDocs page."""
+    return f"Docs: {_DOCS_BASE}/{path}"
+
 
 def _add_serve_arguments(parser: argparse.ArgumentParser) -> None:
     """Add arguments for the ``serve`` subcommand."""
@@ -206,6 +213,7 @@ def create_parser() -> argparse.ArgumentParser:
         prog="argo-proxy",
         description="Argo Proxy -- universal API gateway for LLM services",
         formatter_class=RawTextHelpFormatter,
+        epilog=_docs_epilog("usage/basics/cli/"),
     )
     parser.add_argument(
         "--version",
@@ -222,6 +230,7 @@ def create_parser() -> argparse.ArgumentParser:
         "serve",
         help="Start the proxy server (default)",
         formatter_class=RawTextHelpFormatter,
+        epilog=_docs_epilog("usage/running/"),
     )
     _add_serve_arguments(serve_parser)
 
@@ -230,6 +239,7 @@ def create_parser() -> argparse.ArgumentParser:
         "config",
         help="Manage configuration files",
         formatter_class=RawTextHelpFormatter,
+        epilog=_docs_epilog("usage/basics/configuration/"),
     )
     _add_config_subparsers(config_parser)
 
@@ -238,6 +248,7 @@ def create_parser() -> argparse.ArgumentParser:
         "logs",
         help="Collect diagnostic logs",
         formatter_class=RawTextHelpFormatter,
+        epilog=_docs_epilog("usage/basics/cli/#logs--collect-diagnostic-logs"),
     )
     _add_logs_subparsers(logs_parser)
 
@@ -246,6 +257,7 @@ def create_parser() -> argparse.ArgumentParser:
         "update",
         help="Check for and install updates",
         formatter_class=RawTextHelpFormatter,
+        epilog=_docs_epilog("usage/basics/cli/#update--check-and-install-updates"),
     )
     _add_update_subparsers(update_parser)
 
@@ -254,6 +266,7 @@ def create_parser() -> argparse.ArgumentParser:
         "models",
         help="List available upstream models and their aliases",
         formatter_class=RawTextHelpFormatter,
+        epilog=_docs_epilog("usage/models/"),
     )
     _add_models_arguments(models_parser)
 
