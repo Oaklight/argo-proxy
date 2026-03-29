@@ -4,6 +4,11 @@ This page records the major version changes and important feature updates of the
 
 ## Unreleased
 
+### Features
+
+- **`config init` subcommand**: Interactive config creation wizard, accessible via `argo-proxy config init [path] [--force]`. Supports custom file paths and overwrite confirmation for existing configs. Reuses the same interactive flow as first-time setup
+- **`config env` subcommand**: Show or switch upstream ARGO API environment via `argo-proxy config env [prod|dev|test]`. Three environments available: production (`apps.inside.anl.gov`), development (`apps-dev.inside.anl.gov`, default), and test (`apps-test.inside.anl.gov`)
+
 ### Changed
 
 - **Updated `config.sample.yaml` and configuration docs**: Reorganized sample config with logical section grouping matching `_format_config_yaml()` output. Added upstream environment table (prod/dev/test URLs), conditional fields documentation, and removed legacy endpoint examples
