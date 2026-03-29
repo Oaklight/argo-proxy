@@ -5,7 +5,7 @@ Argo Proxy v3 uses a subcommand-based CLI. If no subcommand is given, `serve` is
 ## Top-Level Usage
 
 ```
-argo-proxy [-h] [-V] {serve,config,logs,update} ...
+argo-proxy [-h] [-V] {serve,config,logs,update,models} ...
 ```
 
 ### Global Options
@@ -87,7 +87,7 @@ argo-proxy serve --legacy-argo
 Manage configuration files without starting the server.
 
 ```bash
-argo-proxy config {edit,validate,show,migrate} [config]
+argo-proxy config {edit,validate,show,migrate,init,env} [config]
 ```
 
 ### Actions
@@ -130,14 +130,64 @@ Migrate configuration from v1/v2 format to v3 format.
 
 ```bash
 argo-proxy config migrate
+argo-proxy config migrate /path/to/config.yaml
 ```
 
 This will:
 
 1. Create a `.bak` backup of the original file
 2. Set `config_version: "3"`
-3. Remove deprecated keys (`use_native_openai`, `use_native_anthropic`, `provider_tool_format`)
-4. Add `native_openai_base_url` and `native_anthropic_base_url` derived from `argo_base_url`
+3. Infer `argo_base_url` from legacy individual endpoint URLs if not set
+4. Remove deprecated keys (`use_native_openai`, `use_native_anthropic`, `provider_tool_format`)
+5. Drop stale/unknown fields and produce canonical v3 output
+
+#### `config init`
+
+Create a new configuration interactively. Reuses the same wizard as first-time setup.
+
+```bash
+# Create at default location (~/.config/argoproxy/config.yaml)
+argo-proxy config init
+
+# Create at custom path
+argo-proxy config init /path/to/config.yaml
+
+# Overwrite existing config without confirmation
+argo-proxy config init --force
+```
+
+| Option | Description |
+|--------|-------------|
+| `config` | Custom file path (optional) |
+| `--force, -f` | Overwrite existing config without confirmation |
+
+#### `config env`
+
+Show or switch the upstream ARGO API environment.
+
+```bash
+# Show current environment
+argo-proxy config env
+
+# Switch to production
+argo-proxy config env prod
+
+# Switch with explicit config path
+argo-proxy config env dev -c /path/to/config.yaml
+```
+
+Available environments:
+
+| Environment | Base URL |
+|-------------|----------|
+| `prod` | `https://apps.inside.anl.gov/argoapi` |
+| `dev` | `https://apps-dev.inside.anl.gov/argoapi` (default) |
+| `test` | `https://apps-test.inside.anl.gov/argoapi` |
+
+| Option | Description |
+|--------|-------------|
+| `environment` | Target environment: `prod`, `dev`, or `test` (optional — omit to show current) |
+| `-c, --config` | Config file path |
 
 ---
 
