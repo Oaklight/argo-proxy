@@ -11,7 +11,7 @@ This page records the major version changes and important feature updates of the
 
 ### Improved
 
-- **Request logging — history truncation and Responses API support**: Conversation history in logs is now truncated to the last 5 items (configurable via `max_history_items`) with a `[... N earlier items omitted ...]` placeholder. Added sanitization for Responses API `input` items (`input_text`/`output_text` truncation). Request summary now includes `input=N` for Responses API requests. `log_converted_request` gated behind verbose check to skip unnecessary deep copies
+- **Request logging — history truncation and Responses API support** *([@caidao22](https://github.com/caidao22))*: Conversation history in logs is now truncated to the last 5 items (configurable via `max_history_items`) with a `[... N earlier items omitted ...]` placeholder. Added sanitization for Responses API `input` items (`input_text`/`output_text` truncation). Request summary now includes `input=N` for Responses API requests. `log_converted_request` gated behind verbose check to skip unnecessary deep copies
 
 ### Fixed
 
@@ -20,7 +20,7 @@ This page records the major version changes and important feature updates of the
 
 ### Changed
 
-- **Bumped llm-rosetta to v0.2.6**: Picks up orphaned tool_call IR-level fix, parallel tool_call_index propagation, Responses streaming item_id tracking, non-function tool name preservation, orphaned tool_choice stripping, and stream event ordering fixes (Oaklight/llm-rosetta v0.2.6)
+- **Bumped llm-rosetta to v0.2.6**: Picks up orphaned tool_call IR-level fix, parallel tool_call_index propagation, Responses streaming item_id tracking, non-function tool name preservation, orphaned tool_choice stripping, and stream event ordering fixes ([Oaklight/llm-rosetta v0.2.6](https://github.com/Oaklight/llm-rosetta/releases/tag/v0.2.6))
 
 ## v3.0.0b9 (2026-03-29)
 
@@ -70,7 +70,7 @@ This page records the major version changes and important feature updates of the
 
 ### Changed
 
-- **Bumped llm-rosetta to v0.2.5**: Picks up full-stack Google GenAI camelCase support, cross-format image passthrough fixes, tool_call_id reconciliation, `input_schema` type default for parameterless tools, and built-in tool handling (Oaklight/llm-rosetta v0.2.4–v0.2.5)
+- **Bumped llm-rosetta to v0.2.5**: Picks up full-stack Google GenAI camelCase support, cross-format image passthrough fixes, tool_call_id reconciliation, `input_schema` type default for parameterless tools, and built-in tool handling ([Oaklight/llm-rosetta v0.2.4–v0.2.5](https://github.com/Oaklight/llm-rosetta/releases/tag/v0.2.5))
 - **Refactored `dispatch.py`**: Merged 4 identical SSE formatters into 2, extracted `_write_sse_chunks()` / `_ensure_user_field()` helpers, defined `_STREAMING_HEADERS` constant, added `Callable` type hint to `_SSE_FORMATTERS`
 - **Modernized typing imports**: Replaced `typing.List`, `Dict`, `Tuple`, `Set` with Python 3.10+ built-in generics via ruff UP006 (525 auto-fixes across 31 files); removed `typing_extensions.Literal` in favor of `typing.Literal`
 - **Added ruff and ty configuration**: `pyproject.toml` now includes `[tool.ruff]` (target-version py310, select E/F/UP, ignore UP007/E501) and `[tool.ty]` (python-version 3.10, unresolved-import ignore) sections
@@ -90,7 +90,7 @@ This page records the major version changes and important feature updates of the
 
 - **Same-format passthrough tool schema sanitization**: Added `_sanitize_tool_schemas()` to sanitize tool parameter schemas in the passthrough path (when `source_provider == target_provider`). Upstreams like Vertex AI reject unsupported JSON Schema keywords even in passthrough mode (#76)
 - **Stream termination fallback**: Added fallback in `_convert_streaming()` — when the upstream stream ends without sending a `StreamEndEvent` trigger (empty-choices chunk), synthesize termination events (`message_delta`, `message_stop`) so the client receives a complete Anthropic SSE event sequence (#79)
-- **Bumped llm-rosetta to v0.2.2**: Picks up Anthropic `content_block_stop` fix and upstream preflight chunk handling (Oaklight/llm-rosetta#77)
+- **Bumped llm-rosetta to v0.2.2**: Picks up Anthropic `content_block_stop` fix and upstream preflight chunk handling ([Oaklight/llm-rosetta#77](https://github.com/Oaklight/llm-rosetta/releases/tag/v0.2.2))
 
 ## v3.0.0 (2026-03-21)
 
