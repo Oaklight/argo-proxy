@@ -67,6 +67,9 @@ class ArgoConfig:
     connection_test_timeout: int = 5  # seconds per URL validation request
     resolve_overrides: dict = field(default_factory=dict)
 
+    # Logging
+    log_to_file: bool = False  # Enable file logging alongside stdout
+
     # Image processing settings
     enable_payload_control: bool = False  # Enable automatic payload size control
     max_payload_size: int = 20  # MB default (total for all images)

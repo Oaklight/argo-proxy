@@ -19,14 +19,23 @@ from ..utils.logging import setup_logging as setup_app_logging
 # ---------------------------------------------------------------------------
 
 
-def setup_logging(verbose: bool = False, config_path: str | None = None):
+def setup_logging(
+    verbose: bool = False,
+    config_path: str | None = None,
+    log_to_file: bool = False,
+):
     """Setup logging with attack filter.
 
     Args:
         verbose: Enable verbose logging.
         config_path: Path to config file for attack log directory.
+        log_to_file: Enable file logging alongside stdout.
     """
-    setup_app_logging(verbose=verbose)
+    log_file = ""
+    if log_to_file and config_path:
+        cfg = Path(config_path)
+        log_file = str(cfg.parent / f"{cfg.stem}.log")
+    setup_app_logging(verbose=verbose, log_file=log_file)
 
     path = Path(config_path) if config_path else None
     attack_filter = setup_attack_logging(path)

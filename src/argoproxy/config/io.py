@@ -23,7 +23,10 @@ def _format_config_yaml(data: dict) -> str:
     """Format config dict as grouped YAML with section comments."""
     # Define logical groups with optional section headers
     groups: list[tuple[str, list[str]]] = [
-        ("# Core settings", ["config_version", "user", "host", "port", "verbose"]),
+        (
+            "# Core settings",
+            ["config_version", "user", "host", "port", "verbose", "log_to_file"],
+        ),
         (
             "# Upstream",
             [

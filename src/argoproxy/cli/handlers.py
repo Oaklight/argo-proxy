@@ -72,6 +72,7 @@ def handle_serve(args: argparse.Namespace):
         setup_logging(
             verbose=config_instance.verbose,
             config_path=str(config_path) if config_path else None,
+            log_to_file=config_instance.log_to_file,
         )
 
         if config_path is not None:

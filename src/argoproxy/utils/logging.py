@@ -6,9 +6,13 @@ configurable manner using Python's standard logging library with colorized outpu
 """
 
 import copy
+import gzip
 import json
 import logging
+import os
+import shutil
 import sys
+from logging.handlers import RotatingFileHandler
 from typing import Any
 
 
@@ -175,13 +179,36 @@ def get_logger() -> logging.Logger:
     return _logger
 
 
-def setup_logging(verbose: bool = False, use_colors: bool = True) -> logging.Logger:
-    """
-    Setup logging with the specified configuration.
+class _GzipRotatingFileHandler(RotatingFileHandler):
+    """RotatingFileHandler that gzip-compresses rotated log files."""
+
+    def rotation_filename(self, default_name: str) -> str:
+        return default_name + ".gz"
+
+    def rotate(self, source: str, dest: str) -> None:
+        with open(source, "rb") as f_in:
+            with gzip.open(dest, "wb") as f_out:
+                shutil.copyfileobj(f_in, f_out)
+        os.remove(source)
+
+
+# 10 MB per file, keep 5 backups (→ ~50 MB max compressed)
+_LOG_MAX_BYTES = 10 * 1024 * 1024
+_LOG_BACKUP_COUNT = 5
+
+
+def setup_logging(
+    verbose: bool = False,
+    use_colors: bool = True,
+    log_file: str = "",
+) -> logging.Logger:
+    """Setup logging with the specified configuration.
 
     Args:
         verbose: If True, set log level to DEBUG; otherwise INFO.
         use_colors: Whether to use colored output.
+        log_file: Path to a log file.  When set, a RotatingFileHandler
+            is added alongside stdout.  Rotated files are gzip-compressed.
 
     Returns:
         The configured logger instance.
@@ -194,17 +221,13 @@ def setup_logging(verbose: bool = False, use_colors: bool = True) -> logging.Log
     if _handler is not None:
         logger.removeHandler(_handler)
 
-    # Create new handler
+    level = logging.DEBUG if verbose else logging.INFO
+
+    # Create stdout handler
     _handler = logging.StreamHandler(sys.stdout)
-    _handler.setLevel(logging.DEBUG if verbose else logging.INFO)
+    _handler.setLevel(level)
 
-    # Create formatter with timestamp format matching loguru style
-    formatter = ColoredFormatter(
-        datefmt="%Y-%m-%d %H:%M:%S.%f",
-        use_colors=use_colors,
-    )
-
-    # Override formatTime to include milliseconds
+    # Formatter helper shared by both handlers
     def format_time_with_millis(
         record: logging.LogRecord, datefmt: str | None = None
     ) -> str:
@@ -213,10 +236,34 @@ def setup_logging(verbose: bool = False, use_colors: bool = True) -> logging.Log
         ct = datetime.datetime.fromtimestamp(record.created)
         return ct.strftime("%Y-%m-%d %H:%M:%S.") + f"{int(record.msecs):03d}"
 
-    formatter.formatTime = format_time_with_millis  # type: ignore
-
-    _handler.setFormatter(formatter)
+    # Console formatter (with colors)
+    console_formatter = ColoredFormatter(
+        datefmt="%Y-%m-%d %H:%M:%S.%f",
+        use_colors=use_colors,
+    )
+    console_formatter.formatTime = format_time_with_millis  # type: ignore
+    _handler.setFormatter(console_formatter)
     logger.addHandler(_handler)
+
+    # File handler (no colors, gzip rotation)
+    if log_file:
+        log_dir = os.path.dirname(log_file)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+        file_handler = _GzipRotatingFileHandler(
+            log_file,
+            maxBytes=_LOG_MAX_BYTES,
+            backupCount=_LOG_BACKUP_COUNT,
+            encoding="utf-8",
+        )
+        file_handler.setLevel(level)
+        file_formatter = ColoredFormatter(
+            datefmt="%Y-%m-%d %H:%M:%S.%f",
+            use_colors=False,
+        )
+        file_formatter.formatTime = format_time_with_millis  # type: ignore
+        file_handler.setFormatter(file_formatter)
+        logger.addHandler(file_handler)
 
     return logger
 
