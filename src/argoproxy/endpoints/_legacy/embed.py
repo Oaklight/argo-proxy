@@ -128,12 +128,16 @@ async def proxy_request(
             raise ValueError("Invalid input. Expected JSON data.")
 
         # Log original request
-        log_original_request(data, verbose=config.verbose)
+        log_original_request(
+            data, verbose=config.verbose, max_history_items=config.max_log_history
+        )
 
         data = prepare_request_data(data, config, model_registry)
 
         # Log converted request
-        log_converted_request(data, verbose=config.verbose)
+        log_converted_request(
+            data, verbose=config.verbose, max_history_items=config.max_log_history
+        )
 
         headers: dict[str, str] = {"Content-Type": "application/json"}
 

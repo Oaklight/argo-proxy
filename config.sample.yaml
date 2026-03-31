@@ -4,6 +4,7 @@ user: ''            # your ANL username (required)
 host: 0.0.0.0
 port: 44497         # or any available port; init generates a random one
 verbose: true
+max_log_history: 3    # keep last N messages in verbose request logs
 
 # Upstream
 #

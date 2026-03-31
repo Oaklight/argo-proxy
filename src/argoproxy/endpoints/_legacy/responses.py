@@ -638,7 +638,9 @@ async def proxy_request(
             raise ValueError("Invalid input. Expected JSON data.")
 
         # Log original request
-        log_original_request(data, verbose=config.verbose)
+        log_original_request(
+            data, verbose=config.verbose, max_history_items=config.max_log_history
+        )
 
         # Prepare the request data (includes message scrutinization and normalization)
         data = prepare_request_data(data, config, model_registry)
@@ -659,7 +661,9 @@ async def proxy_request(
         )
 
         # Log converted request (now reflects actual upstream request mode)
-        log_converted_request(data, verbose=config.verbose)
+        log_converted_request(
+            data, verbose=config.verbose, max_history_items=config.max_log_history
+        )
 
         # Use the shared HTTP session from app context for connection pooling
         session = request.app["http_session"]

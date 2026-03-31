@@ -55,7 +55,9 @@ async def proxy_native_anthropic_request(
         data = await request.json()
 
         # Log original request
-        log_original_request(data, verbose=config.verbose)
+        log_original_request(
+            data, verbose=config.verbose, max_history_items=config.max_log_history
+        )
 
         # Use the shared HTTP session from app context
         session = request.app["http_session"]
@@ -114,7 +116,9 @@ async def proxy_native_anthropic_request(
             headers["anthropic-version"] = request.headers["anthropic-version"]
 
         # Log converted request
-        log_converted_request(data, verbose=config.verbose)
+        log_converted_request(
+            data, verbose=config.verbose, max_history_items=config.max_log_history
+        )
 
         if config.verbose:
             log_debug(

@@ -663,7 +663,9 @@ async def _convert_non_streaming(
 
     # Log the converted body
     if config.verbose:
-        log_converted_request(target_body, verbose=True)
+        log_converted_request(
+            target_body, verbose=True, max_history_items=config.max_log_history
+        )
 
     # 3. Forward to upstream
     try:
@@ -763,7 +765,9 @@ async def _convert_buffered_streaming(
     # 3. Inject stream flags and update headers for streaming
     target_body = _inject_stream_flags(target_body, target_provider)
     if config.verbose:
-        log_converted_request(target_body, verbose=True)
+        log_converted_request(
+            target_body, verbose=True, max_history_items=config.max_log_history
+        )
 
     headers = dict(headers)
     headers["Accept"] = "text/event-stream"
@@ -861,7 +865,9 @@ async def _convert_streaming(
     # 3. Inject stream flags
     target_body = _inject_stream_flags(target_body, target_provider)
     if config.verbose:
-        log_converted_request(target_body, verbose=True)
+        log_converted_request(
+            target_body, verbose=True, max_history_items=config.max_log_history
+        )
 
     _ensure_user_field(target_body, config.user)
 
@@ -1061,7 +1067,9 @@ async def proxy_request(
         user_token = set_request_user(body.get("user", ""))
 
     try:
-        log_original_request(body, verbose=config.verbose)
+        log_original_request(
+            body, verbose=config.verbose, max_history_items=config.max_log_history
+        )
 
         # Extract and resolve model
         model = model_override or body.get("model")

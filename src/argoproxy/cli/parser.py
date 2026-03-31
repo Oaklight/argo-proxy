@@ -1,8 +1,10 @@
 """Argument parser construction for Argo Proxy CLI."""
 
 import argparse
+import os
 import sys
 from argparse import RawTextHelpFormatter
+from difflib import get_close_matches
 
 from .display import version_check
 
@@ -294,7 +296,21 @@ def insert_default_subcommand() -> None:
         # If the first positional is a known subcommand, nothing to do
         if arg in _SUBCOMMANDS:
             return
-        # Otherwise it's a config path or unknown -- assume ``serve``
+        # Check for typos before falling back to ``serve``.
+        # Skip fuzzy matching if the arg looks like a file path or exists on disk.
+        looks_like_path = "." in arg or "/" in arg or "\\" in arg or os.path.isfile(arg)
+        close = (
+            get_close_matches(arg, _SUBCOMMANDS, n=1, cutoff=0.9)
+            if not looks_like_path
+            else []
+        )
+        if close:
+            print(
+                f"argo-proxy: unknown command '{arg}'. Did you mean '{close[0]}'?",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        # Otherwise it's a config path -- assume ``serve``
         break
 
     # If only flags are present (e.g. ``argo-proxy --verbose``), also assume serve

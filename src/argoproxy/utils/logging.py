@@ -342,7 +342,7 @@ def sanitize_request_data(
     max_tool_desc_length: int = 100,
     truncate_tools: bool = True,
     truncate_messages: bool = True,
-    max_history_items: int = 5,
+    max_history_items: int = 3,
 ) -> dict[str, Any]:
     """
     Sanitizes request data for logging by truncating long content.
@@ -494,6 +494,7 @@ def log_request(
     sanitize: bool = True,
     max_content_length: int = 500,
     truncate_tools: bool = True,
+    max_history_items: int = 3,
 ) -> None:
     """
     Log a request with configurable verbosity.
@@ -506,6 +507,7 @@ def log_request(
         sanitize: Whether to sanitize the data before logging.
         max_content_length: Maximum content length when sanitizing.
         truncate_tools: Whether to truncate tools when sanitizing.
+        max_history_items: Keep only the last N items from input/messages.
     """
     if show_summary:
         summary = create_request_summary(data)
@@ -517,6 +519,7 @@ def log_request(
                 data,
                 max_content_length=max_content_length,
                 truncate_tools=truncate_tools,
+                max_history_items=max_history_items,
             )
         else:
             log_data = data
@@ -531,6 +534,7 @@ def log_original_request(
     *,
     verbose: bool = False,
     max_content_length: int = 500,
+    max_history_items: int = 3,
 ) -> None:
     """
     Log the original request before any transformation.
@@ -539,6 +543,7 @@ def log_original_request(
         data: The original request data.
         verbose: Whether to show full request details.
         max_content_length: Maximum content length when sanitizing.
+        max_history_items: Keep only the last N items from input/messages.
     """
     log_request(
         data,
@@ -546,6 +551,7 @@ def log_original_request(
         show_summary=True,
         show_full=verbose,
         max_content_length=max_content_length,
+        max_history_items=max_history_items,
     )
 
 
@@ -554,6 +560,7 @@ def log_converted_request(
     *,
     verbose: bool = False,
     max_content_length: int = 500,
+    max_history_items: int = 3,
 ) -> None:
     """
     Log the converted request after transformation.
@@ -562,6 +569,7 @@ def log_converted_request(
         data: The converted request data.
         verbose: Whether to show full request details.
         max_content_length: Maximum content length when sanitizing.
+        max_history_items: Keep only the last N items from input/messages.
     """
     log_request(
         data,
@@ -569,6 +577,7 @@ def log_converted_request(
         show_summary=True,
         show_full=verbose,
         max_content_length=max_content_length,
+        max_history_items=max_history_items,
     )
 
 

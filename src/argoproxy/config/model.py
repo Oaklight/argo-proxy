@@ -69,6 +69,7 @@ class ArgoConfig:
 
     # Logging
     log_to_file: bool = False  # Enable file logging alongside stdout
+    max_log_history: int = 3  # Keep last N messages in verbose request logs
 
     # Image processing settings
     enable_payload_control: bool = False  # Enable automatic payload size control
