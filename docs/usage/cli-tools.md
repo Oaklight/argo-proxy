@@ -113,12 +113,22 @@ Argo Proxy v3 serves all major LLM API formats, which means it works out of the 
 
 [Gemini CLI](https://github.com/google-gemini/gemini-cli) (tested with v0.34.0) connects via the **Google GenAI API** (`/v1beta/models/{model}:generateContent`).
 
-=== "Config File (Recommended)"
+=== "Config Files (Recommended)"
 
-    Edit `~/.gemini/settings.json`:
+    **1. `~/.gemini/.env`** — Gemini CLI auto-reads this file on startup:
+
+    ```bash
+    GEMINI_API_KEY=your-anl-username
+    GOOGLE_GEMINI_BASE_URL=http://localhost:44497
+    ```
+
+    **2. `~/.gemini/settings.json`** — set auth mode and default model:
 
     ```json
     {
+        "model": {
+            "name": "argo:gpt-4.1"
+        },
         "security": {
             "auth": {
                 "selectedType": "gemini-api-key"
@@ -127,24 +137,29 @@ Argo Proxy v3 serves all major LLM API formats, which means it works out of the 
     }
     ```
 
-    Then set the environment variables in your shell profile:
-
-    ```bash
-    export GOOGLE_GEMINI_BASE_URL="http://localhost:44497"
-    export GEMINI_API_KEY="your-anl-username"
-    ```
+    With both files configured, just run `gemini` — no extra flags needed.
 
 === "Environment Variables"
 
     ```bash
     GOOGLE_GEMINI_BASE_URL=http://localhost:44497 \
     GEMINI_API_KEY=your-anl-username \
-    gemini
+    gemini -m argo:gpt-4.1
     ```
 
 !!! important
     - Set `GOOGLE_GEMINI_BASE_URL` to the proxy root (e.g., `http://localhost:44497`), **not** including any API path — Gemini CLI appends the path automatically
     - The `selectedType: "gemini-api-key"` setting tells Gemini CLI to use the API key auth flow instead of Google OAuth
+    - The `model.name` field in `settings.json` sets the default model, so you don't need `-m` every time
+
+!!! tip "Using with other proxies (e.g., OneAPI)"
+    If your proxy expects Bearer token authentication, add this to `~/.gemini/.env`:
+
+    ```bash
+    GEMINI_API_KEY_AUTH_MECHANISM=bearer
+    ```
+
+    This tells the Google GenAI SDK to send the API key as a `Bearer` token in the `Authorization` header instead of as a query parameter.
 
 ---
 
@@ -247,7 +262,7 @@ print(message.content[0].text)
 | Codex CLI | OpenAI Responses | `OPENAI_BASE_URL` | `http://localhost:44497/v1` |
 | Aider (OpenAI) | OpenAI | `OPENAI_API_BASE` | `http://localhost:44497/v1` |
 | Aider (Anthropic) | Anthropic | `ANTHROPIC_BASE_URL` | `http://localhost:44497` |
-| Gemini CLI | Google GenAI | `GOOGLE_GEMINI_BASE_URL` | `http://localhost:44497` |
+| Gemini CLI | Google GenAI | `GOOGLE_GEMINI_BASE_URL` | `http://localhost:44497` (+ `~/.gemini/.env`) |
 | OpenCode | OpenAI | `OPENAI_BASE_URL` | `http://localhost:44497/v1` |
 | OpenAI SDK | OpenAI | `OPENAI_BASE_URL` | `http://localhost:44497/v1` |
 | Anthropic SDK | Anthropic | `ANTHROPIC_BASE_URL` | `http://localhost:44497` |
