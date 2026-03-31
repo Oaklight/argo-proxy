@@ -2,6 +2,14 @@
 
 Argo Proxy v3 uses a subcommand-based CLI. If no subcommand is given, `serve` is assumed for backward compatibility.
 
+!!! tip "Typo Detection"
+    If you mistype a subcommand, argo-proxy will suggest the closest match:
+
+    ```
+    $ argo-proxy server
+    argo-proxy: unknown command 'server'. Did you mean 'serve'?
+    ```
+
 ## Top-Level Usage
 
 ```

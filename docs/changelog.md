@@ -2,6 +2,17 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v3.0.0b11 (2026-03-31)
+
+### Improved
+
+- **CLI typo detection**: Misspelled subcommands now show a helpful suggestion instead of silently falling through to the `serve` handler with the typo treated as a config file path (e.g. `argo-proxy server` → `unknown command 'server'. Did you mean 'serve'?`). Uses `difflib.get_close_matches` with cutoff 0.9; file-path-like arguments (containing `.`, `/`, `\`, or matching an existing file) are excluded from fuzzy matching
+- **Reduced default log history truncation**: Verbose request logs now keep the last 3 conversation history items (down from 5) to reduce noise from large message entries
+
+### New
+
+- **`max_log_history` config option**: Controls how many conversation history items are kept in verbose request logs. Default: `3`. Set higher if you need more context in logs for debugging long conversations
+
 ## v3.0.0b10 (2026-03-29)
 
 ### Features

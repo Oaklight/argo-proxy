@@ -13,6 +13,7 @@ user: your_username
 host: 0.0.0.0
 port: 44497
 verbose: true
+max_log_history: 3
 
 # Upstream
 argo_base_url: https://apps-dev.inside.anl.gov/argoapi
@@ -60,6 +61,7 @@ argo-proxy config env test    # switch to test
 | `host` | Host address to bind the server to | `0.0.0.0` |
 | `port` | Application port | Randomly assigned |
 | `verbose` | Debug logging | `true` |
+| `max_log_history` | Number of conversation history items kept in verbose request logs | `3` |
 | `argo_base_url` | Base URL for the Argo API (see [Upstream Environments](#upstream-environments)) | Dev URL |
 | `connection_test_timeout` | Timeout (seconds) per URL validation request | `5` |
 | `resolve_overrides` | DNS resolution overrides (see [DNS Resolution](../advanced/dns-resolution.md)) | `{}` |
