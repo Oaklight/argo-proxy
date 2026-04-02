@@ -1,11 +1,13 @@
+import logging
 import os
 
 from dotenv import load_dotenv
-from loguru import logger
 from openai import OpenAI
 
 from toolregistry import ToolRegistry
 from toolregistry.hub.calculator import Calculator
+
+logger = logging.getLogger(__name__)
 
 # Load environment variables from .env file
 load_dotenv()
