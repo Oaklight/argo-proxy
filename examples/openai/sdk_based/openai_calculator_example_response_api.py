@@ -1,10 +1,12 @@
+import logging
 import os
 
 from dotenv import load_dotenv
-from loguru import logger
 from openai import OpenAI
 from toolregistry import ToolRegistry
 from toolregistry.hub.calculator import Calculator
+
+logger = logging.getLogger(__name__)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -41,7 +43,7 @@ def handle_tool_calls_response(response, messages):
         for each in response.output:
             if each.type == "function_call":
                 tool_calls.append(each)
-        logger.warning("Tool calls:", tool_calls)
+        logger.warning(f"Tool calls: {tool_calls}")
 
         # Execute tool calls
         tool_responses = tool_registry.execute_tool_calls(tool_calls)
