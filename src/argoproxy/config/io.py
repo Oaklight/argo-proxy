@@ -34,6 +34,7 @@ def _format_config_yaml(data: dict) -> str:
                 "native_openai_base_url",
                 "native_anthropic_base_url",
                 "use_legacy_argo",
+                "anthropic_stream_mode",
             ],
         ),
         (
@@ -157,6 +158,18 @@ def _apply_env_overrides(config_data: ArgoConfig) -> ArgoConfig:
 
     if env_skip_url_validation := os.getenv("SKIP_URL_VALIDATION"):
         config_data._skip_url_validation = str_to_bool(env_skip_url_validation)
+
+    if env_anthropic_stream_mode := os.getenv("ANTHROPIC_STREAM_MODE"):
+        mode = env_anthropic_stream_mode.lower().strip()
+        valid_modes = ("force", "retry", "passthrough")
+        if mode in valid_modes:
+            config_data._anthropic_stream_mode = mode
+        else:
+            log_warning(
+                f"Invalid ANTHROPIC_STREAM_MODE '{env_anthropic_stream_mode}', "
+                f"expected one of {valid_modes}. Using default 'force'.",
+                context="config",
+            )
 
     return config_data
 

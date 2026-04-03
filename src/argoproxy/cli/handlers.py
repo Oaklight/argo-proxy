@@ -47,6 +47,8 @@ def set_config_envs(args: argparse.Namespace):
         os.environ["ENABLE_LEAKED_TOOL_FIX"] = str(True)
     if args.dev:
         os.environ["DEV_MODE"] = str(True)
+    if args.anthropic_stream_mode:
+        os.environ["ANTHROPIC_STREAM_MODE"] = args.anthropic_stream_mode
 
 
 def handle_serve(args: argparse.Namespace):
@@ -327,59 +329,75 @@ def _handle_env(env_name: str | None = None, config_path: str | None = None):
 # ---------------------------------------------------------------------------
 
 
-def _collect_leaked_logs(config_path: str | None = None):
-    """Collect all leaked tool call logs into a tar.gz archive.
+# Known diagnostic log categories: (dir_name, file_glob_patterns)
+_DIAGNOSTIC_LOG_TYPES: dict[str, tuple[str, list[str]]] = {
+    "leaked-tool": (
+        "leaked_tool_calls",
+        ["leaked_tool_*.json", "leaked_tool_*.json.gz"],
+    ),
+    "stream-retry": ("stream_retry_dumps", ["retry_*.json", "retry_*.json.gz"]),
+}
+
+
+def _collect_diagnostic_logs(
+    config_path: str | None = None, log_type: str = "all"
+) -> None:
+    """Collect diagnostic logs into a tar.gz archive.
 
     Args:
         config_path: Optional explicit path to the config file.
+        log_type: Type of logs to collect. One of the keys in
+            ``_DIAGNOSTIC_LOG_TYPES`` or ``"all"``.
     """
     import tarfile
     from datetime import datetime
 
     from ..config import load_config
 
-    config_data, actual_config_path = load_config(config_path, verbose=False)
+    _, actual_config_path = load_config(config_path, verbose=False)
+    base_dir = actual_config_path.parent if actual_config_path else Path.cwd()
 
-    if actual_config_path:
-        log_dir = actual_config_path.parent / "leaked_tool_calls"
+    # Determine which log types to collect
+    if log_type == "all":
+        types_to_collect = list(_DIAGNOSTIC_LOG_TYPES.keys())
     else:
-        log_dir = Path.cwd() / "leaked_tool_calls"
+        types_to_collect = [log_type]
 
-    if not log_dir.exists():
-        log_error(f"Log directory not found: {log_dir}", context="cli")
-        log_info("No leaked tool call logs to collect.", context="cli")
-        return
+    # Gather files across all requested types
+    all_files: list[tuple[Path, str]] = []  # (file_path, arcname)
+    for type_key in types_to_collect:
+        dir_name, patterns = _DIAGNOSTIC_LOG_TYPES[type_key]
+        log_dir = base_dir / dir_name
+        if not log_dir.exists():
+            continue
+        for pattern in patterns:
+            for f in log_dir.glob(pattern):
+                # Use subdir/filename as arcname to preserve category
+                all_files.append((f, f"{dir_name}/{f.name}"))
 
-    json_files = list(log_dir.glob("leaked_tool_*.json"))
-    gz_files = list(log_dir.glob("leaked_tool_*.json.gz"))
-
-    if not json_files and not gz_files:
-        log_info(f"No leaked tool call logs found in {log_dir}", context="cli")
+    if not all_files:
+        label = log_type if log_type != "all" else "diagnostic"
+        log_info(f"No {label} logs found.", context="cli")
         return
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    archive_name = f"leaked_tool_logs_{timestamp}.tar.gz"
+    archive_name = f"diagnostic_logs_{log_type}_{timestamp}.tar.gz"
     archive_path = Path.cwd() / archive_name
 
-    log_info(
-        f"Collecting {len(json_files)} JSON and {len(gz_files)} compressed logs...",
-        context="cli",
-    )
+    log_info(f"Collecting {len(all_files)} log files...", context="cli")
     log_info(f"Creating archive: {archive_path}", context="cli")
 
     try:
         with tarfile.open(archive_path, "w:gz") as tar:
-            for json_file in json_files:
-                tar.add(json_file, arcname=json_file.name)
-            for gz_file in gz_files:
-                tar.add(gz_file, arcname=gz_file.name)
+            for file_path, arcname in all_files:
+                tar.add(file_path, arcname=arcname)
 
         archive_size = archive_path.stat().st_size
         log_info("=" * 80, context="cli")
         log_info("Archive created successfully!", context="cli")
         log_info(f"   Location: {archive_path}", context="cli")
         log_info(f"   Size: {archive_size / 1024 / 1024:.2f} MB", context="cli")
-        log_info(f"   Files: {len(json_files) + len(gz_files)} logs", context="cli")
+        log_info(f"   Files: {len(all_files)} logs", context="cli")
         log_info("=" * 80, context="cli")
         log_info("", context="cli")
         log_info("Please send this archive to:", context="cli")
@@ -408,7 +426,7 @@ def handle_logs(args: argparse.Namespace):
     config_path = getattr(args, "config", None)
 
     if args.logs_action == "collect":
-        _collect_leaked_logs(config_path)
+        _collect_diagnostic_logs(config_path, log_type=getattr(args, "type", "all"))
 
 
 # ---------------------------------------------------------------------------

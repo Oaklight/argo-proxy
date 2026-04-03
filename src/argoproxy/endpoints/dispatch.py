@@ -10,6 +10,7 @@ When source and target formats match, requests pass through without conversion.
 from __future__ import annotations
 
 import json
+import os
 import time
 import traceback
 from collections.abc import Callable
@@ -132,6 +133,81 @@ def _error_response(
         body = {"error": {"message": message}}
 
     return web.json_response(body, status=status_code)
+
+
+def _is_anthropic_stream_required_error(status_code: int, error_text: str) -> bool:
+    """Detect Anthropic's 'streaming is required' bounce-back error.
+
+    This error (HTTP 500) is returned immediately when Anthropic determines
+    the operation may exceed 10 minutes.
+    """
+    if status_code != 500:
+        return False
+    return "streaming is required" in error_text.lower()
+
+
+def _dump_stream_retry_request(
+    request_body: dict[str, Any],
+    error_status: int,
+    error_text: str,
+    upstream_url: str,
+) -> None:
+    """Dump request details when retry mode triggers a forced-streaming retry.
+
+    Saves a JSON file to ``<config_dir>/stream_retry_dumps/`` for diagnostics.
+    """
+    import gzip
+    from datetime import datetime
+    from pathlib import Path
+
+    try:
+        config_path = os.environ.get("CONFIG_PATH")
+        if config_path:
+            log_dir = Path(config_path).parent / "stream_retry_dumps"
+        else:
+            log_dir = Path.cwd() / "stream_retry_dumps"
+
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        # Auto-compress when directory exceeds 50MB
+        dir_size = sum(f.stat().st_size for f in log_dir.iterdir() if f.is_file())
+        if dir_size > 50 * 1024 * 1024:
+            log_warning(
+                f"Stream retry dump directory ({dir_size / 1024 / 1024:.2f}MB) "
+                "exceeds 50MB, compressing logs...",
+                context="dispatch",
+            )
+            for json_file in log_dir.glob("retry_*.json"):
+                try:
+                    gz_path = json_file.with_suffix(".json.gz")
+                    with (
+                        open(json_file, "rb") as f_in,
+                        gzip.open(gz_path, "wb", compresslevel=9) as f_out,
+                    ):
+                        f_out.write(f_in.read())
+                    json_file.unlink()
+                except Exception as exc:
+                    log_error(
+                        f"Failed to compress {json_file}: {exc}", context="dispatch"
+                    )
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        log_file = log_dir / f"retry_{timestamp}.json"
+
+        entry = {
+            "timestamp": datetime.now().isoformat(),
+            "upstream_url": upstream_url,
+            "error_status": error_status,
+            "error_text": error_text,
+            "request_body": request_body,
+        }
+
+        with open(log_file, "w", encoding="utf-8") as f:
+            json.dump(entry, f, indent=2, ensure_ascii=False)
+
+        log_info(f"Dumped retry request to: {log_file}", context="dispatch")
+    except Exception as exc:
+        log_error(f"Failed to dump retry request: {exc}", context="dispatch")
 
 
 # ---------------------------------------------------------------------------
@@ -618,6 +694,69 @@ async def _passthrough_buffered_streaming(
         return web.json_response(response_data)
 
 
+async def _passthrough_with_retry(
+    session: aiohttp.ClientSession,
+    upstream_url: str,
+    headers: dict[str, str],
+    data: dict[str, Any],
+    source_provider: ProviderType = "anthropic",
+) -> web.Response:
+    """Try non-streaming passthrough, retry with forced streaming on bounce-back.
+
+    Used in ``retry`` mode when target is Anthropic and client sends
+    non-streaming.  First attempts a normal non-streaming request.  If
+    Anthropic returns the "streaming is required" error (HTTP 500), dumps
+    the request for diagnostics and retries via
+    ``_passthrough_buffered_streaming``.
+    """
+    should_retry = False
+
+    async with session.post(upstream_url, headers=headers, json=data) as upstream_resp:
+        response_text = await upstream_resp.text()
+        status = upstream_resp.status
+
+        if _is_anthropic_stream_required_error(status, response_text):
+            log_info(
+                "Anthropic returned 'streaming required' error, "
+                "retrying with forced streaming (retry mode)",
+                context="dispatch",
+            )
+            _dump_stream_retry_request(data, status, response_text, upstream_url)
+            should_retry = True
+        else:
+            # Normal response handling (mirrors _passthrough_non_streaming)
+            if contains_argo_auth_warning(response_text):
+                log_error(ARGO_AUTH_ERROR_MESSAGE, context="dispatch")
+                return _error_response(source_provider, 403, ARGO_AUTH_ERROR_MESSAGE)
+
+            try:
+                response_data = json.loads(response_text)
+            except (json.JSONDecodeError, ValueError):
+                return web.Response(
+                    text=response_text,
+                    status=status,
+                    content_type=upstream_resp.content_type or "text/plain",
+                )
+
+            upstream_fmt = "anthropic" if "/messages" in upstream_url else "openai"
+            if check_response_for_argo_warning(response_data, upstream_fmt):
+                log_error(ARGO_AUTH_ERROR_MESSAGE, context="dispatch")
+                return _error_response(source_provider, 403, ARGO_AUTH_ERROR_MESSAGE)
+
+            return web.json_response(
+                response_data,
+                status=status,
+                content_type="application/json",
+            )
+
+    if should_retry:
+        return await _passthrough_buffered_streaming(
+            session, upstream_url, headers, data, source_provider
+        )
+
+    return _error_response(source_provider, 500, "Unexpected retry flow error")
+
+
 # ---------------------------------------------------------------------------
 # Cross-format conversion handlers
 # ---------------------------------------------------------------------------
@@ -826,6 +965,51 @@ async def _convert_buffered_streaming(
 
     except aiohttp.ClientError as exc:
         return _error_response(source_provider, 502, f"Upstream request failed: {exc}")
+
+
+async def _convert_with_retry(
+    session: aiohttp.ClientSession,
+    upstream_url: str,
+    headers: dict[str, str],
+    body: dict[str, Any],
+    source_provider: ProviderType,
+    target_provider: ProviderType,
+    config: ArgoConfig,
+) -> web.Response:
+    """Try non-streaming cross-format conversion, retry with buffered streaming.
+
+    Used in ``retry`` mode for cross-format requests targeting Anthropic.
+    Calls ``_convert_non_streaming`` first; if the upstream returns the
+    "streaming is required" bounce-back, dumps the request and retries
+    via ``_convert_buffered_streaming``.
+    """
+    result = await _convert_non_streaming(
+        session, upstream_url, headers, body, source_provider, target_provider, config
+    )
+
+    if result.status == 500 and result.body:
+        try:
+            body_text = result.body.decode("utf-8")
+            if _is_anthropic_stream_required_error(500, body_text):
+                log_info(
+                    "Anthropic returned 'streaming required' error, "
+                    "retrying with forced streaming (retry mode, cross-format)",
+                    context="dispatch",
+                )
+                _dump_stream_retry_request(body, 500, body_text, upstream_url)
+                return await _convert_buffered_streaming(
+                    session,
+                    upstream_url,
+                    headers,
+                    body,
+                    source_provider,
+                    target_provider,
+                    config,
+                )
+        except (UnicodeDecodeError, AttributeError):
+            pass
+
+    return result
 
 
 async def _convert_streaming(
@@ -1154,13 +1338,21 @@ async def proxy_request(
                     target_provider,
                     source_provider,
                 )
-            # Force streaming for Anthropic non-streaming requests to avoid
-            # the "Streaming is required for operations that may take longer
-            # than 10 minutes" error from the Anthropic API.
+            # Handle Anthropic non-streaming requests based on configured
+            # mode (force/retry/passthrough) to work around the "Streaming
+            # is required for operations that may take longer than 10
+            # minutes" error from the Anthropic API.
             if target_provider == "anthropic":
-                return await _passthrough_buffered_streaming(
-                    session, upstream_url, headers, body, source_provider
-                )
+                mode = config.anthropic_stream_mode
+                if mode == "force":
+                    return await _passthrough_buffered_streaming(
+                        session, upstream_url, headers, body, source_provider
+                    )
+                elif mode == "retry":
+                    return await _passthrough_with_retry(
+                        session, upstream_url, headers, body, source_provider
+                    )
+                # "passthrough": fall through to normal non-streaming
             return await _passthrough_non_streaming(
                 session, upstream_url, headers, body, source_provider
             )
@@ -1184,17 +1376,30 @@ async def proxy_request(
                 config,
             )
 
-        # Force streaming for Anthropic non-streaming requests (cross-format)
+        # Handle Anthropic non-streaming requests (cross-format)
         if target_provider == "anthropic":
-            return await _convert_buffered_streaming(
-                session,
-                upstream_url,
-                headers,
-                body,
-                source_provider,
-                target_provider,
-                config,
-            )
+            mode = config.anthropic_stream_mode
+            if mode == "force":
+                return await _convert_buffered_streaming(
+                    session,
+                    upstream_url,
+                    headers,
+                    body,
+                    source_provider,
+                    target_provider,
+                    config,
+                )
+            elif mode == "retry":
+                return await _convert_with_retry(
+                    session,
+                    upstream_url,
+                    headers,
+                    body,
+                    source_provider,
+                    target_provider,
+                    config,
+                )
+            # "passthrough": fall through to normal non-streaming
 
         return await _convert_non_streaming(
             session,
