@@ -19,7 +19,7 @@ from .endpoints import (
     passthrough,
 )
 from .endpoints.dev_proxy import register_dev_routes
-from .endpoints.extras import get_latest_pypi_version
+from .endpoints.extras import get_pypi_versions
 from .models import ModelRegistry
 from .performance import (
     OptimizedHTTPSession,
@@ -254,25 +254,58 @@ async def health_check(request: web.Request):
 
 async def get_version(request: web.Request):
     log_info("/version", context="app")
-    latest = await get_latest_pypi_version()
-    update_available = latest and latest != __version__
+    from packaging import version as pkg_version
+
+    versions = await get_pypi_versions()
+    stable = versions.get("stable")
+    pre = versions.get("pre")
+    cur = pkg_version.parse(__version__)
+
+    # Determine if any upgrade is available
+    stable_upgrade = False
+    pre_upgrade = False
+    if stable:
+        try:
+            stable_upgrade = pkg_version.parse(stable) > cur
+        except Exception:
+            pass
+    if pre:
+        try:
+            pre_upgrade = pkg_version.parse(pre) > cur
+        except Exception:
+            pass
+
+    up_to_date = not stable_upgrade and not pre_upgrade
+
+    # Build update commands
+    update_commands = {}
+    if stable_upgrade:
+        update_commands["cli"] = "argo-proxy update install"
+        update_commands["pip"] = "pip install --upgrade argo-proxy"
+    if pre_upgrade:
+        update_commands["cli_pre"] = "argo-proxy update install --pre"
+        update_commands["pip_pre"] = "pip install --upgrade --pre argo-proxy"
+
+    # Build message
+    if stable_upgrade and pre_upgrade:
+        message = f"New stable ({stable}) and pre-release ({pre}) available"
+    elif stable_upgrade:
+        message = f"New stable version {stable} available"
+    elif pre_upgrade:
+        message = f"New pre-release {pre} available"
+    else:
+        message = "You're using the latest version"
 
     response = {
         "version": __version__,
-        "latest": latest,
-        "up_to_date": not update_available,
+        "latest_stable": stable,
+        "latest_pre": pre,
+        "up_to_date": up_to_date,
+        "message": message,
+        "update_commands": update_commands if update_commands else None,
         "pypi": "https://pypi.org/project/argo-proxy/",
+        "changelog": "https://argo-proxy.readthedocs.io/en/latest/changelog/",
     }
-
-    if update_available:
-        response.update(
-            {
-                "message": f"New version {latest} available",
-                "install_command": "pip install --upgrade argo-proxy",
-            }
-        )
-    else:
-        response["message"] = "You're using the latest version"
 
     return web.json_response(response)
 

@@ -104,9 +104,3 @@ async def get_pypi_versions() -> dict[str, str | None]:
             result["pre"] = str(latest_pre)
 
     return result
-
-
-async def get_latest_pypi_version() -> str | None:
-    """Convenience wrapper returning just the latest stable version."""
-    versions = await get_pypi_versions()
-    return versions["stable"]
