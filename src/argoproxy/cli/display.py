@@ -65,11 +65,13 @@ def version_check() -> str:
     if latest:
         if version.parse(latest) > version.parse(__version__):
             is_pre = version.parse(latest).is_prerelease
+            pre_flag = " --pre" if is_pre else ""
             pip_flag = " --pre" if is_pre else ""
             ver_content.extend(
                 [
                     f"New version available: {latest}",
-                    f"Update with `pip install --upgrade{pip_flag} argo-proxy`",
+                    f"Update with `argo-proxy update install{pre_flag}`",
+                    f"  or: `pip install --upgrade{pip_flag} argo-proxy`",
                     f"Changelog: {CHANGELOG_URL}",
                 ]
             )
@@ -96,8 +98,13 @@ def display_startup_banner(no_banner: bool = False):
         pip_flag = " --pre" if is_pre else ""
         log_warning(f"\U0001f680 ARGO PROXY v{__version__}", context="cli")
         log_warning(f"\U0001f195 UPDATE AVAILABLE: v{latest}", context="cli")
+        pre_flag = " --pre" if is_pre else ""
         log_info(
-            f"   \u251c\u2500 Run: pip install --upgrade{pip_flag} argo-proxy",
+            f"   \u251c\u2500 Run: argo-proxy update install{pre_flag}",
+            context="cli",
+        )
+        log_info(
+            f"   \u251c\u2500 Or:  pip install --upgrade{pip_flag} argo-proxy",
             context="cli",
         )
         log_info(f"   \u2514\u2500 Changelog: {CHANGELOG_URL}", context="cli")

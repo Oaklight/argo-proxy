@@ -514,12 +514,14 @@ def _update_check():
     print()
     pip_cmd = " ".join(_detect_pip_command())
     if stable and version.parse(stable) > cur_parsed:
+        log_info("  Update:       argo-proxy update install", context="cli")
         log_info(
-            f"  Update:       {pip_cmd} install --upgrade argo-proxy", context="cli"
+            f"    or:         {pip_cmd} install --upgrade argo-proxy", context="cli"
         )
     if pre and version.parse(pre) > cur_parsed:
+        log_info("  Pre-release:  argo-proxy update install --pre", context="cli")
         log_info(
-            f"  Pre-release:  {pip_cmd} install --upgrade --pre argo-proxy",
+            f"    or:         {pip_cmd} install --upgrade --pre argo-proxy",
             context="cli",
         )
     print(f"  Changelog:    {CHANGELOG_URL}")
