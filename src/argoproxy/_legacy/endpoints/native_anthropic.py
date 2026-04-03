@@ -14,7 +14,7 @@ from aiohttp import web
 
 from ...config import ArgoConfig
 from ...models import ModelRegistry
-from ...tool_calls.input_handle import handle_tools
+from ..tool_calls.input_handle import handle_tools
 from ...utils.image_processing import process_anthropic_images
 from ...utils.logging import (
     log_converted_request,

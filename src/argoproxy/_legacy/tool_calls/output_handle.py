@@ -18,7 +18,7 @@ from typing import (
 
 from pydantic import ValidationError
 
-from ..config import load_config
+from ...config import load_config
 from ..types.function_call import (
     ChatCompletionMessageToolCall,
     ChoiceDeltaToolCall,
@@ -26,7 +26,7 @@ from ..types.function_call import (
     Function,
     ResponseFunctionToolCall,
 )
-from ..utils.logging import log_debug, log_error, log_warning, truncate_string
+from ...utils.logging import log_debug, log_error, log_warning, truncate_string
 from ..utils.models import generate_id
 from .handler import ToolCall
 from .leaked_tool_parser import (

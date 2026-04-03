@@ -11,20 +11,20 @@ from aiohttp import web
 
 from ...config import ArgoConfig
 from ...models import ModelRegistry
-from ...types import Completion, CompletionChoice
-from ...types.completions import CompletionUsage
-from ...types.completions import FINISH_REASONS
+from ..types import Completion, CompletionChoice
+from ..types.completions import CompletionUsage
+from ..types.completions import FINISH_REASONS
 from ...utils.logging import (
     log_converted_request,
     log_original_request,
     log_upstream_error,
 )
 from ...utils.misc import apply_username_passthrough
-from ...utils.models import apply_claude_max_tokens_limit
-from ...utils.stream_decoder import StreamDecoder
-from ...utils.tokens import count_tokens, count_tokens_async
+from ..utils.models import apply_claude_max_tokens_limit
+from ..utils.stream_decoder import StreamDecoder
+from ..utils.tokens import count_tokens, count_tokens_async
 from ...utils.transports import pseudo_chunk_generator, send_off_sse
-from ...utils.usage import create_usage, generate_usage_chunk
+from ..utils.usage import create_usage, generate_usage_chunk
 from .chat import (
     prepare_chat_request_data,
     send_non_streaming_request,
@@ -302,7 +302,7 @@ async def send_streaming_completions_request(
 
     created_timestamp = int(time.time())
     # Calculate prompt tokens for usage calculation
-    from ...utils.tokens import calculate_prompt_tokens_async
+    from ..utils.tokens import calculate_prompt_tokens_async
 
     prompt_tokens = await calculate_prompt_tokens_async(data, data["model"])
 

@@ -11,13 +11,13 @@ from aiohttp import web
 
 from ...config import ArgoConfig
 from ...models import ModelRegistry
-from ...tool_calls.input_handle import handle_tools
-from ...tool_calls.output_handle import (
+from ..tool_calls.input_handle import handle_tools
+from ..tool_calls.output_handle import (
     ToolInterceptor,
     tool_calls_to_openai,
     tool_calls_to_openai_stream,
 )
-from ...types import (
+from ..types import (
     ChatCompletion,
     ChatCompletionChunk,
     ChatCompletionMessage,
@@ -25,9 +25,9 @@ from ...types import (
     NonStreamChoice,
     StreamChoice,
 )
-from ...types.chat_completion import FINISH_REASONS, CompletionUsage
+from ..types.chat_completion import FINISH_REASONS, CompletionUsage
 from ...utils.image_processing import process_openai_images
-from ...utils.input_handle import (
+from ..utils.input_handle import (
     handle_multiple_entries_prompt,
     handle_no_sys_msg,
     handle_option_2_input,
@@ -45,14 +45,15 @@ from ...utils.misc import (
     apply_username_passthrough,
     contains_argo_auth_warning,
 )
-from ...utils.models import apply_claude_max_tokens_limit, determine_model_family
-from ...utils.tokens import (
+from ..utils.models import apply_claude_max_tokens_limit
+from ...utils.models import determine_model_family
+from ..utils.tokens import (
     calculate_prompt_tokens_async,
     count_tokens_async,
 )
-from ...utils.stream_decoder import StreamDecoder
+from ..utils.stream_decoder import StreamDecoder
 from ...utils.transports import pseudo_chunk_generator, send_off_sse
-from ...utils.usage import (
+from ..utils.usage import (
     calculate_completion_tokens_async,
     create_usage,
     generate_usage_chunk,

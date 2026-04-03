@@ -54,7 +54,7 @@ from ..types.function_call import (
 )
 from ..types.function_call import FunctionCall as GeminiToolCall
 from ..types.function_call import FunctionDeclaration as GeminiTool
-from ..utils.models import API_FORMATS
+from ...utils.models import API_FORMATS
 
 
 class ToolCall(BaseModel):
