@@ -11,11 +11,19 @@ This page records the major version changes and important feature updates of the
     - `retry`: Try the request as non-streaming first. If Anthropic returns the "streaming required" bounce-back (HTTP 500), automatically retry with forced streaming. Dumps the original request to `<config_dir>/stream_retry_dumps/` for diagnostics
     - `passthrough`: Never force streaming, pass through as-is. Useful for debugging or when requests are known to be short
 - **Generalized `logs collect` CLI**: `argo-proxy logs collect` now supports `--type {leaked-tool,stream-retry,all}` to collect different categories of diagnostic logs. Default is `all`. New log categories can be added by registering in `_DIAGNOSTIC_LOG_TYPES`
+- **`config list` subcommand**: `argo-proxy config list` lists all config files found in standard search paths, marking the active one
+- **Unified `/version` endpoint**: The HTTP `/version` endpoint now returns both stable and pre-release version info (matching CLI `update check` behavior), with `latest_stable`, `latest_pre`, `update_commands` (CLI + pip), and `changelog` URL
+
+### Improved
+
+- **CLI output cleanup**: All CLI subcommand output (`config`, `update`, `logs`) now uses clean `print()` instead of `log_info()` with timestamps, producing cleaner terminal output
+- **Dual update commands**: Version check surfaces (`--version`, startup banner, `update check`, `/version` endpoint) now show both `argo-proxy update install` (primary) and `pip install --upgrade` (alternative) as upgrade paths
 
 ### Changed
 
 - **`ANTHROPIC_STREAM_MODE` environment variable**: New env var to set the Anthropic stream mode without CLI flags. Accepts `force`, `retry`, or `passthrough`
 - **`anthropic_stream_mode` config field**: Can also be set in `config.yaml` (persisted only when non-default). Placed in the "Upstream" config section
+- **Legacy code consolidation**: All legacy-only modules (`types/`, `tool_calls/`, legacy endpoints, legacy utils) moved under `_legacy/` top-level package. Embeddings passthrough extracted to `endpoints/passthrough.py` for universal mode. `utils/models.py` cleaned up — dead code removed, legacy-only functions moved to `_legacy/utils/models.py`
 
 ## v3.0.0b11 (2026-03-31)
 
