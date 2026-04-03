@@ -87,6 +87,18 @@ def _add_serve_arguments(parser: argparse.ArgumentParser) -> None:
         help="[Legacy only] Enable AST-based leaked tool call detection and fixing",
     )
     parser.add_argument(
+        "--anthropic-stream-mode",
+        type=str,
+        choices=["force", "retry", "passthrough"],
+        default=None,
+        help=(
+            "How to handle non-streaming requests to Anthropic upstream.\n"
+            "  force:       Always force streaming, aggregate back (default)\n"
+            "  retry:       Try non-streaming first, retry with streaming on error\n"
+            "  passthrough: Never force streaming, pass through as-is"
+        ),
+    )
+    parser.add_argument(
         "--dev",
         action="store_true",
         default=False,
@@ -170,10 +182,23 @@ def _add_logs_subparsers(parser: argparse.ArgumentParser) -> None:
     sub = parser.add_subparsers(dest="logs_action", metavar="action")
 
     collect_parser = sub.add_parser(
-        "collect", help="Collect leaked tool call logs into a tar.gz archive"
+        "collect", help="Collect diagnostic logs into a tar.gz archive"
     )
     collect_parser.add_argument(
         "config", nargs="?", default=None, help="Config file path"
+    )
+    collect_parser.add_argument(
+        "--type",
+        "-t",
+        type=str,
+        choices=["leaked-tool", "stream-retry", "all"],
+        default="all",
+        help=(
+            "Type of diagnostic logs to collect (default: all)\n"
+            "  leaked-tool:  Leaked tool call logs\n"
+            "  stream-retry: Anthropic stream retry request dumps\n"
+            "  all:          All diagnostic logs"
+        ),
     )
 
 

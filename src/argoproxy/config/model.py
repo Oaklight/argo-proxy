@@ -61,6 +61,9 @@ class ArgoConfig:
     _enable_leaked_tool_fix: bool = False
     _dev_mode: bool = False
 
+    # Anthropic non-streaming request handling mode
+    _anthropic_stream_mode: str = "force"  # "force", "retry", or "passthrough"
+
     # Validation and resolver settings
     _skip_url_validation: bool = False
     _user_validated: bool = False  # Set after upstream user validation passes
@@ -181,6 +184,23 @@ class ArgoConfig:
         """Check if dev (pure reverse proxy) mode is enabled."""
         return self._dev_mode
 
+    @property
+    def anthropic_stream_mode(self) -> str:
+        """Anthropic non-streaming request handling mode.
+
+        Returns:
+            One of ``"force"``, ``"retry"``, or ``"passthrough"``.
+
+            - ``force``: Always force streaming upstream, aggregate back (default).
+            - ``retry``: Try non-streaming first, retry with streaming on
+              Anthropic's "streaming is required" bounce-back error.
+            - ``passthrough``: Never force streaming, pass through as-is.
+        """
+        valid = ("force", "retry", "passthrough")
+        if self._anthropic_stream_mode in valid:
+            return self._anthropic_stream_mode
+        return "force"
+
     @classmethod
     def from_dict(cls, config_dict: dict):
         """Create ArgoConfig instance from a dictionary."""
@@ -195,6 +215,7 @@ class ArgoConfig:
             "native_anthropic_base_url": "_native_anthropic_base_url",
             "use_legacy_argo": "_use_legacy_argo",
             "skip_url_validation": "_skip_url_validation",
+            "anthropic_stream_mode": "_anthropic_stream_mode",
         }
         valid_fields = {
             k: v for k, v in config_dict.items() if k in cls.__annotations__
@@ -226,6 +247,8 @@ class ArgoConfig:
             serialized["use_legacy_argo"] = True
         if self._skip_url_validation:
             serialized["skip_url_validation"] = True
+        if self._anthropic_stream_mode != "force":
+            serialized["anthropic_stream_mode"] = self._anthropic_stream_mode
 
         # Persist native URLs only when explicitly overridden (differ from
         # the values that would be derived from argo_base_url)
