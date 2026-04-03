@@ -56,6 +56,7 @@ argo-proxy config.yaml --port 8080 --verbose
 | `--show, -s` | Show the current configuration during launch |
 | `--no-banner` | Suppress the ASCII banner on startup |
 | `--username-passthrough` | Use API key from request headers as user field |
+| `--anthropic-stream-mode MODE` | Anthropic non-streaming handling: `force` (default), `retry`, or `passthrough` |
 | `--legacy-argo` | Use legacy ARGO gateway pipeline instead of universal dispatch |
 
 ### Legacy-Only Options
@@ -201,21 +202,40 @@ Available environments:
 
 ## `logs` — Collect Diagnostic Logs
 
-Collect leaked tool call logs for analysis and debugging.
+Collect diagnostic logs for analysis and debugging.
 
 ```bash
-argo-proxy logs {collect} [config]
+argo-proxy logs {collect} [config] [options]
 ```
 
 ### Actions
 
 #### `logs collect`
 
-Collect all leaked tool call logs into a timestamped tar.gz archive.
+Collect diagnostic logs into a timestamped tar.gz archive.
 
 ```bash
+# Collect all diagnostic logs (default)
 argo-proxy logs collect
+
+# Collect only leaked tool call logs
+argo-proxy logs collect --type leaked-tool
+
+# Collect only stream retry request dumps
+argo-proxy logs collect --type stream-retry
 ```
+
+| Option | Description |
+|--------|-------------|
+| `config` | Config file path (optional) |
+| `--type, -t` | Log type to collect: `leaked-tool`, `stream-retry`, or `all` (default: `all`) |
+
+Log types and their directories:
+
+| Type | Directory | Description |
+|------|-----------|-------------|
+| `leaked-tool` | `leaked_tool_calls/` | Leaked tool call detection logs |
+| `stream-retry` | `stream_retry_dumps/` | Anthropic stream retry request dumps (from `--anthropic-stream-mode retry`) |
 
 ---
 
@@ -322,6 +342,7 @@ The following environment variables override configuration file settings:
 | `VERBOSE` | Enable/disable verbose logging |
 | `ARGO_BASE_URL` | Override the Argo base URL |
 | `USE_LEGACY_ARGO` | Enable legacy ARGO gateway mode |
+| `ANTHROPIC_STREAM_MODE` | Anthropic non-streaming handling: `force`, `retry`, or `passthrough` |
 | `SKIP_URL_VALIDATION` | Skip URL validation at startup |
 
 !!! note "Deprecated Environment Variables"

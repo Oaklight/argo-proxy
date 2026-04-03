@@ -2,6 +2,21 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v3.0.0b12 (2026-04-03)
+
+### New
+
+- **Configurable Anthropic non-streaming stream mode** (`--anthropic-stream-mode`): Controls how non-streaming requests to Anthropic upstream are handled. Three modes:
+    - `force` (default): Always force streaming upstream and aggregate SSE events back into a non-streaming response. This is the same behavior as v3.0.0b9+ and avoids Anthropic's "Streaming is required for operations that may take longer than 10 minutes" bounce-back error
+    - `retry`: Try the request as non-streaming first. If Anthropic returns the "streaming required" bounce-back (HTTP 500), automatically retry with forced streaming. Dumps the original request to `<config_dir>/stream_retry_dumps/` for diagnostics
+    - `passthrough`: Never force streaming, pass through as-is. Useful for debugging or when requests are known to be short
+- **Generalized `logs collect` CLI**: `argo-proxy logs collect` now supports `--type {leaked-tool,stream-retry,all}` to collect different categories of diagnostic logs. Default is `all`. New log categories can be added by registering in `_DIAGNOSTIC_LOG_TYPES`
+
+### Changed
+
+- **`ANTHROPIC_STREAM_MODE` environment variable**: New env var to set the Anthropic stream mode without CLI flags. Accepts `force`, `retry`, or `passthrough`
+- **`anthropic_stream_mode` config field**: Can also be set in `config.yaml` (persisted only when non-default). Placed in the "Upstream" config section
+
 ## v3.0.0b11 (2026-03-31)
 
 ### Improved

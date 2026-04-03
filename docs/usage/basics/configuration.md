@@ -80,6 +80,7 @@ The following fields are only persisted to the config file when set to non-defau
 | `skip_url_validation` | Skip URL connectivity check at startup | Only when `true` |
 | `native_openai_base_url` | Base URL for OpenAI-compatible endpoints | Only when explicitly set and differs from `{argo_base_url}/v1` |
 | `native_anthropic_base_url` | Base URL for Anthropic endpoint | Only when explicitly set and differs from `argo_base_url` |
+| `anthropic_stream_mode` | Anthropic non-streaming handling mode (`force`/`retry`/`passthrough`) | Only when not `force` |
 
 ## Configuration File Locations
 
