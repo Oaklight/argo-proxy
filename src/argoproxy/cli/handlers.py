@@ -12,7 +12,7 @@ from packaging import version
 from ..__init__ import __version__
 from ..config import PATHS_TO_TRY, validate_config
 from ..utils.attack_logger import get_attack_logger
-from ..utils.logging import log_error, log_info, log_warning
+from ..utils.logging import log_error
 from .display import CHANGELOG_URL, display_startup_banner
 
 
@@ -127,7 +127,7 @@ def _migrate_config(config_path: str | None = None):
         log_error("No configuration file found to migrate.", context="cli")
         sys.exit(1)
 
-    log_info(f"Migrating config: {found_path}", context="cli")
+    print(f"Migrating config: {found_path}")
 
     # Read original content
     with open(found_path, encoding="utf-8") as f:
@@ -138,7 +138,7 @@ def _migrate_config(config_path: str | None = None):
     # Load through standard pipeline (applies _migrate_config + from_dict)
     config, _ = load_config(found_path, env_override=False, verbose=False)
     if config is None:
-        log_error(f"Failed to load config from {found_path}", context="cli")
+        print(f"Error: Failed to load config from {found_path}", file=sys.stderr)
         sys.exit(1)
 
     # Produce canonical output
@@ -147,15 +147,13 @@ def _migrate_config(config_path: str | None = None):
 
     # Check if anything actually changed
     if migrated_yaml.strip() == original_content.strip():
-        log_info(
-            "Config is already in canonical v3 format. Nothing to do.", context="cli"
-        )
+        print("Config is already in canonical v3 format. Nothing to do.")
         return
 
     # Create backup
     backup_path = found_path + ".bak"
     shutil.copy2(found_path, backup_path)
-    log_info(f"Backup saved: {backup_path}", context="cli")
+    print(f"Backup saved: {backup_path}")
 
     # Write migrated config
     with open(found_path, "w", encoding="utf-8") as f:
@@ -174,11 +172,11 @@ def _migrate_config(config_path: str | None = None):
     for key in sorted(set(persistent) - set(original_data)):
         changes.append(f"added: {key}: {persistent[key]}")
 
-    log_info("=" * 60, context="cli")
-    log_info("Migration complete:", context="cli")
+    print("=" * 60)
+    print("Migration complete:")
     for change in changes:
-        log_info(f"  - {change}", context="cli")
-    log_info("=" * 60, context="cli")
+        print(f"  - {change}")
+    print("=" * 60)
 
 
 def _open_in_editor(config_path: str | None = None):
@@ -228,22 +226,55 @@ def handle_config(args: argparse.Namespace):
     elif args.config_action == "validate":
         try:
             validate_config(config_path, show_config=True)
-            log_info("Configuration validation successful.", context="cli")
+            print("Configuration validation successful.")
         except Exception as e:
-            log_error(f"Configuration validation failed: {e}", context="cli")
+            print(f"Error: Configuration validation failed: {e}", file=sys.stderr)
             sys.exit(1)
     elif args.config_action == "show":
         try:
             validate_config(config_path, show_config=True)
         except Exception as e:
-            log_error(f"Failed to load configuration: {e}", context="cli")
+            print(f"Error: Failed to load configuration: {e}", file=sys.stderr)
             sys.exit(1)
     elif args.config_action == "migrate":
         _migrate_config(config_path)
     elif args.config_action == "init":
         _handle_init(config_path, force=args.force)
+    elif args.config_action == "list":
+        _list_configs()
     elif args.config_action == "env":
         _handle_env(getattr(args, "environment", None), config_path)
+
+
+def _list_configs():
+    """List all config files found in the standard search paths."""
+    from ..config.io import PATHS_TO_TRY, load_config
+
+    _, active_path = load_config(None, env_override=False, verbose=False)
+
+    found = []
+    for p in PATHS_TO_TRY:
+        expanded = os.path.expanduser(p)
+        resolved = os.path.realpath(expanded)
+        if os.path.isfile(resolved):
+            active = active_path and os.path.realpath(str(active_path)) == resolved
+            found.append((expanded, active))
+
+    if not found:
+        print("No config file found. Run 'argo-proxy config init' to create one.")
+        return
+
+    # Build table
+    path_header = "Path"
+    status_header = "Status"
+    max_path = max(len(path_header), *(len(p) for p, _ in found))
+    max_status = max(len(status_header), len("active"))
+
+    print(f"  {path_header:<{max_path}}  {status_header:<{max_status}}")
+    print(f"  {'-' * max_path}  {'-' * max_status}")
+    for path, active in found:
+        status = "active" if active else ""
+        print(f"  {path:<{max_path}}  {status}")
 
 
 def _handle_init(config_path: str | None = None, force: bool = False):
@@ -262,13 +293,13 @@ def _handle_init(config_path: str | None = None, force: bool = False):
         target = os.path.join(home_dir, ".config", "argoproxy", "config.yaml")
 
     if os.path.exists(target) and not force:
-        log_warning(f"Config already exists: {target}", context="cli")
+        print(f"Config already exists: {target}")
         overwrite = _get_yes_no_input(
             "Overwrite with a new interactive session? [y/N]: ",
             default_choice="n",
         )
         if not overwrite:
-            log_info("Aborted.", context="cli")
+            print("Aborted.")
             return
 
     create_config(config_path=config_path)
@@ -288,9 +319,9 @@ def _handle_env(env_name: str | None = None, config_path: str | None = None):
 
     config, actual_path = load_config(config_path, env_override=False, verbose=False)
     if config is None or actual_path is None:
-        log_error(
-            "No configuration file found. Run 'argo-proxy config init' first.",
-            context="cli",
+        print(
+            "Error: No configuration file found. Run 'argo-proxy config init' first.",
+            file=sys.stderr,
         )
         sys.exit(1)
 
@@ -300,18 +331,18 @@ def _handle_env(env_name: str | None = None, config_path: str | None = None):
     if env_name is None:
         # Show current environment
         label = current_env if current_env else "custom"
-        log_info(f"Current environment: {label}", context="cli")
-        log_info(f"  argo_base_url: {current_url}", context="cli")
-        log_info("", context="cli")
-        log_info("Available environments:", context="cli")
+        print(f"Current environment: {label}")
+        print(f"  argo_base_url: {current_url}")
+        print()
+        print("Available environments:")
         for name, url in envs.items():
             marker = " (active)" if name == current_env else ""
-            log_info(f"  {name:<6s} {url}{marker}", context="cli")
+            print(f"  {name:<6s} {url}{marker}")
         return
 
     target_url = envs[env_name]
     if target_url == current_url:
-        log_info(f"Already on '{env_name}' environment. Nothing to do.", context="cli")
+        print(f"Already on '{env_name}' environment. Nothing to do.")
         return
 
     config._argo_base_url = target_url
@@ -320,8 +351,8 @@ def _handle_env(env_name: str | None = None, config_path: str | None = None):
     config._native_anthropic_base_url = ""
 
     save_config(config, actual_path)
-    log_info(f"Switched to '{env_name}' environment.", context="cli")
-    log_info(f"  argo_base_url: {target_url}", context="cli")
+    print(f"Switched to '{env_name}' environment.")
+    print(f"  argo_base_url: {target_url}")
 
 
 # ---------------------------------------------------------------------------
@@ -377,15 +408,15 @@ def _collect_diagnostic_logs(
 
     if not all_files:
         label = log_type if log_type != "all" else "diagnostic"
-        log_info(f"No {label} logs found.", context="cli")
+        print(f"No {label} logs found.")
         return
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     archive_name = f"diagnostic_logs_{log_type}_{timestamp}.tar.gz"
     archive_path = Path.cwd() / archive_name
 
-    log_info(f"Collecting {len(all_files)} log files...", context="cli")
-    log_info(f"Creating archive: {archive_path}", context="cli")
+    print(f"Collecting {len(all_files)} log files...")
+    print(f"Creating archive: {archive_path}")
 
     try:
         with tarfile.open(archive_path, "w:gz") as tar:
@@ -393,25 +424,20 @@ def _collect_diagnostic_logs(
                 tar.add(file_path, arcname=arcname)
 
         archive_size = archive_path.stat().st_size
-        log_info("=" * 80, context="cli")
-        log_info("Archive created successfully!", context="cli")
-        log_info(f"   Location: {archive_path}", context="cli")
-        log_info(f"   Size: {archive_size / 1024 / 1024:.2f} MB", context="cli")
-        log_info(f"   Files: {len(all_files)} logs", context="cli")
-        log_info("=" * 80, context="cli")
-        log_info("", context="cli")
-        log_info("Please send this archive to:", context="cli")
-        log_info(
-            "  - Matthew Dearing (Argo API maintainer): mdearing@anl.gov", context="cli"
-        )
-        log_info(
-            "  - Peng Ding (argo-proxy maintainer): dingpeng@uchicago.edu",
-            context="cli",
-        )
-        log_info("=" * 80, context="cli")
+        print("=" * 80)
+        print("Archive created successfully!")
+        print(f"   Location: {archive_path}")
+        print(f"   Size: {archive_size / 1024 / 1024:.2f} MB")
+        print(f"   Files: {len(all_files)} logs")
+        print("=" * 80)
+        print()
+        print("Please send this archive to:")
+        print("  - Matthew Dearing (Argo API maintainer): mdearing@anl.gov")
+        print("  - Peng Ding (argo-proxy maintainer): dingpeng@uchicago.edu")
+        print("=" * 80)
 
     except Exception as e:
-        log_error(f"Failed to create archive: {e}", context="cli")
+        print(f"Error: Failed to create archive: {e}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -481,49 +507,38 @@ def _update_check():
         try:
             stable_parsed = version.parse(stable)
             if stable_parsed > cur_parsed:
-                log_info(
-                    f"  Stable:      v{stable}  \u2190 upgrade available", context="cli"
-                )
+                print(f"  Stable:      v{stable}  \u2190 upgrade available")
             elif cur_parsed > stable_parsed:
-                log_info(
-                    f"  Stable:      v{stable}  (installed is newer)", context="cli"
-                )
+                print(f"  Stable:      v{stable}  (installed is newer)")
             else:
-                log_info(f"  Stable:      v{stable}  (up to date)", context="cli")
+                print(f"  Stable:      v{stable}  (up to date)")
         except Exception:
-            log_info(f"  Stable:      v{stable}", context="cli")
+            print(f"  Stable:      v{stable}")
     else:
-        log_warning("  Stable:      (unable to fetch)", context="cli")
+        print("  Stable:      (unable to fetch)")
 
     if pre:
         try:
             pre_parsed = version.parse(pre)
             if pre_parsed > cur_parsed:
-                log_info(
-                    f"  Pre-release: v{pre}  \u2190 upgrade available", context="cli"
-                )
+                print(f"  Pre-release: v{pre}  \u2190 upgrade available")
             elif pre_parsed == cur_parsed:
-                log_info(f"  Pre-release: v{pre}  (up to date)", context="cli")
+                print(f"  Pre-release: v{pre}  (up to date)")
             else:
-                log_info(f"  Pre-release: v{pre}  (installed is newer)", context="cli")
+                print(f"  Pre-release: v{pre}  (installed is newer)")
         except Exception:
-            log_info(f"  Pre-release: v{pre}", context="cli")
+            print(f"  Pre-release: v{pre}")
     else:
-        log_info("  Pre-release: (none available)", context="cli")
+        print("  Pre-release: (none available)")
 
     print()
     pip_cmd = " ".join(_detect_pip_command())
     if stable and version.parse(stable) > cur_parsed:
-        log_info("  Update:       argo-proxy update install", context="cli")
-        log_info(
-            f"    or:         {pip_cmd} install --upgrade argo-proxy", context="cli"
-        )
+        print("  Update:       argo-proxy update install")
+        print(f"    or:         {pip_cmd} install --upgrade argo-proxy")
     if pre and version.parse(pre) > cur_parsed:
-        log_info("  Pre-release:  argo-proxy update install --pre", context="cli")
-        log_info(
-            f"    or:         {pip_cmd} install --upgrade --pre argo-proxy",
-            context="cli",
-        )
+        print("  Pre-release:  argo-proxy update install --pre")
+        print(f"    or:         {pip_cmd} install --upgrade --pre argo-proxy")
     print(f"  Changelog:    {CHANGELOG_URL}")
 
 
@@ -540,15 +555,12 @@ def _update_install(pre: bool = False):
     label = "pre-release" if pre else "stable"
 
     if not target:
-        log_error(f"Unable to fetch {label} version from PyPI.", context="cli")
+        print(f"Error: Unable to fetch {label} version from PyPI.", file=sys.stderr)
         sys.exit(1)
 
     try:
         if version.parse(target) <= version.parse(current):
-            log_info(
-                f"Already at v{current}, {label} is v{target}. Nothing to do.",
-                context="cli",
-            )
+            print(f"Already at v{current}, {label} is v{target}. Nothing to do.")
             return
     except Exception:
         pass
@@ -559,20 +571,16 @@ def _update_install(pre: bool = False):
         cmd.append("--pre")
     cmd.append("argo-proxy")
 
-    log_info(
-        f"Upgrading argo-proxy: v{current} \u2192 v{target} ({label})", context="cli"
-    )
-    log_info(f"Running: {' '.join(cmd)}", context="cli")
+    print(f"Upgrading argo-proxy: v{current} \u2192 v{target} ({label})")
+    print(f"Running: {' '.join(cmd)}")
     print()
 
     result = subprocess.run(cmd)
     if result.returncode != 0:
-        log_error("Update failed. See output above for details.", context="cli")
+        print("Error: Update failed. See output above for details.", file=sys.stderr)
         sys.exit(1)
 
-    log_info(
-        "Update complete. Restart argo-proxy to use the new version.", context="cli"
-    )
+    print("Update complete. Restart argo-proxy to use the new version.")
 
 
 def handle_update(args: argparse.Namespace):

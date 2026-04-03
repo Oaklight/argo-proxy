@@ -162,6 +162,8 @@ def _add_config_subparsers(parser: argparse.ArgumentParser) -> None:
         help="Overwrite existing config without confirmation",
     )
 
+    sub.add_parser("list", help="List all config files found in search paths")
+
     env_parser = sub.add_parser(
         "env", help="Show or switch upstream environment (prod/dev/test)"
     )
