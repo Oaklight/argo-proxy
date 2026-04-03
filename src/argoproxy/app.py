@@ -7,16 +7,16 @@ from aiohttp import web
 
 from .__init__ import __version__
 from .config import ArgoConfig, load_config
-from .endpoints import (
-    dispatch,
-    extras,
-    native_openai,
-)
-from .endpoints._legacy import (
+from ._legacy.endpoints import (
     chat,
     completions,
     embed,
     responses,
+)
+from .endpoints import (
+    dispatch,
+    extras,
+    passthrough,
 )
 from .endpoints.dev_proxy import register_dev_routes
 from .endpoints.extras import get_latest_pypi_version
@@ -153,12 +153,22 @@ async def proxy_openai_legacy_completions_compatible(request: web.Request):
     log_info("/v1/completions", context="app")
     config: ArgoConfig = request.app["config"]
 
-    # Legacy completions only available in legacy mode
     if config.use_legacy_argo:
         return await completions.proxy_request(request)
 
-    # In universal mode, passthrough to native OpenAI
-    return await native_openai.proxy_native_openai_request(request, "completions")
+    return web.json_response(
+        {
+            "error": {
+                "message": (
+                    "/v1/completions is not supported in universal mode. "
+                    "Use /v1/chat/completions instead."
+                ),
+                "type": "not_implemented",
+                "code": 501,
+            }
+        },
+        status=501,
+    )
 
 
 async def proxy_openai_responses_request(request: web.Request):
@@ -179,8 +189,7 @@ async def proxy_openai_embedding_request(request: web.Request):
     if config.use_legacy_argo:
         return await embed.proxy_request(request, convert_to_openai=True)
 
-    # Universal mode: native OpenAI passthrough
-    return await native_openai.proxy_native_openai_request(request, "embeddings")
+    return await passthrough.proxy_embeddings_request(request)
 
 
 async def proxy_anthropic_messages(request: web.Request):

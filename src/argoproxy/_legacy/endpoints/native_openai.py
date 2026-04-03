@@ -12,11 +12,11 @@ from typing import Union
 import aiohttp
 from aiohttp import web
 
-from ..config import ArgoConfig
-from ..models import ModelRegistry
+from ...config import ArgoConfig
+from ...models import ModelRegistry
 from ..tool_calls.input_handle import handle_tools
-from ..utils.image_processing import process_openai_images
-from ..utils.logging import (
+from ...utils.image_processing import process_openai_images
+from ...utils.logging import (
     log_converted_request,
     log_debug,
     log_error,
@@ -24,13 +24,13 @@ from ..utils.logging import (
     log_original_request,
     log_upstream_error,
 )
-from ..utils.misc import (
+from ...utils.misc import (
     ARGO_AUTH_ERROR_MESSAGE,
     apply_username_passthrough,
     check_response_for_argo_warning,
     contains_argo_auth_warning,
 )
-from ..utils.models import determine_model_family
+from ...utils.models import determine_model_family
 
 
 async def proxy_native_openai_request(

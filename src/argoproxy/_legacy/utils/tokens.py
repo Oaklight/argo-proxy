@@ -3,7 +3,7 @@ from typing import Union
 
 import tiktoken
 
-from ..models import TIKTOKEN_ENCODING_PREFIX_MAPPING
+from ...models import TIKTOKEN_ENCODING_PREFIX_MAPPING
 
 
 def get_tiktoken_encoding_model(model: str) -> str:

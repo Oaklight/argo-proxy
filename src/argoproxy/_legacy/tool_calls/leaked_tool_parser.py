@@ -17,7 +17,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from ..utils.logging import log_debug, log_warning
+from ...utils.logging import log_debug, log_warning
 
 
 @dataclass

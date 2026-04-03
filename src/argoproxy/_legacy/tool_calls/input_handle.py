@@ -11,7 +11,7 @@ This module provides functionality for:
 
 Usage
 =====
->>> from argoproxy.tool_calls.input_handle import handle_tools
+>>> from argoproxy._legacy.tool_calls.input_handle import handle_tools
 >>> processed_data = handle_tools(request_data, native_tools=True)
 """
 
@@ -20,8 +20,8 @@ from typing import Any, Literal, Union
 
 from pydantic import ValidationError
 
-from ..utils.logging import log_debug, log_error, log_warning, truncate_string
-from ..utils.models import determine_model_family
+from ...utils.logging import log_debug, log_error, log_warning, truncate_string
+from ...utils.models import determine_model_family
 from .tool_prompts import get_prompt_skeleton
 
 # ======================================================================

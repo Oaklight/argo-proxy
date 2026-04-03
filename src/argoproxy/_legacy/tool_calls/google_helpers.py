@@ -9,7 +9,7 @@ tool calls to sequential format for Gemini API compatibility.
 
 from typing import Any, Union
 
-from ..utils.logging import log_debug, log_error
+from ...utils.logging import log_debug, log_error
 
 
 def is_parallel_tool_call_message(message: dict[str, Any]) -> bool:

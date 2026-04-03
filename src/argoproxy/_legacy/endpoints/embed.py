@@ -7,7 +7,7 @@ from aiohttp import web
 
 from ...config import ArgoConfig
 from ...models import ModelRegistry
-from ...types import CreateEmbeddingResponse, Embedding, Usage
+from ..types import CreateEmbeddingResponse, Embedding, Usage
 from ...utils.logging import (
     log_converted_request,
     log_info,
@@ -15,8 +15,8 @@ from ...utils.logging import (
     log_upstream_error,
 )
 from ...utils.misc import make_bar
-from ...utils.tokens import count_tokens
-from ...utils.usage import create_usage
+from ..utils.tokens import count_tokens
+from ..utils.usage import create_usage
 
 DEFAULT_MODEL = "argo:text-embedding-3-small"
 
