@@ -151,24 +151,7 @@ async def proxy_openai_chat_compatible(request: web.Request):
 
 async def proxy_openai_legacy_completions_compatible(request: web.Request):
     log_info("/v1/completions", context="app")
-    config: ArgoConfig = request.app["config"]
-
-    if config.use_legacy_argo:
-        return await completions.proxy_request(request)
-
-    return web.json_response(
-        {
-            "error": {
-                "message": (
-                    "/v1/completions is not supported in universal mode. "
-                    "Use /v1/chat/completions instead."
-                ),
-                "type": "not_implemented",
-                "code": 501,
-            }
-        },
-        status=501,
-    )
+    return await completions.proxy_request(request)
 
 
 async def proxy_openai_responses_request(request: web.Request):
