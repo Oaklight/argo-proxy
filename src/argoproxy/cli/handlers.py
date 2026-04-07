@@ -367,6 +367,7 @@ _DIAGNOSTIC_LOG_TYPES: dict[str, tuple[str, list[str]]] = {
         ["leaked_tool_*.json", "leaked_tool_*.json.gz"],
     ),
     "stream-retry": ("stream_retry_dumps", ["retry_*.json", "retry_*.json.gz"]),
+    "error-dump": ("error_dumps", ["error_*.json", "error_*.json.gz"]),
 }
 
 
