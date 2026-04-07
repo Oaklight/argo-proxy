@@ -146,15 +146,28 @@ def _is_anthropic_stream_required_error(status_code: int, error_text: str) -> bo
     return "streaming is required" in error_text.lower()
 
 
-def _dump_stream_retry_request(
+def _dump_error_request(
     request_body: dict[str, Any],
     error_status: int,
     error_text: str,
     upstream_url: str,
+    source_provider: ProviderType | None = None,
+    target_provider: ProviderType | None = None,
 ) -> None:
-    """Dump request details when retry mode triggers a forced-streaming retry.
+    """Dump request and error details to disk for diagnostics.
 
-    Saves a JSON file to ``<config_dir>/stream_retry_dumps/`` for diagnostics.
+    Saves a JSON file to ``<config_dir>/error_dumps/`` containing the
+    request body, upstream response status/text, URL, and provider context.
+    When the dump directory exceeds 50 MB, existing ``.json`` files are
+    automatically gzip-compressed.
+
+    Args:
+        request_body: The request payload sent (or intended) to upstream.
+        error_status: HTTP status code from the upstream response.
+        error_text: Body/text of the upstream error response.
+        upstream_url: The upstream URL the request was sent to.
+        source_provider: Client-side API format (e.g. ``"openai_chat"``).
+        target_provider: Upstream API format (e.g. ``"anthropic"``).
     """
     import gzip
     from datetime import datetime
@@ -163,9 +176,9 @@ def _dump_stream_retry_request(
     try:
         config_path = os.environ.get("CONFIG_PATH")
         if config_path:
-            log_dir = Path(config_path).parent / "stream_retry_dumps"
+            log_dir = Path(config_path).parent / "error_dumps"
         else:
-            log_dir = Path.cwd() / "stream_retry_dumps"
+            log_dir = Path.cwd() / "error_dumps"
 
         log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -173,11 +186,11 @@ def _dump_stream_retry_request(
         dir_size = sum(f.stat().st_size for f in log_dir.iterdir() if f.is_file())
         if dir_size > 50 * 1024 * 1024:
             log_warning(
-                f"Stream retry dump directory ({dir_size / 1024 / 1024:.2f}MB) "
+                f"Error dump directory ({dir_size / 1024 / 1024:.2f}MB) "
                 "exceeds 50MB, compressing logs...",
                 context="dispatch",
             )
-            for json_file in log_dir.glob("retry_*.json"):
+            for json_file in log_dir.glob("error_*.json"):
                 try:
                     gz_path = json_file.with_suffix(".json.gz")
                     with (
@@ -192,22 +205,43 @@ def _dump_stream_retry_request(
                     )
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        log_file = log_dir / f"retry_{timestamp}.json"
+        log_file = log_dir / f"error_{timestamp}.json"
 
-        entry = {
+        entry: dict[str, Any] = {
             "timestamp": datetime.now().isoformat(),
             "upstream_url": upstream_url,
             "error_status": error_status,
             "error_text": error_text,
+            "source_provider": source_provider,
+            "target_provider": target_provider,
             "request_body": request_body,
         }
 
         with open(log_file, "w", encoding="utf-8") as f:
             json.dump(entry, f, indent=2, ensure_ascii=False)
 
-        log_info(f"Dumped retry request to: {log_file}", context="dispatch")
+        log_info(f"Dumped error request to: {log_file}", context="dispatch")
     except Exception as exc:
-        log_error(f"Failed to dump retry request: {exc}", context="dispatch")
+        log_error(f"Failed to dump error request: {exc}", context="dispatch")
+
+
+def _dump_stream_retry_request(
+    request_body: dict[str, Any],
+    error_status: int,
+    error_text: str,
+    upstream_url: str,
+) -> None:
+    """Dump request details when retry mode triggers a forced-streaming retry.
+
+    Thin wrapper around :func:`_dump_error_request` kept for backward
+    compatibility with existing call sites.
+    """
+    _dump_error_request(
+        request_body,
+        error_status,
+        error_text,
+        upstream_url,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -557,6 +591,15 @@ async def _passthrough_non_streaming(
             if contains_argo_auth_warning(response_text):
                 log_error(ARGO_AUTH_ERROR_MESSAGE, context="dispatch")
                 return _error_response(source_provider, 403, ARGO_AUTH_ERROR_MESSAGE)
+            if upstream_resp.status >= 400:
+                _dump_error_request(
+                    data,
+                    upstream_resp.status,
+                    response_text,
+                    upstream_url,
+                    source_provider=source_provider,
+                    target_provider=source_provider,
+                )
             return web.Response(
                 text=response_text,
                 status=upstream_resp.status,
@@ -568,6 +611,16 @@ async def _passthrough_non_streaming(
         if check_response_for_argo_warning(response_data, upstream_provider):
             log_error(ARGO_AUTH_ERROR_MESSAGE, context="dispatch")
             return _error_response(source_provider, 403, ARGO_AUTH_ERROR_MESSAGE)
+
+        if upstream_resp.status >= 400:
+            _dump_error_request(
+                data,
+                upstream_resp.status,
+                json.dumps(response_data, ensure_ascii=False),
+                upstream_url,
+                source_provider=source_provider,
+                target_provider=source_provider,
+            )
 
         return web.json_response(
             response_data,
@@ -596,6 +649,14 @@ async def _passthrough_streaming(
                 error_text,
                 endpoint="dispatch_passthrough",
                 is_streaming=True,
+            )
+            _dump_error_request(
+                data,
+                upstream_resp.status,
+                error_text,
+                upstream_url,
+                source_provider=source_provider,
+                target_provider=target_provider,
             )
             return web.json_response(
                 {"error": f"Upstream API error: {upstream_resp.status} {error_text}"},
@@ -675,6 +736,14 @@ async def _passthrough_buffered_streaming(
                 error_text,
                 endpoint="dispatch_passthrough_buffered",
             )
+            _dump_error_request(
+                data,
+                upstream_resp.status,
+                error_text,
+                upstream_url,
+                source_provider=source_provider,
+                target_provider="anthropic",
+            )
             try:
                 error_json = json.loads(error_text)
                 return web.json_response(error_json, status=upstream_resp.status)
@@ -728,6 +797,16 @@ async def _passthrough_with_retry(
             if contains_argo_auth_warning(response_text):
                 log_error(ARGO_AUTH_ERROR_MESSAGE, context="dispatch")
                 return _error_response(source_provider, 403, ARGO_AUTH_ERROR_MESSAGE)
+
+            if status >= 400:
+                _dump_error_request(
+                    data,
+                    status,
+                    response_text,
+                    upstream_url,
+                    source_provider=source_provider,
+                    target_provider="anthropic",
+                )
 
             try:
                 response_data = json.loads(response_text)
@@ -818,6 +897,14 @@ async def _convert_non_streaming(
                     upstream_resp.status,
                     error_text,
                     endpoint=str(target_provider),
+                )
+                _dump_error_request(
+                    body,
+                    upstream_resp.status,
+                    error_text,
+                    upstream_url,
+                    source_provider=source_provider,
+                    target_provider=target_provider,
                 )
                 return web.Response(
                     text=error_text,
@@ -927,6 +1014,14 @@ async def _convert_buffered_streaming(
                     upstream_resp.status,
                     error_text,
                     endpoint=str(target_provider),
+                )
+                _dump_error_request(
+                    body,
+                    upstream_resp.status,
+                    error_text,
+                    upstream_url,
+                    source_provider=source_provider,
+                    target_provider=target_provider,
                 )
                 return web.Response(
                     text=error_text,
@@ -1069,6 +1164,14 @@ async def _convert_streaming(
                     endpoint=str(target_provider),
                     is_streaming=True,
                 )
+                _dump_error_request(
+                    body,
+                    upstream_resp.status,
+                    error_text,
+                    upstream_url,
+                    source_provider=source_provider,
+                    target_provider=target_provider,
+                )
                 return web.json_response(
                     {
                         "error": f"Upstream API error: {upstream_resp.status} {error_text}"
@@ -1150,6 +1253,14 @@ async def _convert_streaming(
                         log_warning(
                             f"Upstream error in stream chunk: {json.dumps(chunk_data)[:500]}",
                             context="dispatch",
+                        )
+                        _dump_error_request(
+                            body,
+                            upstream_resp.status,
+                            json.dumps(chunk_data, ensure_ascii=False),
+                            upstream_url,
+                            source_provider=source_provider,
+                            target_provider=target_provider,
                         )
 
                     # Upstream chunk → IR events

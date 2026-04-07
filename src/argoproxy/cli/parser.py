@@ -193,12 +193,13 @@ def _add_logs_subparsers(parser: argparse.ArgumentParser) -> None:
         "--type",
         "-t",
         type=str,
-        choices=["leaked-tool", "stream-retry", "all"],
+        choices=["leaked-tool", "stream-retry", "error-dump", "all"],
         default="all",
         help=(
             "Type of diagnostic logs to collect (default: all)\n"
             "  leaked-tool:  Leaked tool call logs\n"
             "  stream-retry: Anthropic stream retry request dumps\n"
+            "  error-dump:   Upstream error request/response dumps\n"
             "  all:          All diagnostic logs"
         ),
     )
