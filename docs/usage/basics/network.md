@@ -54,3 +54,50 @@ If you are off Argonne campus, you can use either of the following methods to ac
 Candidate machines might be the Windows/Linux PC, Mac in your office, or some server you have access to.
 
 Good luck!
+
+## Troubleshooting: SSL Certificate Errors on macOS
+
+### Symptom
+
+Python scripts that make HTTPS requests to the Argo API fail with errors like:
+
+```
+ssl.SSLCertVerificationError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed
+urllib.error.URLError: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] ...>
+```
+
+Yet the same URL works fine with `curl` in the terminal.
+
+### Why This Happens
+
+Python on macOS does **not** use the system certificate store by default. When you install Python from [python.org](https://www.python.org/) or via Homebrew, its `ssl` module ships with an empty or incomplete certificate bundle. This means Python cannot verify the TLS certificate chain for HTTPS connections — even though macOS itself (and therefore `curl`) trusts those certificates.
+
+This issue does **not** affect Linux, where Python's `ssl` module uses the system CA bundle (`/etc/ssl/certs/`) automatically.
+
+### Fix
+
+Install the [`certifi`](https://pypi.org/project/certifi/) package, which provides Mozilla's curated CA bundle, then point Python's `ssl` module to it via an environment variable:
+
+```bash
+# 1. Install certifi
+pip install certifi
+
+# 2. Set the environment variable (add to ~/.zshrc for persistence)
+echo 'export SSL_CERT_FILE=$(python3 -c "import certifi; print(certifi.where())")' >> ~/.zshrc
+source ~/.zshrc
+```
+
+Once set, **all** Python programs — including argo-proxy — will use the correct certificate bundle. No code changes required.
+
+### Verifying the Fix
+
+```bash
+python3 -c "
+import urllib.request, json
+url = 'https://app.inside.anl.gov/argoapi/v1/models'
+with urllib.request.urlopen(url) as r:
+    print(json.loads(r.read().decode()))
+"
+```
+
+If this prints a JSON response, the fix is working.
