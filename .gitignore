@@ -190,3 +190,9 @@ cython_debug/
 config.yaml
 config.test.yaml
 references/
+
+# Diagnostic dumps
+error_dumps/
+stream_retry_dumps/
+leaked_tool_calls/
+attack_logs/
