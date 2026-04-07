@@ -21,7 +21,7 @@ from aiohttp import web
 
 from llm_rosetta import get_converter_for_provider
 from llm_rosetta.auto_detect import ProviderType
-from llm_rosetta.converters.base.stream_context import StreamContext
+from llm_rosetta.converters.base.context import StreamContext
 from llm_rosetta.converters.base.tools import sanitize_schema
 from llm_rosetta.converters.anthropic.tool_ops import (
     fix_orphaned_tool_calls as fix_orphaned_tool_calls_anthropic,
