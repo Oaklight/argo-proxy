@@ -18,6 +18,15 @@ PATHS_TO_TRY = [
     os.path.expanduser("~/.argoproxy/config.yaml"),
 ]
 
+# Directories to scan for config file variants (e.g. config.ozan.yaml, config-public.yaml)
+CONFIG_SEARCH_DIRS = [
+    ".",
+    os.path.expanduser("~/.config/argoproxy"),
+    os.path.expanduser("~/.argoproxy"),
+]
+
+CONFIG_GLOB_PATTERNS = ["config*.yaml", "config*.yml"]
+
 
 def _format_config_yaml(data: dict) -> str:
     """Format config dict as grouped YAML with section comments."""

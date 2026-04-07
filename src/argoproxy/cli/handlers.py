@@ -248,17 +248,26 @@ def handle_config(args: argparse.Namespace):
 
 def _list_configs():
     """List all config files found in the standard search paths."""
-    from ..config.io import PATHS_TO_TRY, load_config
+    import glob
+
+    from ..config.io import CONFIG_GLOB_PATTERNS, CONFIG_SEARCH_DIRS, load_config
 
     _, active_path = load_config(None, env_override=False, verbose=False)
 
-    found = []
-    for p in PATHS_TO_TRY:
-        expanded = os.path.expanduser(p)
-        resolved = os.path.realpath(expanded)
-        if os.path.isfile(resolved):
-            active = active_path and os.path.realpath(str(active_path)) == resolved
-            found.append((expanded, active))
+    seen: set[str] = set()
+    found: list[tuple[str, bool]] = []
+    for search_dir in CONFIG_SEARCH_DIRS:
+        expanded_dir = os.path.expanduser(search_dir)
+        for pattern in CONFIG_GLOB_PATTERNS:
+            for match in sorted(glob.glob(os.path.join(expanded_dir, pattern))):
+                resolved = os.path.realpath(match)
+                if resolved in seen:
+                    continue
+                seen.add(resolved)
+                active = bool(
+                    active_path and os.path.realpath(str(active_path)) == resolved
+                )
+                found.append((match, active))
 
     if not found:
         print("No config file found. Run 'argo-proxy config init' to create one.")
