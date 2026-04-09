@@ -21,7 +21,7 @@ from aiohttp import web
 
 from llm_rosetta import get_converter_for_provider
 from llm_rosetta.auto_detect import ProviderType
-from llm_rosetta.converters.base.context import StreamContext
+from llm_rosetta.converters.base.context import ConversionContext, StreamContext
 from llm_rosetta.converters.base.tools import sanitize_schema
 from llm_rosetta.converters.anthropic.tool_ops import (
     fix_orphaned_tool_calls as fix_orphaned_tool_calls_anthropic,
@@ -853,10 +853,11 @@ async def _convert_non_streaming(
     """Non-streaming: source → IR → target → upstream → IR → source."""
     source_converter = get_converter_for_provider(source_provider)
     target_converter = get_converter_for_provider(target_provider)
+    ctx = ConversionContext(options={"metadata_mode": "preserve"})
 
     # 1. Source → IR
     try:
-        ir_request = source_converter.request_from_provider(body)
+        ir_request = source_converter.request_from_provider(body, context=ctx)
     except Exception as exc:
         return _error_response(source_provider, 400, f"Failed to parse request: {exc}")
 
@@ -869,7 +870,7 @@ async def _convert_non_streaming(
         if target_provider == "google":
             convert_kwargs["output_format"] = "rest"
         target_body, warnings = target_converter.request_to_provider(
-            ir_request, **convert_kwargs
+            ir_request, context=ctx, **convert_kwargs
         )
     except Exception as exc:
         return _error_response(source_provider, 400, f"Conversion error: {exc}")
@@ -927,7 +928,9 @@ async def _convert_non_streaming(
                 return _error_response(source_provider, 403, ARGO_AUTH_ERROR_MESSAGE)
 
             try:
-                ir_response = target_converter.response_from_provider(upstream_json)
+                ir_response = target_converter.response_from_provider(
+                    upstream_json, context=ctx
+                )
             except Exception as exc:
                 return _error_response(
                     source_provider,
@@ -937,7 +940,9 @@ async def _convert_non_streaming(
 
             # 6. IR → Source response
             try:
-                source_response = source_converter.response_to_provider(ir_response)
+                source_response = source_converter.response_to_provider(
+                    ir_response, context=ctx
+                )
             except Exception as exc:
                 return _error_response(
                     source_provider,
@@ -970,16 +975,19 @@ async def _convert_buffered_streaming(
     """
     source_converter = get_converter_for_provider(source_provider)
     target_converter = get_converter_for_provider(target_provider)
+    ctx = ConversionContext(options={"metadata_mode": "preserve"})
 
     # 1. Source → IR
     try:
-        ir_request = source_converter.request_from_provider(body)
+        ir_request = source_converter.request_from_provider(body, context=ctx)
     except Exception as exc:
         return _error_response(source_provider, 400, f"Failed to parse request: {exc}")
 
     # 2. IR → Target (Anthropic)
     try:
-        target_body, warnings = target_converter.request_to_provider(ir_request)
+        target_body, warnings = target_converter.request_to_provider(
+            ir_request, context=ctx
+        )
     except Exception as exc:
         return _error_response(source_provider, 400, f"Conversion error: {exc}")
 
@@ -1038,7 +1046,9 @@ async def _convert_buffered_streaming(
 
             # 5. Target response → IR
             try:
-                ir_response = target_converter.response_from_provider(upstream_json)
+                ir_response = target_converter.response_from_provider(
+                    upstream_json, context=ctx
+                )
             except Exception as exc:
                 return _error_response(
                     source_provider,
@@ -1048,7 +1058,9 @@ async def _convert_buffered_streaming(
 
             # 6. IR → Source response
             try:
-                source_response = source_converter.response_to_provider(ir_response)
+                source_response = source_converter.response_to_provider(
+                    ir_response, context=ctx
+                )
             except Exception as exc:
                 return _error_response(
                     source_provider,
@@ -1120,10 +1132,11 @@ async def _convert_streaming(
     """Streaming: source → IR → target → upstream SSE → IR events → source SSE."""
     source_converter = get_converter_for_provider(source_provider)
     target_converter = get_converter_for_provider(target_provider)
+    ctx = ConversionContext(options={"metadata_mode": "preserve"})
 
     # 1. Source → IR
     try:
-        ir_request = source_converter.request_from_provider(body)
+        ir_request = source_converter.request_from_provider(body, context=ctx)
     except Exception as exc:
         return _error_response(source_provider, 400, f"Failed to parse request: {exc}")
 
@@ -1133,7 +1146,7 @@ async def _convert_streaming(
         if target_provider == "google":
             convert_kwargs["output_format"] = "rest"
         target_body, warnings = target_converter.request_to_provider(
-            ir_request, **convert_kwargs
+            ir_request, context=ctx, **convert_kwargs
         )
     except Exception as exc:
         return _error_response(source_provider, 400, f"Conversion error: {exc}")
@@ -1187,6 +1200,10 @@ async def _convert_streaming(
 
             from_ctx = StreamContext()  # upstream → IR
             to_ctx = StreamContext()  # IR → source
+            # Bridge preserve-mode metadata from request phase
+            to_ctx.options["metadata_mode"] = "preserve"
+            if "_request_echo" in ctx.metadata:
+                to_ctx.metadata["_request_echo"] = ctx.metadata["_request_echo"]
             chunk_count = 0
             t0 = time.monotonic()
             _auth_checked = False
