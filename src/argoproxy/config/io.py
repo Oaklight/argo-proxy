@@ -180,6 +180,9 @@ def _apply_env_overrides(config_data: ArgoConfig) -> ArgoConfig:
                 context="config",
             )
 
+    if env_force_conversion := os.getenv("FORCE_CONVERSION"):
+        config_data._force_conversion = str_to_bool(env_force_conversion)
+
     return config_data
 
 

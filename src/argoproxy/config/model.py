@@ -64,6 +64,9 @@ class ArgoConfig:
     # Anthropic non-streaming request handling mode
     _anthropic_stream_mode: str = "force"  # "force", "retry", or "passthrough"
 
+    # Force full conversion even for same-provider requests
+    _force_conversion: bool = False
+
     # Validation and resolver settings
     _skip_url_validation: bool = False
     _user_validated: bool = False  # Set after upstream user validation passes
@@ -201,6 +204,16 @@ class ArgoConfig:
             return self._anthropic_stream_mode
         return "force"
 
+    @property
+    def force_conversion(self) -> bool:
+        """Force full format conversion even for same-provider requests.
+
+        When enabled, all requests go through the source -> IR -> target
+        pipeline (via llm-rosetta) instead of being passed through directly.
+        This enables parameter normalization and full IR validation.
+        """
+        return self._force_conversion
+
     @classmethod
     def from_dict(cls, config_dict: dict):
         """Create ArgoConfig instance from a dictionary."""
@@ -216,6 +229,7 @@ class ArgoConfig:
             "use_legacy_argo": "_use_legacy_argo",
             "skip_url_validation": "_skip_url_validation",
             "anthropic_stream_mode": "_anthropic_stream_mode",
+            "force_conversion": "_force_conversion",
         }
         valid_fields = {
             k: v for k, v in config_dict.items() if k in cls.__annotations__
@@ -249,6 +263,8 @@ class ArgoConfig:
             serialized["skip_url_validation"] = True
         if self._anthropic_stream_mode != "force":
             serialized["anthropic_stream_mode"] = self._anthropic_stream_mode
+        if self._force_conversion:
+            serialized["force_conversion"] = True
 
         # Persist native URLs only when explicitly overridden (differ from
         # the values that would be derived from argo_base_url)

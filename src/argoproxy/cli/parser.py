@@ -99,6 +99,12 @@ def _add_serve_arguments(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
+        "--force-conversion",
+        action="store_true",
+        default=False,
+        help="Always run full format conversion, even for same-provider requests",
+    )
+    parser.add_argument(
         "--dev",
         action="store_true",
         default=False,

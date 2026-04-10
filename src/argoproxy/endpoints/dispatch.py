@@ -1412,7 +1412,8 @@ async def proxy_request(
         )
 
         # Same-format passthrough: skip conversion entirely
-        if source_provider == target_provider:
+        # (unless force_conversion is enabled)
+        if source_provider == target_provider and not config.force_conversion:
             if config.verbose:
                 log_debug("Same-format passthrough (no conversion)", context="dispatch")
 
@@ -1468,12 +1469,18 @@ async def proxy_request(
                 session, upstream_url, headers, body, source_provider
             )
 
-        # Cross-format conversion
+        # Cross-format conversion (or forced same-format conversion)
         if config.verbose:
-            log_debug(
-                f"Cross-format: {source_provider} -> {target_provider}",
-                context="dispatch",
-            )
+            if source_provider == target_provider:
+                log_debug(
+                    f"Force conversion: {source_provider} -> IR -> {target_provider}",
+                    context="dispatch",
+                )
+            else:
+                log_debug(
+                    f"Cross-format: {source_provider} -> {target_provider}",
+                    context="dispatch",
+                )
 
         if stream:
             return await _convert_streaming(

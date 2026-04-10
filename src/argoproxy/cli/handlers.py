@@ -49,6 +49,8 @@ def set_config_envs(args: argparse.Namespace):
         os.environ["DEV_MODE"] = str(True)
     if args.anthropic_stream_mode:
         os.environ["ANTHROPIC_STREAM_MODE"] = args.anthropic_stream_mode
+    if args.force_conversion:
+        os.environ["FORCE_CONVERSION"] = str(True)
 
 
 def handle_serve(args: argparse.Namespace):
