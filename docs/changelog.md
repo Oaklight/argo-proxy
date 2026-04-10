@@ -2,6 +2,35 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v3.0.0b14 (2026-04-11)
+
+### New
+
+- **`--force-conversion` mode**: New CLI flag and config option (`force_conversion: true`) that forces all requests through the full llm-rosetta conversion pipeline (source → IR → target), even when source and target providers match. This bypasses same-format passthrough and enables parameter normalization (e.g. `max_tokens` → `max_completion_tokens` for OpenAI Chat), full IR validation on every request, and more detailed runtime error/warning logs from the conversion pipeline. Disabled by default to preserve existing passthrough behavior. Configurable via `--force-conversion` CLI flag, `FORCE_CONVERSION` environment variable, or `force_conversion: true` in config.yaml
+
+### Changed
+
+- **Bumped llm-rosetta to v0.4.1**: Picks up Open Responses spec support, metadata preservation for lossless A→IR→A round-trip across all 4 providers, `force_conversion` parameter for full pipeline execution on same-provider requests, multimodal tool result conversion (#99), and vendored validate.py with type introspection caching ([Oaklight/llm-rosetta v0.4.0–v0.4.1](https://github.com/Oaklight/llm-rosetta/releases/tag/v0.4.1))
+
+## v3.0.0b13 (2026-04-08)
+
+### New
+
+- **Upstream error request/response dumping**: All dispatch paths (passthrough, buffered, streaming, cross-format conversion) now dump request and response payloads on any upstream 4xx/5xx error to `<config_dir>/error_dumps/` for diagnostics. Dumps include source/target provider context for easier debugging of cross-provider conversion issues. Registered as `error-dump` in `argo-proxy logs collect --type` (#100, #101)
+
+### Improved
+
+- **`config list` discovers all config file variants**: Previously only checked 3 hardcoded paths. Now uses glob patterns to find all config files (e.g. `config.ozan.yaml`, `config-public.yaml`) across standard search directories
+
+### Fixed
+
+- **`input_image` type rejected by Anthropic in cross-provider conversion** (#99): Multimodal tool results (e.g. matplotlib plots from MCP servers) containing OpenAI's `input_image` content type were passed through to Anthropic without conversion, causing 400 errors. Fixed upstream in llm-rosetta via multimodal tool result conversion across all 4 providers (Oaklight/llm-rosetta#92)
+- **`StreamContext` import path**: Updated import to match llm-rosetta v0.3.0 module structure
+
+### Changed
+
+- **Bumped llm-rosetta to v0.3.1**: Picks up multimodal tool result conversion (#99), `StreamContext` import path fix, and streaming reliability improvements ([Oaklight/llm-rosetta v0.3.0–v0.3.1](https://github.com/Oaklight/llm-rosetta/releases/tag/v0.3.1))
+
 ## v3.0.0b12 (2026-04-03)
 
 ### New
