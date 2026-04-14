@@ -2,6 +2,20 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v3.0.0b15 (2026-04-14)
+
+### Fixed
+
+- **`developer` role rejected by Argo upstream** (#107): The ANL Argo gateway uses an older OpenAI SDK that does not recognize the `developer` role (introduced for reasoning models o1/o3/o4). The gateway mishandles the unrecognized role, injecting a spurious `tool_calls` field and causing a misleading `Unknown parameter: 'messages[0].tool_calls'` error. argo-proxy now downgrades `developer` → `system` in all outbound paths (passthrough, cross-format, buffered-streaming). The mapping is safe — all OpenAI models accept `system`
+
+### New
+
+- **Metadata preservation via `ConversionContext`** (#105): All cross-format conversion paths now thread a shared `ConversionContext(options={"metadata_mode": "preserve"})` through the full request→response lifecycle. This enables lossless round-trip conversion of provider-specific metadata fields (e.g. `refusal`, `annotations`, `citations`, extended usage details) that were previously dropped
+
+### Changed
+
+- **Bumped llm-rosetta to v0.5.0**: Picks up developer role mapping fix in Responses converter, tool call ID prefix mapping for cross-format conversion, Google modality token handling, and gateway admin features ([Oaklight/llm-rosetta v0.4.2–v0.5.0](https://github.com/Oaklight/llm-rosetta/releases/tag/v0.5.0))
+
 ## v3.0.0b14 (2026-04-11)
 
 ### New
