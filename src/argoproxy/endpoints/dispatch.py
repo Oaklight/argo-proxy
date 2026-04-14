@@ -257,6 +257,26 @@ def _detect_stream(source_provider: ProviderType, body: dict[str, Any]) -> bool:
     return False
 
 
+def _downgrade_developer_role(body: dict[str, Any]) -> None:
+    """Replace ``developer`` role with ``system`` for upstream compatibility.
+
+    The ``developer`` role was introduced in the OpenAI 2024-12-17 API
+    version for reasoning models (o1/o3/o4).  Upstream gateways that use
+    an older API version (e.g. the ANL Argo gateway) reject it with a
+    misleading ``Unknown parameter: 'messages[0].tool_calls'`` error.
+    Mapping back to ``system`` is safe — all OpenAI models still accept it.
+
+    Args:
+        body: The request body (modified in-place).
+    """
+    messages = body.get("messages")
+    if not messages or not isinstance(messages, list):
+        return
+    for msg in messages:
+        if isinstance(msg, dict) and msg.get("role") == "developer":
+            msg["role"] = "system"
+
+
 def _sanitize_tool_schemas(body: dict[str, Any]) -> dict[str, Any]:
     """Sanitize tool parameter schemas for upstream compatibility.
 
@@ -878,6 +898,7 @@ async def _convert_non_streaming(
         log_info(f"Conversion warnings: {warnings}", context="dispatch")
 
     _ensure_user_field(target_body, config.user)
+    _downgrade_developer_role(target_body)
 
     # Log the converted body
     if config.verbose:
@@ -987,6 +1008,7 @@ async def _convert_buffered_streaming(
         log_info(f"Conversion warnings: {warnings}", context="dispatch")
 
     _ensure_user_field(target_body, config.user)
+    _downgrade_developer_role(target_body)
 
     # 3. Inject stream flags and update headers for streaming
     target_body = _inject_stream_flags(target_body, target_provider)
@@ -1149,6 +1171,7 @@ async def _convert_streaming(
         )
 
     _ensure_user_field(target_body, config.user)
+    _downgrade_developer_role(target_body)
 
     format_sse = _SSE_FORMATTERS[source_provider]
 
@@ -1420,6 +1443,10 @@ async def proxy_request(
             # Sanitize tool schemas even in passthrough mode — upstreams
             # like Vertex AI reject unsupported JSON Schema keywords.
             _sanitize_tool_schemas(body)
+
+            # Downgrade "developer" role to "system" — the Argo upstream
+            # gateway rejects "developer" with a misleading tool_calls error.
+            _downgrade_developer_role(body)
 
             # Fix orphaned tool_calls/results in passthrough mode — OpenAI
             # and Anthropic strictly require bidirectional pairing between
