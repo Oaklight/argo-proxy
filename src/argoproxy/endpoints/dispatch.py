@@ -54,6 +54,7 @@ from ..utils.misc import (
     contains_argo_auth_warning,
     should_use_username_passthrough,
 )
+from ..utils.tool_calls import reorder_parallel_tool_calls
 
 # ---------------------------------------------------------------------------
 # SSE formatting (IR events → source-format SSE text)
@@ -1450,6 +1451,14 @@ async def proxy_request(
         headers = _build_upstream_headers(
             request, target_provider, fallback_user=config.user, stream=stream
         )
+
+        # Reorder parallel tool calls for Gemini models — the ARGO gateway
+        # rejects requests where a single assistant message contains multiple
+        # tool_calls.  Split them into sequential call-result pairs.
+        if model_registry._classify_model_by_family(resolved_model) == "google":
+            messages = body.get("messages")
+            if messages and isinstance(messages, list):
+                body["messages"] = reorder_parallel_tool_calls(messages)
 
         # Same-format passthrough: skip conversion entirely
         # (unless force_conversion is enabled)
