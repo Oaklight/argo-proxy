@@ -2,6 +2,12 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v3.0.0b16 (2026-04-16)
+
+### Fixed
+
+- **Gemini parallel tool call rejection via ARGO gateway** (#109): The ANL ARGO gateway rejects requests containing parallel tool calls (multiple `tool_calls` in a single assistant message) for Gemini models. argo-proxy now detects Gemini-family models and automatically reorders parallel tool calls into sequential assistant+tool message pairs before forwarding upstream. The reordering logic has been extracted from the legacy pipeline into `utils/tool_calls.py` for long-term maintainability
+
 ## v3.0.0b15 (2026-04-14)
 
 ### Fixed
