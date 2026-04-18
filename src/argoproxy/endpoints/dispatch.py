@@ -313,6 +313,41 @@ def _sanitize_tool_schemas(body: dict[str, Any]) -> dict[str, Any]:
     return body
 
 
+def _upgrade_max_tokens(body: dict[str, Any]) -> None:
+    """Convert deprecated ``max_tokens`` to ``max_completion_tokens`` for OpenAI Chat.
+
+    OpenAI deprecated ``max_tokens`` in favor of ``max_completion_tokens`` for
+    newer models (GPT-4o, o1, etc.).  Convert proactively to avoid upstream
+    rejections.
+
+    Args:
+        body: The request body (modified in-place).
+    """
+    if "max_tokens" in body and "max_completion_tokens" not in body:
+        body["max_completion_tokens"] = body.pop("max_tokens")
+
+
+def _normalize_thinking_for_upstream(body: dict[str, Any]) -> None:
+    """Normalize ``thinking`` parameter for upstream compatibility.
+
+    Converts ``thinking.type`` from ``"adaptive"`` to ``"enabled"`` with a
+    default ``budget_tokens`` derived from ``max_tokens``, because some
+    upstream gateways do not support the ``"adaptive"`` type.
+
+    Args:
+        body: The request body (modified in-place).
+    """
+    thinking = body.get("thinking")
+    if not isinstance(thinking, dict):
+        return
+    if thinking.get("type") != "adaptive":
+        return
+    max_tokens = body.get("max_tokens", 16000)
+    budget = max(int(max_tokens * 0.8), 1024)
+    thinking["type"] = "enabled"
+    thinking["budget_tokens"] = budget
+
+
 def _extract_client_credential(
     request: web.Request, target_provider: ProviderType
 ) -> str | None:
@@ -1473,6 +1508,16 @@ async def proxy_request(
             # Downgrade "developer" role to "system" — the Argo upstream
             # gateway rejects "developer" with a misleading tool_calls error.
             _downgrade_developer_role(body)
+
+            # Provider-specific passthrough compatibility fixes
+            if target_provider == "openai_chat":
+                # Upgrade deprecated max_tokens to max_completion_tokens —
+                # newer OpenAI models (GPT-4o, o1, etc.) reject max_tokens.
+                _upgrade_max_tokens(body)
+            elif target_provider == "anthropic":
+                # Normalize thinking.type "adaptive" to "enabled" — the ARGO
+                # upstream gateway does not support the "adaptive" type.
+                _normalize_thinking_for_upstream(body)
 
             # Fix orphaned tool_calls/results in passthrough mode — OpenAI
             # and Anthropic strictly require bidirectional pairing between
