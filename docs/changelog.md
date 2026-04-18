@@ -18,28 +18,7 @@ After 16 beta iterations (b4–b16), argo-proxy v3 is now considered production-
 
 - Requires llm-rosetta >= 0.5.1
 
-**Full Changelog**: https://github.com/Oaklight/argo-proxy/compare/v3.0.0b16...v3.0.0
-**PyPI**: https://pypi.org/project/argo-proxy/3.0.0/
-
----
-
-## v3.0.0 (2026-04-19)
-
-**First stable release of the v3 architecture.**
-
-After 16 beta iterations (b4–b16), argo-proxy v3 is now considered production-ready. This release includes all beta changes plus two final fixes.
-
-### Fixed
-
-- **`max_tokens` → `max_completion_tokens` in passthrough mode** (#112): OpenAI deprecated `max_tokens` for newer models (GPT-4o, o1, etc.). In same-format passthrough (`openai_chat → openai_chat`), the deprecated parameter was forwarded as-is, causing 400 errors. Now automatically converted to `max_completion_tokens`
-- **`thinking.type: "adaptive"` normalization** (#112): Anthropic's `adaptive` thinking type is not supported by all upstream gateways. In passthrough mode, now automatically converted to `"enabled"` with `budget_tokens` derived from `max_tokens`
-- **`content: null` normalization** (#113): Assistant messages with `tool_calls` often have `content: null` (valid per OpenAI API spec). Some upstream gateways crash when iterating over null content. Now normalized to `content: ""` in all dispatch paths
-
-### Changed
-
-- Requires llm-rosetta >= 0.5.1
-
-**Full Changelog**: https://github.com/Oaklight/argo-proxy/compare/v3.0.0b16...v3.0.0
+**Full Changelog**: https://github.com/Oaklight/argo-proxy/compare/v3.0.0b16...v3.0.0<br>
 **PyPI**: https://pypi.org/project/argo-proxy/3.0.0/
 
 ---
