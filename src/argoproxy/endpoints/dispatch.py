@@ -278,6 +278,29 @@ def _downgrade_developer_role(body: dict[str, Any]) -> None:
             msg["role"] = "system"
 
 
+def _normalize_null_content(body: dict[str, Any]) -> None:
+    """Replace ``content: null`` with empty string in messages.
+
+    Some upstream gateways (e.g. the ARGO gateway for Gemini models)
+    iterate over message ``content`` and crash with
+    ``TypeError: 'NoneType' object is not iterable`` when ``content``
+    is ``null``.  This is common for assistant messages that carry only
+    ``tool_calls`` — the OpenAI SDK serialises their content as ``null``.
+
+    Normalizing ``null`` to ``""`` is semantically equivalent for all
+    provider formats and prevents this class of upstream errors.
+
+    Args:
+        body: The request body (modified in-place).
+    """
+    messages = body.get("messages")
+    if not messages or not isinstance(messages, list):
+        return
+    for msg in messages:
+        if isinstance(msg, dict) and msg.get("content") is None:
+            msg["content"] = ""
+
+
 def _sanitize_tool_schemas(body: dict[str, Any]) -> dict[str, Any]:
     """Sanitize tool parameter schemas for upstream compatibility.
 
@@ -936,6 +959,7 @@ async def _convert_non_streaming(
 
     _ensure_user_field(target_body, config.user)
     _downgrade_developer_role(target_body)
+    _normalize_null_content(target_body)
 
     # Log the converted body
     if config.verbose:
@@ -1053,6 +1077,7 @@ async def _convert_buffered_streaming(
 
     _ensure_user_field(target_body, config.user)
     _downgrade_developer_role(target_body)
+    _normalize_null_content(target_body)
 
     # 3. Inject stream flags and update headers for streaming
     target_body = _inject_stream_flags(target_body, target_provider)
@@ -1221,6 +1246,7 @@ async def _convert_streaming(
 
     _ensure_user_field(target_body, config.user)
     _downgrade_developer_role(target_body)
+    _normalize_null_content(target_body)
 
     format_sse = _SSE_FORMATTERS[source_provider]
 
@@ -1508,6 +1534,11 @@ async def proxy_request(
             # Downgrade "developer" role to "system" — the Argo upstream
             # gateway rejects "developer" with a misleading tool_calls error.
             _downgrade_developer_role(body)
+
+            # Normalize content: null → "" — the Argo upstream gateway
+            # for Gemini models iterates over message content and crashes
+            # with TypeError when content is null.
+            _normalize_null_content(body)
 
             # Provider-specific passthrough compatibility fixes
             if target_provider == "openai_chat":
