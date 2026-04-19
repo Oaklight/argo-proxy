@@ -254,24 +254,24 @@ async def health_check(request: web.Request):
 
 async def get_version(request: web.Request):
     log_info("/version", context="app")
-    from packaging import version as pkg_version
+    from ._vendor.semver import version_parse
 
     versions = await get_pypi_versions()
     stable = versions.get("stable")
     pre = versions.get("pre")
-    cur = pkg_version.parse(__version__)
+    cur = version_parse(__version__)
 
     # Determine if any upgrade is available
     stable_upgrade = False
     pre_upgrade = False
     if stable:
         try:
-            stable_upgrade = pkg_version.parse(stable) > cur
+            stable_upgrade = version_parse(stable) > cur
         except Exception:
             pass
     if pre:
         try:
-            pre_upgrade = pkg_version.parse(pre) > cur
+            pre_upgrade = version_parse(pre) > cur
         except Exception:
             pass
 
@@ -296,6 +296,44 @@ async def get_version(request: web.Request):
     else:
         message = "You're using the latest version"
 
+    # Check critical dependencies
+    import importlib.metadata
+
+    from .cli.display import _CRITICAL_DEPS
+
+    dependencies = {}
+    for dep_name in _CRITICAL_DEPS:
+        try:
+            dep_installed = importlib.metadata.version(dep_name)
+        except importlib.metadata.PackageNotFoundError:
+            continue
+        dep_versions = await get_pypi_versions(dep_name)
+        dep_stable = dep_versions.get("stable")
+        dep_pre = dep_versions.get("pre")
+        dep_cur = version_parse(dep_installed)
+
+        dep_up_to_date = True
+        if dep_stable:
+            try:
+                if version_parse(dep_stable) > dep_cur:
+                    dep_up_to_date = False
+            except Exception:
+                pass
+        if dep_up_to_date and dep_pre:
+            try:
+                if version_parse(dep_pre) > dep_cur:
+                    dep_up_to_date = False
+            except Exception:
+                pass
+
+        dependencies[dep_name] = {
+            "installed": dep_installed,
+            "latest_stable": dep_stable,
+            "latest_pre": dep_pre,
+            "up_to_date": dep_up_to_date,
+            "update_command": f"pip install --upgrade {dep_name}",
+        }
+
     response = {
         "version": __version__,
         "latest_stable": stable,
@@ -303,6 +341,7 @@ async def get_version(request: web.Request):
         "up_to_date": up_to_date,
         "message": message,
         "update_commands": update_commands if update_commands else None,
+        "dependencies": dependencies if dependencies else None,
         "pypi": "https://pypi.org/project/argo-proxy/",
         "changelog": "https://argo-proxy.readthedocs.io/en/latest/changelog/",
     }

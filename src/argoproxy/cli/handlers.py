@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from packaging import version
+from .._vendor.semver import version_parse
 
 from ..__init__ import __version__
 from ..config import PATHS_TO_TRY, validate_config
@@ -114,7 +114,7 @@ def _migrate_config(config_path: str | None = None):
     """
     import shutil
 
-    import yaml
+    from .._vendor import yaml
 
     from ..config.io import _format_config_yaml, load_config
 
@@ -135,7 +135,7 @@ def _migrate_config(config_path: str | None = None):
     with open(found_path, encoding="utf-8") as f:
         original_content = f.read()
 
-    original_data = yaml.safe_load(original_content) or {}
+    original_data = yaml.load(original_content) or {}
 
     # Load through standard pipeline (applies _migrate_config + from_dict)
     config, _ = load_config(found_path, env_override=False, verbose=False)
@@ -472,8 +472,11 @@ def handle_logs(args: argparse.Namespace):
 # ---------------------------------------------------------------------------
 
 
-def _get_pypi_versions() -> dict[str, str | None]:
+def _get_pypi_versions(pkg: str = "argo-proxy") -> dict[str, str | None]:
     """Query PyPI for the latest stable and pre-release versions.
+
+    Args:
+        pkg: Package name to query on PyPI.
 
     Returns:
         Dict with keys ``stable`` and ``pre``, values are version strings
@@ -483,7 +486,7 @@ def _get_pypi_versions() -> dict[str, str | None]:
 
     from ..endpoints.extras import get_pypi_versions
 
-    return asyncio.run(get_pypi_versions())
+    return asyncio.run(get_pypi_versions(pkg))
 
 
 def _detect_pip_command() -> list[str]:
@@ -503,55 +506,121 @@ def _detect_pip_command() -> list[str]:
 
 
 def _update_check():
-    """Check for available updates and display results."""
-    current = __version__
-    versions = _get_pypi_versions()
+    """Check for available updates and display results in table format."""
+    from .display import (
+        _CRITICAL_DEPS,
+        _DEP_CHANGELOG_URLS,
+        _get_installed_version,
+    )
 
-    print(f"argo-proxy v{current} (installed)")
-    print()
+    # Collect version info for all packages
+    packages: list[dict] = []
 
-    stable = versions.get("stable")
-    pre = versions.get("pre")
+    # argo-proxy itself
+    argo_versions = _get_pypi_versions()
+    packages.append(
+        {
+            "name": "argo-proxy",
+            "installed": __version__,
+            "stable": argo_versions.get("stable"),
+            "pre": argo_versions.get("pre"),
+        }
+    )
 
-    cur_parsed = version.parse(current)
+    # Critical dependencies
+    for pkg in _CRITICAL_DEPS:
+        installed = _get_installed_version(pkg)
+        if installed is None:
+            continue
+        versions = _get_pypi_versions(pkg)
+        packages.append(
+            {
+                "name": pkg,
+                "installed": installed,
+                "stable": versions.get("stable"),
+                "pre": versions.get("pre"),
+            }
+        )
 
-    if stable:
-        try:
-            stable_parsed = version.parse(stable)
-            if stable_parsed > cur_parsed:
-                print(f"  Stable:      v{stable}  \u2190 upgrade available")
-            elif cur_parsed > stable_parsed:
-                print(f"  Stable:      v{stable}  (installed is newer)")
+    # Determine status and column widths
+    col_pkg = max(len("Package"), *(len(p["name"]) for p in packages))
+    col_inst = max(len("Installed"), *(len(p["installed"]) for p in packages))
+    col_stable = max(len("Stable"), *(len(p["stable"] or "\u2014") for p in packages))
+    col_pre = max(len("Pre"), *(len(p["pre"] or "\u2014") for p in packages))
+
+    # Header
+    header = (
+        f"{'Package'.ljust(col_pkg)}  "
+        f"{'Installed'.ljust(col_inst)}  "
+        f"{'Stable'.ljust(col_stable)}  "
+        f"{'Pre'.ljust(col_pre)}  "
+        f"Status"
+    )
+    print(header)
+    print("\u2500" * len(header))
+
+    # Rows
+    upgradable: list[dict] = []
+    for pkg in packages:
+        cur = version_parse(pkg["installed"])
+        stable = pkg["stable"]
+        pre = pkg["pre"]
+
+        has_stable_update = False
+        has_pre_update = False
+        if stable:
+            try:
+                has_stable_update = version_parse(stable) > cur
+            except Exception:
+                pass
+        if pre:
+            try:
+                has_pre_update = version_parse(pre) > cur
+            except Exception:
+                pass
+
+        if has_stable_update or has_pre_update:
+            status = "\u2b06 update available"
+            pkg["has_stable_update"] = has_stable_update
+            pkg["has_pre_update"] = has_pre_update
+            upgradable.append(pkg)
+        else:
+            status = "\u2713 up to date"
+
+        stable_display = stable or "\u2014"
+        pre_display = pre or "\u2014"
+        row = (
+            f"{pkg['name'].ljust(col_pkg)}  "
+            f"{pkg['installed'].ljust(col_inst)}  "
+            f"{stable_display.ljust(col_stable)}  "
+            f"{pre_display.ljust(col_pre)}  "
+            f"{status}"
+        )
+        print(row)
+
+    # Upgrade commands
+    if upgradable:
+        print()
+        pip_cmd = " ".join(_detect_pip_command())
+        for pkg in upgradable:
+            print(f"\u2b06 {pkg['name']}:")
+            if pkg["name"] == "argo-proxy":
+                if pkg.get("has_stable_update"):
+                    print("    stable:  argo-proxy update install")
+                    print(f"      or:    {pip_cmd} install --upgrade argo-proxy")
+                if pkg.get("has_pre_update"):
+                    print("    pre:     argo-proxy update install --pre")
+                    print(f"      or:    {pip_cmd} install --upgrade --pre argo-proxy")
+                print(f"    Changelog: {CHANGELOG_URL}")
             else:
-                print(f"  Stable:      v{stable}  (up to date)")
-        except Exception:
-            print(f"  Stable:      v{stable}")
+                print(f"    {pip_cmd} install --upgrade {pkg['name']}")
+                changelog = _DEP_CHANGELOG_URLS.get(pkg["name"])
+                if changelog:
+                    print(f"    Changelog: {changelog}")
     else:
-        print("  Stable:      (unable to fetch)")
-
-    if pre:
-        try:
-            pre_parsed = version.parse(pre)
-            if pre_parsed > cur_parsed:
-                print(f"  Pre-release: v{pre}  \u2190 upgrade available")
-            elif pre_parsed == cur_parsed:
-                print(f"  Pre-release: v{pre}  (up to date)")
-            else:
-                print(f"  Pre-release: v{pre}  (installed is newer)")
-        except Exception:
-            print(f"  Pre-release: v{pre}")
-    else:
-        print("  Pre-release: (none available)")
-
-    print()
-    pip_cmd = " ".join(_detect_pip_command())
-    if stable and version.parse(stable) > cur_parsed:
-        print("  Update:       argo-proxy update install")
-        print(f"    or:         {pip_cmd} install --upgrade argo-proxy")
-    if pre and version.parse(pre) > cur_parsed:
-        print("  Pre-release:  argo-proxy update install --pre")
-        print(f"    or:         {pip_cmd} install --upgrade --pre argo-proxy")
-    print(f"  Changelog:    {CHANGELOG_URL}")
+        print()
+        print("All packages are up to date.")
+        print(f"  Changelog: {CHANGELOG_URL}")
 
 
 def _update_install(pre: bool = False):
@@ -571,7 +640,7 @@ def _update_install(pre: bool = False):
         sys.exit(1)
 
     try:
-        if version.parse(target) <= version.parse(current):
+        if version_parse(target) <= version_parse(current):
             print(f"Already at v{current}, {label} is v{target}. Nothing to do.")
             return
     except Exception:
