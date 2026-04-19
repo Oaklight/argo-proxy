@@ -5,7 +5,7 @@ Test script for configuration functionality with both URL formats
 
 import os
 import tempfile
-import yaml
+from argoproxy._vendor import yaml
 from pathlib import Path
 
 # Add src directory to Python path
@@ -74,7 +74,7 @@ def test_individual_urls_config():
         
         # Read saved config file
         with open(new_config_path, 'r') as f:
-            saved_config = yaml.safe_load(f)
+            saved_config = yaml.load(f.read())
             
         print(f"Saved config keys: {list(saved_config.keys())}")
         

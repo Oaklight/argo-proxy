@@ -9,7 +9,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
-import yaml
+from argoproxy._vendor import yaml
 
 from argoproxy.config.io import _format_config_yaml, load_config, save_config
 from argoproxy.config.model import ArgoConfig
@@ -25,7 +25,7 @@ def _load_and_roundtrip(fixture_name: str) -> tuple[dict, str, str]:
     """
     fixture_path = FIXTURES_DIR / fixture_name
     with open(fixture_path) as f:
-        raw = yaml.safe_load(f)
+        raw = yaml.load(f.read())
 
     # Load through the normal pipeline (applies _migrate_config + from_dict)
     config, _ = load_config(str(fixture_path), env_override=False, verbose=False)

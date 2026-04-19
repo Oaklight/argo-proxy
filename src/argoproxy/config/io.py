@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Any, Literal, Union, overload
 
-import yaml
+from .._vendor import yaml
 
 from ..utils.logging import log_error, log_info, log_warning
 from ..utils.misc import str_to_bool
@@ -318,7 +318,7 @@ def load_config(
         if path and os.path.exists(path):
             with open(path) as f:
                 try:
-                    config_dict = yaml.safe_load(f)
+                    config_dict = yaml.load(f.read())
                     actual_path = Path(path).absolute()
 
                     if as_is:

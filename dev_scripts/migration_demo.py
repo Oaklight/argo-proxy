@@ -5,7 +5,7 @@ Demo script showing the configuration functionality with both URL formats
 
 import os
 import tempfile
-import yaml
+from argoproxy._vendor import yaml
 import sys
 
 # Add src directory to Python path

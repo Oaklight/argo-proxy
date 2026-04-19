@@ -59,20 +59,23 @@ async def refresh_models(request: web.Request):
     )
 
 
-async def get_pypi_versions() -> dict[str, str | None]:
-    """Query PyPI for the latest stable and pre-release versions.
+async def get_pypi_versions(pkg: str = "argo-proxy") -> dict[str, str | None]:
+    """Query PyPI for the latest stable and pre-release versions of a package.
+
+    Args:
+        pkg: Package name to query on PyPI.
 
     Returns:
         Dict with keys ``stable`` and ``pre``, values are version strings
         or None.
     """
-    from packaging import version as pkg_version
+    from .._vendor.semver import version_parse
 
     result: dict[str, str | None] = {"stable": None, "pre": None}
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                "https://pypi.org/pypi/argo-proxy/json",
+                f"https://pypi.org/pypi/{pkg}/json",
                 headers={"Cache-Control": "no-cache", "Pragma": "no-cache"},
                 timeout=5,
             ) as response:
@@ -86,7 +89,7 @@ async def get_pypi_versions() -> dict[str, str | None]:
     pre_versions = []
     for v in data.get("releases", {}).keys():
         try:
-            pv = pkg_version.parse(v)
+            pv = version_parse(v)
             if pv.is_prerelease or pv.is_devrelease:
                 pre_versions.append(pv)
         except Exception:
@@ -96,7 +99,7 @@ async def get_pypi_versions() -> dict[str, str | None]:
         latest_pre = max(pre_versions)
         if result["stable"]:
             try:
-                if latest_pre > pkg_version.parse(result["stable"]):
+                if latest_pre > version_parse(result["stable"]):
                     result["pre"] = str(latest_pre)
             except Exception:
                 result["pre"] = str(latest_pre)
