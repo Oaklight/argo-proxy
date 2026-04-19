@@ -646,7 +646,7 @@ class ToolChoice(BaseModel):
     ) -> Union[dict[str, Any], str]:
         serialized = self.to_tool_choice(api_format)
         return (
-            serialized.model_dump()  # type: ignore[call-non-callable]
+            serialized.model_dump()  # type: ignore[call-non-callable]  # ty: ignore[call-non-callable]
             if hasattr(serialized, "model_dump")
             else serialized
         )

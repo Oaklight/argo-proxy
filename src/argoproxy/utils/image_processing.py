@@ -615,7 +615,7 @@ async def _download_and_process_images(
     url_to_downloaded: dict[str, tuple[bytes, str] | None] = {}
 
     for url, result in zip(all_urls, download_results):
-        if isinstance(result, Exception):
+        if isinstance(result, BaseException):
             log_error(
                 f"Failed to download image {url}: {result}",
                 context=context_label,
