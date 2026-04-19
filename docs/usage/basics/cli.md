@@ -21,7 +21,7 @@ argo-proxy [-h] [-V] {serve,config,logs,update,models} ...
 | Option | Description |
 |--------|-------------|
 | `-h, --help` | Show help message and exit |
-| `-V, --version` | Show version and check for updates |
+| `-V, --version` | Show version and check for updates. Appends dependency update status (e.g., llm-rosetta) when updates are available |
 
 ---
 
@@ -251,7 +251,7 @@ argo-proxy update {check,install} [options]
 
 #### `update check`
 
-Check for available stable and pre-release versions on PyPI.
+Check for available stable and pre-release versions on PyPI. Shows a table covering both argo-proxy and its critical dependencies (e.g., llm-rosetta).
 
 ```bash
 argo-proxy update check
@@ -260,13 +260,13 @@ argo-proxy update check
 Example output:
 
 ```
-argo-proxy v3.0.0b3 (installed)
-
-  Stable:      v2.8.9  (installed is newer)
-  Pre-release: v3.0.0b3  (up to date)
-
-  Changelog:    https://argo-proxy.readthedocs.io/en/latest/changelog/
+Package      Installed  Stable  Pre     Status
+─────────────────────────────────────────────────
+argo-proxy   3.0.0      3.0.0   —       ✓ up to date
+llm-rosetta  0.5.1      0.5.1   —       ✓ up to date
 ```
+
+When updates are available, the `Status` column shows `⬆ update available` and upgrade commands are printed below the table.
 
 #### `update install`
 

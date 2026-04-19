@@ -21,6 +21,25 @@ After 16 beta iterations (b4–b16), argo-proxy v3 is now considered production-
 **Full Changelog**: https://github.com/Oaklight/argo-proxy/compare/v3.0.0b16...v3.0.0<br>
 **PyPI**: https://pypi.org/project/argo-proxy/3.0.0/
 
+### Post v3.0.0 Updates (2026-04-19)
+
+**Dependency Reduction**
+
+- Replaced `PyYAML` and `packaging` with vendored zero-dependency modules (`zerodep/yaml` v0.3.1, `zerodep/semver` v0.4.0), reducing external runtime dependencies from 8 to 6
+
+**Dependency Update Detection**
+
+- Added llm-rosetta update detection to all version-check touchpoints:
+    - `argo-proxy update check` now shows a table with both argo-proxy and llm-rosetta versions (columns: Package, Installed, Stable, Pre, Status)
+    - `argo-proxy --version` appends dependency status when updates are available
+    - Startup banner shows a warning when llm-rosetta has an update
+    - `/version` endpoint includes a `dependencies` field in the JSON response
+
+**CI/CD**
+
+- Added CI workflow (`.github/workflows/ci.yml`) with ruff lint, format check, and ty type check
+- Pinned dev tooling: ruff >= 0.15.0, ty >= 0.0.31, complexipy >= 5.2.0
+
 ---
 
 ## v3.0.0b16 (2026-04-16)

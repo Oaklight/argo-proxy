@@ -139,7 +139,7 @@ GET http://localhost:44497/health
 
 ### `/version`
 
-Returns version information and update availability.
+Returns version information, update availability, and dependency status.
 
 ```bash
 GET http://localhost:44497/version
@@ -147,9 +147,29 @@ GET http://localhost:44497/version
 
 **Response**:
 
-- Current argo-proxy version
-- Latest version on PyPI
-- Update instructions if a newer version is available
+```json
+{
+    "version": "3.0.0",
+    "latest_stable": "3.0.0",
+    "latest_pre": null,
+    "up_to_date": true,
+    "message": "You're using the latest version",
+    "update_commands": null,
+    "dependencies": {
+        "llm-rosetta": {
+            "installed": "0.5.1",
+            "latest_stable": "0.5.1",
+            "latest_pre": null,
+            "up_to_date": true,
+            "update_command": "pip install --upgrade llm-rosetta"
+        }
+    },
+    "pypi": "https://pypi.org/project/argo-proxy/",
+    "changelog": "https://argo-proxy.readthedocs.io/en/latest/changelog/"
+}
+```
+
+The `dependencies` field reports the update status of critical dependencies (currently llm-rosetta). It is `null` when no critical dependencies are installed. The `update_commands` field contains CLI and pip upgrade commands when an argo-proxy update is available.
 
 ### `/refresh`
 
