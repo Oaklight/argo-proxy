@@ -15,10 +15,12 @@ jobs:
         id: pypi
         run: |
           VERSION=$(python3 -c "
-          import urllib.request, json
-          from packaging.version import Version
+          import urllib.request, json, re
+          def _ver_tuple(v):
+              m = re.match(r'(\d+)\.(\d+)\.(\d+)', v)
+              return tuple(int(x) for x in m.groups()) if m else (0, 0, 0)
           data = json.loads(urllib.request.urlopen('https://pypi.org/pypi/argo-proxy/json').read())
-          print(max(data['releases'], key=Version))
+          print(max(data['releases'], key=_ver_tuple))
           ")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
