@@ -11,8 +11,7 @@ from pathlib import Path
 
 from argoproxy._vendor import yaml
 
-from argoproxy.config.io import _format_config_yaml, load_config, save_config
-from argoproxy.config.model import ArgoConfig
+from argoproxy.config.io import _format_config_yaml, load_config
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "configs"
 
@@ -49,9 +48,9 @@ def _load_and_roundtrip(fixture_name: str) -> tuple[dict, str, str]:
 
 def _print_comparison(name: str, raw: dict, migrated: str, expected: str):
     """Print side-by-side comparison."""
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"FIXTURE: {name}")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
     print("\n--- Original raw dict ---")
     print(yaml.dump(raw, default_flow_style=False, sort_keys=True).strip())
@@ -98,14 +97,14 @@ def main():
             match = _print_comparison(name, raw, migrated, expected)
             results[name] = match
         except Exception as e:
-            print(f"\n{'='*70}")
+            print(f"\n{'=' * 70}")
             print(f"FIXTURE: {name} — ERROR: {e}")
-            print(f"{'='*70}")
+            print(f"{'=' * 70}")
             results[name] = False
 
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("SUMMARY")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
     for name, match in results.items():
         status = "PASS" if match else "FAIL"
         print(f"  [{status}] {name}")

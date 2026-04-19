@@ -30,7 +30,8 @@ from __future__ import annotations
 
 import math
 import re
-from typing import IO, Any, Iterator, overload
+from typing import IO, Any, overload
+from collections.abc import Iterator
 
 __all__ = [
     "YAMLError",
