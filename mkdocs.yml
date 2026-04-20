@@ -55,6 +55,36 @@ plugins:
             merge_init_into_class: true
             separate_signature: true
             show_signature_annotations: true
+  - llmstxt:
+      full_output: llms-full.txt
+      sections:
+        Home:
+          - index.md
+        Usage:
+          - usage/index.md
+          - usage/installation.md
+          - usage/running.md
+          - usage/endpoints.md
+          - usage/models.md
+          - usage/cli-tools.md
+          - usage/basics/index.md
+          - usage/basics/cli.md
+          - usage/basics/configuration.md
+          - usage/basics/network.md
+          - usage/basics/timeout_examples.md
+          - usage/advanced/index.md
+          - usage/advanced/dns-resolution.md
+          - usage/advanced/streaming.md
+          - usage/advanced/vision.md
+          - usage/advanced/tools/index.md
+          - usage/advanced/tools/getting-started.md
+          - usage/advanced/tools/advanced-usage.md
+          - usage/advanced/tools/openai-parameters.md
+          - usage/advanced/tools/toolregistry.md
+        Examples:
+          - examples/index.md
+        Changelog:
+          - changelog.md
 
 markdown_extensions:
   - admonition
