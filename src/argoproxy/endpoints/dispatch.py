@@ -660,8 +660,12 @@ async def _passthrough_non_streaming(
     headers: dict[str, str],
     data: dict[str, Any],
     source_provider: ProviderType = "openai_chat",
+    *,
+    config: ArgoConfig | None = None,
 ) -> web.Response:
     """Forward request to upstream and return response without conversion."""
+    if config:
+        _debug_dump("pt_request", data, config)
     async with session.post(upstream_url, headers=headers, json=data) as upstream_resp:
         try:
             response_data = await upstream_resp.json()
@@ -701,6 +705,8 @@ async def _passthrough_non_streaming(
                 target_provider=source_provider,
             )
 
+        if config:
+            _debug_dump("pt_response", response_data, config)
         return web.json_response(
             response_data,
             status=upstream_resp.status,
@@ -716,8 +722,12 @@ async def _passthrough_streaming(
     request: web.Request,
     target_provider: ProviderType,
     source_provider: ProviderType = "openai_chat",
+    *,
+    config: ArgoConfig | None = None,
 ) -> web.StreamResponse:
     """Forward streaming request to upstream and pipe bytes directly."""
+    if config:
+        _debug_dump("pts_request", data, config)
     data = _inject_stream_flags(data, target_provider)
 
     async with session.post(upstream_url, headers=headers, json=data) as upstream_resp:
@@ -916,6 +926,34 @@ async def _passthrough_with_retry(
 
 
 # ---------------------------------------------------------------------------
+# Debug dump helper
+# ---------------------------------------------------------------------------
+
+
+def _debug_dump(stage: str, data: Any, config: ArgoConfig) -> None:
+    """Write a JSON dump to ``config.dump_dir``/<timestamp>_<stage>.json.
+
+    The dump is a no-op when ``config.dump_requests`` is False.
+
+    Args:
+        stage: Short label describing the processing stage (e.g.
+            ``"1_request_received"``).
+        data: Payload to serialize as JSON.
+        config: The current ArgoConfig instance (controls whether
+            dumping is enabled and where files are written).
+    """
+    if not config.dump_requests:
+        return
+    dump_dir = config.dump_dir
+    os.makedirs(dump_dir, exist_ok=True)
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    path = os.path.join(dump_dir, f"{ts}_{stage}.json")
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False, default=str)
+    log_debug(f"Debug dump: {path}", context="dispatch")
+
+
+# ---------------------------------------------------------------------------
 # Cross-format conversion handlers
 # ---------------------------------------------------------------------------
 
@@ -935,6 +973,7 @@ async def _convert_non_streaming(
     ctx = ConversionContext(options={"metadata_mode": "preserve"})
 
     # 1. Source → IR
+    _debug_dump("1_request_received", body, config)
     try:
         ir_request = source_converter.request_from_provider(body, context=ctx)
     except Exception as exc:
@@ -960,6 +999,7 @@ async def _convert_non_streaming(
     _ensure_user_field(target_body, config.user)
     _downgrade_developer_role(target_body)
     _normalize_null_content(target_body)
+    _debug_dump("2_request_converted", target_body, config)
 
     # Log the converted body
     if config.verbose:
@@ -1001,6 +1041,7 @@ async def _convert_non_streaming(
                 return _error_response(
                     source_provider, 502, "Upstream returned non-JSON response"
                 )
+            _debug_dump("3_response_received", upstream_json, config)
 
             # Check for ARGO auth warning before conversion
             upstream_fmt = "anthropic" if target_provider == "anthropic" else "openai"
@@ -1031,6 +1072,7 @@ async def _convert_non_streaming(
                     f"Failed to convert response: {exc}",
                 )
 
+            _debug_dump("4_response_converted", source_response, config)
             return web.json_response(source_response)
 
     except aiohttp.ClientError as exc:
@@ -1218,6 +1260,7 @@ async def _convert_streaming(
     ctx = ConversionContext(options={"metadata_mode": "preserve"})
 
     # 1. Source → IR
+    _debug_dump("s1_request_received", body, config)
     try:
         ir_request = source_converter.request_from_provider(body, context=ctx)
     except Exception as exc:
@@ -1239,6 +1282,7 @@ async def _convert_streaming(
 
     # 3. Inject stream flags
     target_body = _inject_stream_flags(target_body, target_provider)
+    _debug_dump("s2_request_converted", target_body, config)
     if config.verbose:
         log_converted_request(
             target_body, verbose=True, max_history_items=config.max_log_history
@@ -1292,6 +1336,8 @@ async def _convert_streaming(
             chunk_count = 0
             t0 = time.monotonic()
             _auth_checked = False
+            _raw_chunks: list[Any] = []
+            _converted_chunks: list[Any] = []
 
             # Buffer for partial SSE lines from byte chunks
             line_buffer = ""
@@ -1345,6 +1391,8 @@ async def _convert_streaming(
 
                     chunk_count += 1
 
+                    _raw_chunks.append(chunk_data)
+
                     # Log first chunk and error chunks for diagnostics
                     if chunk_count == 1 and config.verbose:
                         log_debug(
@@ -1375,6 +1423,7 @@ async def _convert_streaming(
                         source_chunks = source_converter.stream_response_to_provider(
                             ir_event, context=to_ctx
                         )
+                        _converted_chunks.extend(source_chunks)
                         await _write_sse_chunks(response, source_chunks, format_sse)
 
             # Ensure response is prepared even if no chunks were received
@@ -1407,6 +1456,9 @@ async def _convert_streaming(
             # Emit end-of-stream marker for OpenAI Chat
             if source_provider == "openai_chat":
                 await response.write(b"data: [DONE]\n\n")
+
+            _debug_dump("s3_all_chunks_received", _raw_chunks, config)
+            _debug_dump("s4_all_chunks_converted", _converted_chunks, config)
 
             if config.verbose:
                 elapsed = time.monotonic() - t0
@@ -1578,6 +1630,7 @@ async def proxy_request(
                     request,
                     target_provider,
                     source_provider,
+                    config=config,
                 )
             # Handle Anthropic non-streaming requests based on configured
             # mode (force/retry/passthrough) to work around the "Streaming
@@ -1595,7 +1648,7 @@ async def proxy_request(
                     )
                 # "passthrough": fall through to normal non-streaming
             return await _passthrough_non_streaming(
-                session, upstream_url, headers, body, source_provider
+                session, upstream_url, headers, body, source_provider, config=config
             )
 
         # Cross-format conversion (or forced same-format conversion)

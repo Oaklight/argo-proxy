@@ -183,6 +183,12 @@ def _apply_env_overrides(config_data: ArgoConfig) -> ArgoConfig:
     if env_force_conversion := os.getenv("FORCE_CONVERSION"):
         config_data._force_conversion = str_to_bool(env_force_conversion)
 
+    if env_dump_requests := os.getenv("DUMP_REQUESTS"):
+        config_data._dump_requests = str_to_bool(env_dump_requests)
+
+    if env_dump_dir := os.getenv("DUMP_DIR"):
+        config_data._dump_dir = env_dump_dir
+
     return config_data
 
 
