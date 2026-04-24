@@ -51,6 +51,10 @@ def set_config_envs(args: argparse.Namespace):
         os.environ["ANTHROPIC_STREAM_MODE"] = args.anthropic_stream_mode
     if args.force_conversion:
         os.environ["FORCE_CONVERSION"] = str(True)
+    if args.dump_requests:
+        os.environ["DUMP_REQUESTS"] = str(True)
+    if args.dump_dir:
+        os.environ["DUMP_DIR"] = args.dump_dir
 
 
 def handle_serve(args: argparse.Namespace):

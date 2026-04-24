@@ -105,6 +105,21 @@ def _add_serve_arguments(parser: argparse.ArgumentParser) -> None:
         help="Always run full format conversion, even for same-provider requests",
     )
     parser.add_argument(
+        "--dump-requests",
+        action="store_true",
+        default=False,
+        help="Dump request/response JSON at each processing stage for debugging",
+    )
+    parser.add_argument(
+        "--dump-dir",
+        type=str,
+        default=None,
+        help=(
+            "Directory for debug request/response dumps "
+            "(default: dumps/ next to config file)"
+        ),
+    )
+    parser.add_argument(
         "--dev",
         action="store_true",
         default=False,

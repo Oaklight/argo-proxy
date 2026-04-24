@@ -67,6 +67,10 @@ class ArgoConfig:
     # Force full conversion even for same-provider requests
     _force_conversion: bool = False
 
+    # Debug request/response dumping
+    _dump_requests: bool = False
+    _dump_dir: str = ""
+
     # Validation and resolver settings
     _skip_url_validation: bool = False
     _user_validated: bool = False  # Set after upstream user validation passes
@@ -214,6 +218,37 @@ class ArgoConfig:
         """
         return self._force_conversion
 
+    @property
+    def dump_requests(self) -> bool:
+        """Whether to dump request/response JSON at each processing stage.
+
+        When enabled, the dispatch module writes JSON files to
+        ``dump_dir`` at various stages (request received, converted,
+        response received, response converted) for debugging.
+        """
+        return self._dump_requests
+
+    @property
+    def dump_dir(self) -> str:
+        """Directory for debug request/response dumps.
+
+        Resolution order:
+        1. Explicitly configured ``_dump_dir`` value.
+        2. ``dumps/`` subdirectory next to the config file (if CONFIG_PATH
+           is set).
+        3. ``/tmp/argo_debug_dumps`` as a last-resort fallback.
+        """
+        import os
+
+        if self._dump_dir:
+            return self._dump_dir
+        config_path = os.environ.get("CONFIG_PATH")
+        if config_path:
+            from pathlib import Path
+
+            return str(Path(config_path).parent / "dumps")
+        return "/tmp/argo_debug_dumps"
+
     @classmethod
     def from_dict(cls, config_dict: dict):
         """Create ArgoConfig instance from a dictionary."""
@@ -230,6 +265,8 @@ class ArgoConfig:
             "skip_url_validation": "_skip_url_validation",
             "anthropic_stream_mode": "_anthropic_stream_mode",
             "force_conversion": "_force_conversion",
+            "dump_requests": "_dump_requests",
+            "dump_dir": "_dump_dir",
         }
         valid_fields = {
             k: v for k, v in config_dict.items() if k in cls.__annotations__
@@ -265,6 +302,10 @@ class ArgoConfig:
             serialized["anthropic_stream_mode"] = self._anthropic_stream_mode
         if self._force_conversion:
             serialized["force_conversion"] = True
+        if self._dump_requests:
+            serialized["dump_requests"] = True
+        if self._dump_dir:
+            serialized["dump_dir"] = self._dump_dir
 
         # Persist native URLs only when explicitly overridden (differ from
         # the values that would be derived from argo_base_url)
