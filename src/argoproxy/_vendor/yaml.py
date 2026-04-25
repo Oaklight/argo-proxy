@@ -3,7 +3,7 @@
 # deps = []
 # tier = "subsystem"
 # category = "data"
-# note = "Install/update via: https://zerodep.readthedocs.io/en/latest/guide/cli/"
+# note = "Install/update via `zerodep add yaml`"
 # ///
 
 """YAML parser and serializer (common subset) — zero dependencies, stdlib only, Python 3.10+.
@@ -30,8 +30,7 @@ from __future__ import annotations
 
 import math
 import re
-from typing import IO, Any, overload
-from collections.abc import Iterator
+from typing import IO, Any, Iterator, overload
 
 __all__ = [
     "YAMLError",

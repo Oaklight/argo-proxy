@@ -1,9 +1,9 @@
 # /// zerodep
-# version = "0.4.0"
+# version = "0.4.1"
 # deps = []
 # tier = "simple"
 # category = "data"
-# note = "Install/update via: https://zerodep.readthedocs.io/en/latest/guide/cli/"
+# note = "Install/update via `zerodep add semver`"
 # ///
 
 """PEP 440 version parser and comparator -- zero dependencies, stdlib only.
@@ -45,66 +45,6 @@ __all__ = [
     "version_parse",
 ]
 
-# ── Sentinel types for comparison keys ───────────────────────────────
-
-
-class _InfinityType:
-    """Compares greater than any other object (except itself)."""
-
-    __slots__ = ()
-
-    def __repr__(self) -> str:
-        return "Infinity"
-
-    def __hash__(self) -> int:
-        return hash(repr(self))
-
-    def __lt__(self, other: object) -> bool:
-        return False
-
-    def __le__(self, other: object) -> bool:
-        return isinstance(other, _InfinityType)
-
-    def __eq__(self, other: object) -> bool:
-        return isinstance(other, _InfinityType)
-
-    def __gt__(self, other: object) -> bool:
-        return not isinstance(other, _InfinityType)
-
-    def __ge__(self, other: object) -> bool:
-        return True
-
-
-class _NegativeInfinityType:
-    """Compares less than any other object (except itself)."""
-
-    __slots__ = ()
-
-    def __repr__(self) -> str:
-        return "-Infinity"
-
-    def __hash__(self) -> int:
-        return hash(repr(self))
-
-    def __lt__(self, other: object) -> bool:
-        return not isinstance(other, _NegativeInfinityType)
-
-    def __le__(self, other: object) -> bool:
-        return True
-
-    def __eq__(self, other: object) -> bool:
-        return isinstance(other, _NegativeInfinityType)
-
-    def __gt__(self, other: object) -> bool:
-        return False
-
-    def __ge__(self, other: object) -> bool:
-        return isinstance(other, _NegativeInfinityType)
-
-
-_Infinity = _InfinityType()
-_NegativeInfinity = _NegativeInfinityType()
-
 # ── PEP 440 regex (non-possessive, Python 3.10 compatible) ──────────
 
 _VERSION_PATTERN = r"""
@@ -143,96 +83,43 @@ _VERSION_RE = re.compile(
     re.VERBOSE | re.IGNORECASE,
 )
 
-# ── Letter normalisation ────────────────────────────────────────────
+# ── Pre-compiled regex for splitting local version segments ─────────
 
+_LOCAL_SPLIT_RE = re.compile(r"[-_.]")
+
+# ── Letter normalisation (merged lookup tables) ─────────────────────
+
+# Maps any PEP 440 pre-release letter to its canonical form.
 _PRE_NORMALIZE: dict[str, str] = {
     "alpha": "a",
+    "a": "a",
     "beta": "b",
+    "b": "b",
     "c": "rc",
     "pre": "rc",
     "preview": "rc",
+    "rc": "rc",
 }
 
+# Maps canonical pre-release letter to an integer for fast comparison.
+_PRE_LETTER_INT: dict[str, int] = {"a": 0, "b": 1, "rc": 2}
+
+# Maps post-release synonyms to "post".
 _POST_NORMALIZE: dict[str, str] = {
     "rev": "post",
     "r": "post",
+    "post": "post",
 }
 
-# ── Helpers ──────────────────────────────────────────────────────────
+# ── Integer sentinels for comparison keys ───────────────────────────
+# Using plain ints/tuples instead of custom objects avoids method
+# dispatch overhead during tuple comparison.
 
-
-def _parse_letter_version(
-    letter: str | None,
-    number: str | int | None,
-) -> tuple[str, int] | None:
-    if letter:
-        letter = letter.lower()
-        letter = _PRE_NORMALIZE.get(letter, letter)
-        letter = _POST_NORMALIZE.get(letter, letter)
-        number = int(number) if number else 0
-        return (letter, number)
-    if number is not None:
-        # Implicit post release (e.g. ``1.0-1``)
-        letter = "post"
-        number = int(number)
-        return (letter, number)
-    return None
-
-
-def _parse_local_version(local: str | None) -> tuple[int | str, ...] | None:
-    if local is None:
-        return None
-    return tuple(
-        int(part) if part.isdigit() else part.lower()
-        for part in re.split(r"[-_.]", local)
-    )
-
-
-def _cmpkey(
-    epoch: int,
-    release: tuple[int, ...],
-    pre: tuple[str, int] | None,
-    post: tuple[str, int] | None,
-    dev: tuple[str, int] | None,
-    local: tuple[int | str, ...] | None,
-) -> tuple:
-    # Strip trailing zeros from release for comparison.
-    _release = release
-    while len(_release) > 1 and _release[-1] == 0:
-        _release = _release[:-1]
-
-    # Pre-release versions: dev-only < pre-release < final
-    if pre is None and post is None and dev is not None:
-        _pre: _InfinityType | _NegativeInfinityType | tuple[str, int] = (
-            _NegativeInfinity
-        )
-    elif pre is None:
-        _pre = _Infinity
-    else:
-        _pre = pre
-
-    # Post-release: absent sorts before any post
-    _post: _InfinityType | _NegativeInfinityType | tuple[str, int] = (
-        _NegativeInfinity if post is None else post
-    )
-
-    # Dev release: absent sorts after any dev
-    _dev: _InfinityType | _NegativeInfinityType | tuple[str, int] = (
-        _Infinity if dev is None else dev
-    )
-
-    # Local version: absent sorts before any local
-    if local is None:
-        _local: (
-            _NegativeInfinityType
-            | tuple[tuple[int, str] | tuple[_NegativeInfinityType, str], ...]
-        ) = _NegativeInfinity
-    else:
-        _local = tuple(
-            (i, "") if isinstance(i, int) else (_NegativeInfinity, i) for i in local
-        )
-
-    return (epoch, _release, _pre, _post, _dev, _local)
+_PRE_SENTINEL_NEG = (-1, 0)  # dev-only: sorts before any pre tag (a=0)
+_PRE_SENTINEL_INF = (3, 0)  # no pre: sorts after rc=2
+_POST_SENTINEL_NEG = (-1, 0)  # no post: sorts before any post (0, N)
+_DEV_SENTINEL_INF = (1, 0)  # no dev: sorts after any dev (0, N)
+_LOCAL_SENTINEL_NEG = ((-1,),)  # no local: sorts before any local part
 
 
 # ── Exceptions ──────────────────────────────────────────────────────
@@ -264,33 +151,119 @@ class Version:
         '1.2.3rc1'
     """
 
-    __slots__ = ("_epoch", "_release", "_pre", "_post", "_dev", "_local", "_key")
+    __slots__ = (
+        "_epoch",
+        "_release",
+        "_pre",
+        "_post",
+        "_dev",
+        "_local",
+        "_key",
+        "_str",
+    )
 
     def __init__(self, version: str) -> None:
-        match = _VERSION_RE.fullmatch(version)
+        match = _VERSION_RE.match(version)
         if not match:
             raise InvalidVersion(f"Invalid version: {version!r}")
 
-        self._epoch: int = int(match.group("epoch") or 0)
-        self._release: tuple[int, ...] = tuple(
-            int(x) for x in match.group("release").split(".")
-        )
-        self._pre = _parse_letter_version(match.group("pre_l"), match.group("pre_n"))
+        # Extract all groups at once via positional tuple (fastest).
+        # Index map: 0=epoch, 1=release, 2=pre, 3=pre_l, 4=pre_n,
+        #   5=post, 6=post_n1, 7=post_l, 8=post_n2, 9=dev, 10=dev_l,
+        #   11=dev_n, 12=local
+        (
+            g_epoch,
+            g_release,
+            _,
+            g_pre_l,
+            g_pre_n,
+            _,
+            g_post_n1,
+            g_post_l,
+            g_post_n2,
+            _,
+            g_dev_l,
+            g_dev_n,
+            g_local,
+        ) = match.groups()
 
-        post_n = match.group("post_n1") or match.group("post_n2")
-        self._post = _parse_letter_version(match.group("post_l"), post_n)
+        # ── Parse components ────────────────────────────────────────
+        epoch = int(g_epoch) if g_epoch else 0
+        release = tuple(map(int, g_release.split(".")))
 
-        self._dev = _parse_letter_version(match.group("dev_l"), match.group("dev_n"))
-        self._local = _parse_local_version(match.group("local"))
+        # Pre-release
+        if g_pre_l:
+            pre_letter = _PRE_NORMALIZE[g_pre_l.lower()]
+            pre_num = int(g_pre_n) if g_pre_n else 0
+            pre: tuple[str, int] | None = (pre_letter, pre_num)
+        else:
+            pre = None
 
-        self._key = _cmpkey(
-            self._epoch,
-            self._release,
-            self._pre,
-            self._post,
-            self._dev,
-            self._local,
-        )
+        # Post-release
+        if g_post_l:
+            post_num = int(g_post_n2) if g_post_n2 else 0
+            post: tuple[str, int] | None = ("post", post_num)
+        elif g_post_n1 is not None:
+            post = ("post", int(g_post_n1))
+        else:
+            post = None
+
+        # Dev-release
+        if g_dev_l:
+            dev_num = int(g_dev_n) if g_dev_n else 0
+            dev: tuple[str, int] | None = ("dev", dev_num)
+        else:
+            dev = None
+
+        # Local version
+        if g_local is not None:
+            local: tuple[int | str, ...] | None = tuple(
+                int(p) if p.isdigit() else p.lower()
+                for p in _LOCAL_SPLIT_RE.split(g_local)
+            )
+        else:
+            local = None
+
+        self._epoch = epoch
+        self._release = release
+        self._pre = pre
+        self._post = post
+        self._dev = dev
+        self._local = local
+
+        # ── Build comparison key (inlined _cmpkey) ──────────────────
+        # Strip trailing zeros from release for comparison.
+        cmp_release = release
+        i = len(release) - 1
+        while i > 0 and release[i] == 0:
+            i -= 1
+        if i < len(release) - 1:
+            cmp_release = release[: i + 1]
+
+        # Pre-release key: dev-only < pre-release < final
+        if pre is None and post is None and dev is not None:
+            cmp_pre = _PRE_SENTINEL_NEG
+        elif pre is not None:
+            cmp_pre = (_PRE_LETTER_INT[pre[0]], pre[1])
+        else:
+            cmp_pre = _PRE_SENTINEL_INF
+
+        # Post-release key: absent sorts before any post
+        cmp_post = (0, post[1]) if post is not None else _POST_SENTINEL_NEG
+
+        # Dev-release key: absent sorts after any dev
+        cmp_dev = (0, dev[1]) if dev is not None else _DEV_SENTINEL_INF
+
+        # Local version key: absent sorts before any local
+        if local is None:
+            cmp_local: tuple[tuple[int, ...] | tuple[int, str], ...] = (
+                _LOCAL_SENTINEL_NEG
+            )
+        else:
+            cmp_local = tuple((p, "") if isinstance(p, int) else (-1, p) for p in local)
+
+        self._key = (epoch, cmp_release, cmp_pre, cmp_post, cmp_dev, cmp_local)
+        self._str: str | None = None  # lazy-cached canonical string
 
     # ── Comparison ───────────────────────────────────────────────────
 
@@ -313,10 +286,13 @@ class Version:
         return f"<Version('{self}')>"
 
     def __str__(self) -> str:
+        cached = self._str
+        if cached is not None:
+            return cached
         parts: list[str] = []
         if self._epoch != 0:
             parts.append(f"{self._epoch}!")
-        parts.append(".".join(str(x) for x in self._release))
+        parts.append(".".join(map(str, self._release)))
         if self._pre is not None:
             parts.append(f"{self._pre[0]}{self._pre[1]}")
         if self._post is not None:
@@ -324,8 +300,11 @@ class Version:
         if self._dev is not None:
             parts.append(f".dev{self._dev[1]}")
         if self._local is not None:
-            parts.append(f"+{self.local}")
-        return "".join(parts)
+            parts.append("+")
+            parts.append(".".join(str(x) for x in self._local))
+        result = "".join(parts)
+        self._str = result
+        return result
 
     # ── Public properties ────────────────────────────────────────────
 
@@ -364,17 +343,17 @@ class Version:
     @property
     def is_prerelease(self) -> bool:
         """``True`` if this is a pre-release or dev-release version."""
-        return self.dev is not None or self.pre is not None
+        return self._dev is not None or self._pre is not None
 
     @property
     def is_devrelease(self) -> bool:
         """``True`` if this is a dev-release version."""
-        return self.dev is not None
+        return self._dev is not None
 
     @property
     def is_postrelease(self) -> bool:
         """``True`` if this is a post-release version."""
-        return self.post is not None
+        return self._post is not None
 
     @property
     def major(self) -> int:
