@@ -353,9 +353,9 @@ def _upgrade_max_tokens(body: dict[str, Any]) -> None:
 def _normalize_thinking_for_upstream(body: dict[str, Any]) -> None:
     """Normalize ``thinking`` parameter for upstream compatibility.
 
-    Converts ``thinking.type`` from ``"adaptive"`` to ``"enabled"`` with a
-    default ``budget_tokens`` derived from ``max_tokens``, because some
-    upstream gateways do not support the ``"adaptive"`` type.
+    Converts ``thinking.type`` from ``"enabled"`` to ``"adaptive"`` because
+    the ARGO upstream gateway now requires ``"adaptive"`` and no longer
+    accepts ``"enabled"``.
 
     Args:
         body: The request body (modified in-place).
@@ -363,12 +363,10 @@ def _normalize_thinking_for_upstream(body: dict[str, Any]) -> None:
     thinking = body.get("thinking")
     if not isinstance(thinking, dict):
         return
-    if thinking.get("type") != "adaptive":
+    if thinking.get("type") != "enabled":
         return
-    max_tokens = body.get("max_tokens", 16000)
-    budget = max(int(max_tokens * 0.8), 1024)
-    thinking["type"] = "enabled"
-    thinking["budget_tokens"] = budget
+    thinking["type"] = "adaptive"
+    thinking.pop("budget_tokens", None)
 
 
 def _extract_client_credential(
@@ -1546,8 +1544,8 @@ async def proxy_request(
                 # newer OpenAI models (GPT-4o, o1, etc.) reject max_tokens.
                 _upgrade_max_tokens(body)
             elif target_provider == "anthropic":
-                # Normalize thinking.type "adaptive" to "enabled" — the ARGO
-                # upstream gateway does not support the "adaptive" type.
+                # Normalize thinking.type "enabled" to "adaptive" — the ARGO
+                # upstream gateway now requires "adaptive".
                 _normalize_thinking_for_upstream(body)
 
             # Fix orphaned tool_calls/results in passthrough mode — OpenAI
