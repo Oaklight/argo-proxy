@@ -1,7 +1,7 @@
 site_name: Argo Proxy
 site_description: A proxy for different LLM models.
 site_author: Peng Ding
-site_url: https://argo-proxy.readthedocs.io/en/
+site_url: https://argo-proxy.readthedocs.io/en/latest
 repo_name: Oaklight/argo-proxy
 repo_url: https://github.com/Oaklight/argo-proxy
 copyright: Copyright &copy; 2024 Peng Ding
