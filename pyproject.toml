@@ -79,6 +79,7 @@ python-version = "3.10"
 
 [tool.ty.src]
 include = ["src"]
+exclude = ["src/argoproxy/_legacy"]
 
 [tool.ty.rules]
 unresolved-import = "ignore"
