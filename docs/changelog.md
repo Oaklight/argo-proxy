@@ -2,6 +2,51 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v3.0.2 (2026-05-20)
+
+**Hotfix: Claude Opus 4.7 support.**
+
+### Fixed
+
+- **Strip `temperature` for reasoning models** (#120): Claude Opus 4.7 is a reasoning model that rejects the `temperature` parameter with `400 invalid_request_error`. argo-proxy now automatically strips `temperature` before forwarding requests to Opus 4.7, applied early in the dispatch pipeline so it covers both passthrough and cross-format conversion paths
+
+### Added
+
+- **`claudeopus47` model alias**: Added model registry alias mapping to `argo:claude-opus-4.7` / `argo:claude-4.7-opus`
+
+**Full Changelog**: https://github.com/Oaklight/argo-proxy/compare/v3.0.1...v3.0.2<br>
+**PyPI**: https://pypi.org/project/argo-proxy/3.0.2/
+
+---
+
+## v3.0.1 (2026-05-06)
+
+### New
+
+- **`--dump-requests` CLI option**: Debug flag that dumps full request and response payloads for all requests, not just errors
+- **llm-rosetta update detection**: Added update checks for the llm-rosetta dependency to all version-check touchpoints
+
+### Fixed
+
+- **`thinking.type` normalization for upstream compatibility** (#120): Fixed reverse normalization of `thinking.type` that broke upstream compatibility with the ARGO gateway
+
+### Changed
+
+- Upgraded llm-rosetta dependency to `>=0.6.0,<0.7.0`
+- Updated vendored zerodep modules (semver 0.4.1, yaml 0.3.1)
+- Replaced PyYAML and packaging with vendored zerodep modules
+
+### CI & Docs
+
+- Switched to pre-commit for lint checks
+- Added lint/type-check CI workflow with pinned dev tooling versions
+- Rewrote README for v3.x universal gateway architecture
+
+**Full Changelog**: https://github.com/Oaklight/argo-proxy/compare/v3.0.0...v3.0.1<br>
+**PyPI**: https://pypi.org/project/argo-proxy/3.0.1/
+
+---
+
 ## v3.0.0 (2026-04-19)
 
 **First stable release of the v3 architecture.**
