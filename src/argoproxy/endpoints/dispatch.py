@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 import traceback
 from collections.abc import Callable
@@ -348,6 +349,33 @@ def _upgrade_max_tokens(body: dict[str, Any]) -> None:
     """
     if "max_tokens" in body and "max_completion_tokens" not in body:
         body["max_completion_tokens"] = body.pop("max_tokens")
+
+
+def _strip_temperature_for_reasoning_models(
+    body: dict[str, Any], resolved_model: str
+) -> None:
+    """Strip ``temperature`` for reasoning models that reject it.
+
+    Reasoning-class models such as Claude Opus 4.7 deprecate the
+    ``temperature`` parameter and return ``400 invalid_request_error``
+    when it is present.  Silently remove it to avoid upstream rejections.
+
+    Args:
+        body: The request body (modified in-place).
+        resolved_model: The resolved internal model identifier.
+    """
+    if "temperature" not in body:
+        return
+    # Normalise for matching: strip non-alphanumeric, lowercase
+    normalised = re.sub(r"[^a-z0-9]", "", resolved_model.lower())
+    # Models that reject temperature — extend this set as needed
+    _NO_TEMPERATURE_MODELS = {"claudeopus47"}
+    if normalised in _NO_TEMPERATURE_MODELS:
+        removed = body.pop("temperature")
+        log_debug(
+            f"Stripped temperature={removed} (unsupported by {resolved_model})",
+            context="dispatch",
+        )
 
 
 def _normalize_thinking_for_upstream(body: dict[str, Any]) -> None:
@@ -1554,6 +1582,9 @@ async def proxy_request(
         # Anthropic target: also set metadata.user_id
         if target_provider == "anthropic":
             _apply_anthropic_user_id(body, config.user)
+
+        # Strip temperature for reasoning models that reject it
+        _strip_temperature_for_reasoning_models(body, resolved_model)
 
         # Detect streaming
         stream = force_stream or _detect_stream(source_provider, body)

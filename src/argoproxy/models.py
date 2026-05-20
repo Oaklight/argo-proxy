@@ -55,6 +55,7 @@ _DEFAULT_CHAT_MODELS = flatten_mapping(
         "gemini25flash": "argo:gemini-2.5-flash",
         # claude
         "claudeopus4": ["argo:claude-opus-4", "argo:claude-4-opus"],
+        "claudeopus47": ["argo:claude-opus-4.7", "argo:claude-4.7-opus"],
         "claudesonnet4": ["argo:claude-sonnet-4", "argo:claude-4-sonnet"],
         "claudesonnet37": ["argo:claude-sonnet-3.7", "argo:claude-3.7-sonnet"],
         "claudesonnet35v2": ["argo:claude-sonnet-3.5-v2", "argo:claude-3.5-sonnet-v2"],
