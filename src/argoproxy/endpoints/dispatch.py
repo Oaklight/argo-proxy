@@ -1319,6 +1319,7 @@ async def _convert_streaming(
     _ensure_user_field(target_body, config.user)
     _downgrade_developer_role(target_body)
     _normalize_null_content(target_body)
+    _normalize_thinking_for_upstream(target_body)
 
     format_sse = _SSE_FORMATTERS[source_provider]
 
