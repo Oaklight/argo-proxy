@@ -2,6 +2,19 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v3.0.4 (2026-05-23)
+
+**Fix: startup user validation model selection.**
+
+### Fixed
+
+- **Robust model selection for startup username validation**: The `_fetch_first_model` helper blindly picked the first model from `/v1/models`, which was `gpt4olatest` — an internal ID that ARGO's `/v1/chat/completions` endpoint rejects. This caused the startup username validation to always fail with a misleading "network may be unavailable" warning. Replaced with `_fetch_validation_models` that filters out embedding models, sorts candidates by cost (nano → mini → others), and returns a full list. `validate_user_async` now iterates through candidates, skipping any that return `400/model_not_found`, instead of retrying the same broken model
+
+**Full Changelog**: https://github.com/Oaklight/argo-proxy/compare/v3.0.3...v3.0.4<br>
+**PyPI**: https://pypi.org/project/argo-proxy/3.0.4/
+
+---
+
 ## v3.0.3 (2026-05-23)
 
 **Hotfix: thinking normalization in force-conversion paths.**
