@@ -131,15 +131,20 @@ async def validate_api_async(
     raise ValueError("API validation failed after all attempts")
 
 
-async def _fetch_first_model(
+async def _fetch_validation_models(
     models_url: str,
     timeout: int = 5,
     resolver_overrides: dict[str, str] | None = None,
-) -> str | None:
-    """Fetch the first available model ID from an OpenAI-compatible ``/models`` endpoint.
+) -> list[str]:
+    """Fetch candidate model IDs for validation from an OpenAI-compatible
+    ``/models`` endpoint.
+
+    Returns a list of model ID strings sorted by preference: lightweight
+    models (nano, mini) come first to minimise token cost during validation.
+    Embedding-only models are excluded because they cannot serve chat requests.
 
     Returns:
-        A model ID string, or None if the request fails.
+        Sorted list of model IDs, or empty list if the request fails.
     """
     from ..performance import StaticOverrideResolver
 
@@ -155,15 +160,39 @@ async def _fetch_first_model(
         ) as session:
             async with session.get(models_url) as resp:
                 if resp.status != 200:
-                    return None
+                    return []
                 data = await resp.json()
                 models = data.get("data", [])
-                if models:
-                    m = models[0]
-                    return m.get("internal_id") or m.get("id")
     except Exception:
-        pass
-    return None
+        return []
+
+    # Filter out embedding models (they can't serve chat completions)
+    _EMBEDDING_KEYWORDS = {"embedding", "ada", "v3small", "v3large"}
+    chat_models = []
+    for m in models:
+        iid = (m.get("internal_id") or m.get("id") or "").lower()
+        display_id = (m.get("id") or "").lower()
+        if any(kw in iid or kw in display_id for kw in _EMBEDDING_KEYWORDS):
+            continue
+        chat_models.append(m)
+
+    # Sort: nano first (cheapest), then mini, then others
+    def _sort_key(m: dict) -> int:
+        iid = (m.get("internal_id") or m.get("id") or "").lower()
+        if "nano" in iid:
+            return 0
+        if "mini" in iid:
+            return 1
+        return 2
+
+    chat_models.sort(key=_sort_key)
+
+    result: list[str] = []
+    for m in chat_models:
+        model_id = m.get("internal_id") or m.get("id")
+        if model_id:
+            result.append(model_id)
+    return result
 
 
 async def validate_user_async(
@@ -196,57 +225,71 @@ async def validate_user_async(
     from ..performance import StaticOverrideResolver
     from .misc import contains_argo_auth_warning, extract_text_from_response
 
-    # Auto-detect a valid model name from the upstream
+    # Auto-detect valid model names from the upstream, sorted by preference
     models_url = chat_url.rsplit("/chat/completions", 1)[0] + "/models"
-    model = await _fetch_first_model(
+    candidate_models = await _fetch_validation_models(
         models_url, timeout=timeout, resolver_overrides=resolver_overrides
     )
-    if not model:
-        model = "gpt-4o-latest"  # fallback
-
-    payload = {
-        "model": model,
-        "messages": [{"role": "user", "content": "say ok"}],
-        "user": user,
-        "max_tokens": 5,
-    }
-
-    connector = None
-    if resolver_overrides:
-        resolver = StaticOverrideResolver(resolver_overrides)
-        connector = aiohttp.TCPConnector(resolver=resolver)
+    if not candidate_models:
+        candidate_models = ["gpt41nano"]  # lightweight fallback
 
     client_timeout = aiohttp.ClientTimeout(total=timeout)
-
     last_err: Exception | None = None
-    for attempt in range(attempts + 1):
-        try:
-            async with aiohttp.ClientSession(
-                connector=connector,
-                timeout=client_timeout,
-            ) as session:
-                async with session.post(
-                    chat_url,
-                    json=payload,
-                    headers={
-                        "Content-Type": "application/json",
-                        "Authorization": f"Bearer {user}",
-                    },
-                ) as response:
-                    if response.status != 200:
-                        raise ValueError(f"API returned status code {response.status}")
-                    data = await response.json()
-                    text = extract_text_from_response(data, "openai")
-                    return not contains_argo_auth_warning(text)
-        except Exception as e:
-            last_err = e
-            if attempt < attempts:
-                await asyncio.sleep(0.5)
-            if resolver_overrides and attempt < attempts:
-                resolver = StaticOverrideResolver(resolver_overrides)
-                connector = aiohttp.TCPConnector(resolver=resolver)
-            else:
-                connector = None
+
+    for model in candidate_models:
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": "say ok"}],
+            "user": user,
+            "max_tokens": 5,
+        }
+
+        connector = None
+        if resolver_overrides:
+            resolver = StaticOverrideResolver(resolver_overrides)
+            connector = aiohttp.TCPConnector(resolver=resolver)
+
+        for attempt in range(attempts + 1):
+            try:
+                async with aiohttp.ClientSession(
+                    connector=connector,
+                    timeout=client_timeout,
+                ) as session:
+                    async with session.post(
+                        chat_url,
+                        json=payload,
+                        headers={
+                            "Content-Type": "application/json",
+                            "Authorization": f"Bearer {user}",
+                        },
+                    ) as response:
+                        if response.status == 400:
+                            # Model rejected — try the next candidate
+                            body = await response.json()
+                            err_code = (
+                                body.get("error", {}).get("code", "")
+                                if isinstance(body, dict)
+                                else ""
+                            )
+                            if err_code == "model_not_found":
+                                last_err = ValueError(f"Model '{model}' not accepted")
+                                break  # skip to next model
+                        if response.status != 200:
+                            raise ValueError(
+                                f"API returned status code {response.status}"
+                            )
+                        data = await response.json()
+                        text = extract_text_from_response(data, "openai")
+                        return not contains_argo_auth_warning(text)
+            except Exception as e:
+                last_err = e
+                if attempt < attempts:
+                    await asyncio.sleep(0.5)
+                if resolver_overrides and attempt < attempts:
+                    resolver = StaticOverrideResolver(resolver_overrides)
+                    connector = aiohttp.TCPConnector(resolver=resolver)
+                else:
+                    connector = None
 
     if last_err is not None:
         raise last_err
