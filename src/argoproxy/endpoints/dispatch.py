@@ -1025,6 +1025,7 @@ async def _convert_non_streaming(
     _ensure_user_field(target_body, config.user)
     _downgrade_developer_role(target_body)
     _normalize_null_content(target_body)
+    _normalize_thinking_for_upstream(target_body)
     _debug_dump("2_request_converted", target_body, config)
 
     # Log the converted body
@@ -1146,6 +1147,7 @@ async def _convert_buffered_streaming(
     _ensure_user_field(target_body, config.user)
     _downgrade_developer_role(target_body)
     _normalize_null_content(target_body)
+    _normalize_thinking_for_upstream(target_body)
 
     # 3. Inject stream flags and update headers for streaming
     target_body = _inject_stream_flags(target_body, target_provider)
