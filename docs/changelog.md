@@ -2,6 +2,19 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v3.0.3 (2026-05-23)
+
+**Hotfix: thinking normalization in force-conversion paths.**
+
+### Fixed
+
+- **Normalize `thinking.type` in all conversion paths** (#123, #124): `_normalize_thinking_for_upstream` was only called in the passthrough path. The three force-conversion paths (`_convert_non_streaming`, `_convert_buffered_streaming`, `_convert_streaming`) sent `thinking.type=enabled` to Argo as-is, causing 502 errors on non-streaming requests and silent SSE errors on streaming requests for models that require `thinking.type=adaptive` (e.g. Claude Opus 4.7)
+
+**Full Changelog**: https://github.com/Oaklight/argo-proxy/compare/v3.0.2...v3.0.3<br>
+**PyPI**: https://pypi.org/project/argo-proxy/3.0.3/
+
+---
+
 ## v3.0.2 (2026-05-20)
 
 **Hotfix: Claude Opus 4.7 support.**
