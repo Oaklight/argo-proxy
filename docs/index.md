@@ -41,6 +41,19 @@ argo-proxy serve              # run the proxy in universal mode
 
 The machine or server making API calls to Argo must be connected to the Argonne internal network or through a VPN on an Argonne-managed computer if you are working off-site. Your instance of the argo proxy should always be on-premise at an Argonne machine. The software is provided "as is," without any warranties. By using this software, you accept that the authors, contributors, and affiliated organizations will not be liable for any damages or issues arising from its use. You are solely responsible for ensuring the software meets your requirements.
 
+## Citation
+
+Argo-Proxy uses [LLM-Rosetta](https://github.com/Oaklight/llm-rosetta) for cross-provider API translation. If you use this translation layer in research, please cite:
+
+```bibtex
+@article{ding2026llm,
+  title={LLM-Rosetta: A Hub-and-Spoke Intermediate Representation for Cross-Provider LLM API Translation},
+  author={Ding, Peng},
+  journal={arXiv preprint arXiv:2604.09360},
+  year={2026}
+}
+```
+
 ## Get Involved
 
 - **[GitHub Repository](https://github.com/Oaklight/argo-proxy)** - Source code and issues
