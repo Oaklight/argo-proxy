@@ -287,6 +287,19 @@ All tools use your ANL username as the API key. For detailed setup instructions,
 
 - [Chat](examples/argo/argo_chat.py) | [Stream](examples/argo/argo_chat_stream.py) | [Embed](examples/argo/argo_embed.py)
 
+## Citation
+
+Argo-Proxy uses [LLM-Rosetta](https://github.com/Oaklight/llm-rosetta) for cross-provider API translation. If you use this translation layer in research, please cite:
+
+```bibtex
+@article{ding2026llm,
+  title={LLM-Rosetta: A Hub-and-Spoke Intermediate Representation for Cross-Provider LLM API Translation},
+  author={Ding, Peng},
+  journal={arXiv preprint arXiv:2604.09360},
+  year={2026}
+}
+```
+
 ## Bug Reports and Contributions
 
 This project is developed in my spare time. Bugs and issues may exist. If you encounter any or have suggestions for improvements, please [open an issue](https://github.com/Oaklight/argo-openai-proxy/issues/new) or [submit a pull request](https://github.com/Oaklight/argo-openai-proxy/compare). Your contributions are highly appreciated!
