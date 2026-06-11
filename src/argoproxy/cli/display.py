@@ -199,9 +199,7 @@ def display_startup_banner(no_banner: bool = False):
 
     dev_mode = str_to_bool(os.environ.get("DEV_MODE", "false"))
 
-    if str_to_bool(os.environ.get("USE_LEGACY_ARGO", "false")):
-        log_warning("\u2699\ufe0f  MODE: Legacy ARGO Gateway", context="cli")
-    elif dev_mode:
+    if dev_mode:
         log_warning(
             "\u2699\ufe0f  MODE: Transparent Proxy (no conversion)", context="cli"
         )

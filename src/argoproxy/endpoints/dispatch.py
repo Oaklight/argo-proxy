@@ -27,15 +27,6 @@ from llm_rosetta.converters.base.tools import sanitize_schema
 from llm_rosetta.shims.provider_shim import ProviderShim, get_shim
 from llm_rosetta.shims.providers import load_providers
 from llm_rosetta.shims.transforms import apply_transforms
-from llm_rosetta.converters.anthropic.tool_ops import (
-    fix_orphaned_tool_calls as fix_orphaned_tool_calls_anthropic,
-)
-from llm_rosetta.converters.openai_chat.tool_ops import (
-    fix_orphaned_tool_calls as fix_orphaned_tool_calls_chat,
-)
-from llm_rosetta.converters.openai_responses.tool_ops import (
-    fix_orphaned_tool_calls as fix_orphaned_tool_calls_responses,
-)
 
 from ..config import ArgoConfig
 from ..models import ModelRegistry
@@ -868,9 +859,7 @@ async def _execute_convert(
                 )
 
             upstream_fmt = (
-                "anthropic"
-                if prepared.target_provider == "anthropic"
-                else "openai"
+                "anthropic" if prepared.target_provider == "anthropic" else "openai"
             )
 
             if force_stream:
@@ -949,7 +938,12 @@ async def _convert(
     if isinstance(prepared, web.Response):
         return prepared
     return await _execute_convert(
-        prepared, session, upstream_url, headers, body, config,
+        prepared,
+        session,
+        upstream_url,
+        headers,
+        body,
+        config,
         force_stream=force_stream,
     )
 
