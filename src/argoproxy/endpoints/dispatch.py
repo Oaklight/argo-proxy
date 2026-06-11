@@ -27,15 +27,6 @@ from llm_rosetta.converters.base.tools import sanitize_schema
 from llm_rosetta.shims.provider_shim import ProviderShim, get_shim
 from llm_rosetta.shims.providers import load_providers
 from llm_rosetta.shims.transforms import apply_transforms
-from llm_rosetta.converters.anthropic.tool_ops import (
-    fix_orphaned_tool_calls as fix_orphaned_tool_calls_anthropic,
-)
-from llm_rosetta.converters.openai_chat.tool_ops import (
-    fix_orphaned_tool_calls as fix_orphaned_tool_calls_chat,
-)
-from llm_rosetta.converters.openai_responses.tool_ops import (
-    fix_orphaned_tool_calls as fix_orphaned_tool_calls_responses,
-)
 
 from ..config import ArgoConfig
 from ..models import ModelRegistry
