@@ -75,12 +75,6 @@ def _add_serve_arguments(parser: argparse.ArgumentParser) -> None:
         help="Use API key from request headers as user field",
     )
     parser.add_argument(
-        "--enable-leaked-tool-fix",
-        action="store_true",
-        default=False,
-        help="[Legacy only] Enable AST-based leaked tool call detection and fixing",
-    )
-    parser.add_argument(
         "--anthropic-stream-mode",
         type=str,
         choices=["force", "retry", "passthrough"],
@@ -91,12 +85,6 @@ def _add_serve_arguments(parser: argparse.ArgumentParser) -> None:
             "  retry:       Try non-streaming first, retry with streaming on error\n"
             "  passthrough: Never force streaming, pass through as-is"
         ),
-    )
-    parser.add_argument(
-        "--force-conversion",
-        action="store_true",
-        default=False,
-        help="Always run full format conversion, even for same-provider requests",
     )
     parser.add_argument(
         "--dump-requests",
@@ -120,27 +108,6 @@ def _add_serve_arguments(parser: argparse.ArgumentParser) -> None:
         help=argparse.SUPPRESS,
     )
 
-    # Legacy-only streaming options
-    stream_group = parser.add_mutually_exclusive_group()
-    stream_group.add_argument(
-        "--real-stream",
-        "-rs",
-        action="store_true",
-        default=False,
-        help="[Legacy only] Enable real streaming (default behavior)",
-    )
-    stream_group.add_argument(
-        "--pseudo-stream",
-        "-ps",
-        action="store_true",
-        default=False,
-        help="[Legacy only] Enable pseudo streaming",
-    )
-    parser.add_argument(
-        "--tool-prompting",
-        action="store_true",
-        help="[Legacy only] Enable prompting-based tool calls",
-    )
 
 
 def _add_config_subparsers(parser: argparse.ArgumentParser) -> None:

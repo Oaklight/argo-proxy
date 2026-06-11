@@ -53,16 +53,10 @@ class ArgoConfig:
     config_version: str = ""
 
     # CLI flags
-    _real_stream: bool = True
-    _tool_prompt: bool = False
-    _enable_leaked_tool_fix: bool = False
     _dev_mode: bool = False
 
     # Anthropic non-streaming request handling mode
     _anthropic_stream_mode: str = "force"  # "force", "retry", or "passthrough"
-
-    # Force full conversion even for same-provider requests
-    _force_conversion: bool = False
 
     # Debug request/response dumping
     _dump_requests: bool = False
@@ -134,18 +128,6 @@ class ArgoConfig:
         return f"{self.argo_base_url}/message/"
 
     @property
-    def pseudo_stream(self):
-        if self._real_stream and self._real_stream is True:
-            return False
-        return True
-
-    @property
-    def native_tools(self):
-        if self._tool_prompt and self._tool_prompt is True:
-            return False
-        return True
-
-    @property
     def native_openai_base_url(self) -> str:
         """Get the native OpenAI base URL (without trailing slash).
 
@@ -174,11 +156,6 @@ class ArgoConfig:
         return self.argo_base_url
 
     @property
-    def enable_leaked_tool_fix(self):
-        """Check if leaked tool call fix is enabled."""
-        return self._enable_leaked_tool_fix
-
-    @property
     def dev_mode(self):
         """Check if dev (pure reverse proxy) mode is enabled."""
         return self._dev_mode
@@ -199,16 +176,6 @@ class ArgoConfig:
         if self._anthropic_stream_mode in valid:
             return self._anthropic_stream_mode
         return "force"
-
-    @property
-    def force_conversion(self) -> bool:
-        """Force full format conversion even for same-provider requests.
-
-        When enabled, all requests go through the source -> IR -> target
-        pipeline (via llm-rosetta) instead of being passed through directly.
-        This enables parameter normalization and full IR validation.
-        """
-        return self._force_conversion
 
     @property
     def dump_requests(self) -> bool:
@@ -250,12 +217,10 @@ class ArgoConfig:
             "argo_url": "_argo_url",
             "argo_stream_url": "_argo_stream_url",
             "argo_embedding_url": "_argo_embedding_url",
-            "real_stream": "_real_stream",
             "native_openai_base_url": "_native_openai_base_url",
             "native_anthropic_base_url": "_native_anthropic_base_url",
             "skip_url_validation": "_skip_url_validation",
             "anthropic_stream_mode": "_anthropic_stream_mode",
-            "force_conversion": "_force_conversion",
             "dump_requests": "_dump_requests",
             "dump_dir": "_dump_dir",
         }
@@ -289,8 +254,6 @@ class ArgoConfig:
             serialized["skip_url_validation"] = True
         if self._anthropic_stream_mode != "force":
             serialized["anthropic_stream_mode"] = self._anthropic_stream_mode
-        if self._force_conversion:
-            serialized["force_conversion"] = True
         if self._dump_requests:
             serialized["dump_requests"] = True
         if self._dump_dir:
