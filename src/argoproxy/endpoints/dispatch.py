@@ -1634,85 +1634,13 @@ async def proxy_request(
             if messages and isinstance(messages, list):
                 body["messages"] = reorder_parallel_tool_calls(messages)
 
-        # Same-format passthrough: skip conversion entirely
-        # (unless force_conversion is enabled)
-        if source_provider == target_provider and not config.force_conversion:
-            if config.verbose:
-                log_debug("Same-format passthrough (no conversion)", context="dispatch")
-
-            # Sanitize tool schemas even in passthrough mode — upstreams
-            # like Vertex AI reject unsupported JSON Schema keywords.
-            _sanitize_tool_schemas(body)
-
-            # Downgrade "developer" role to "system" — the Argo upstream
-            # gateway rejects "developer" with a misleading tool_calls error.
-            _downgrade_developer_role(body)
-
-            # Normalize content: null → "" — the Argo upstream gateway
-            # for Gemini models iterates over message content and crashes
-            # with TypeError when content is null.
-            _normalize_null_content(body)
-
-            # Apply shim to_transforms in passthrough mode
-            # (e.g. max_tokens → max_completion_tokens, strip unsupported fields)
-            shim = _resolve_shim(target_provider)
-            if shim and shim.to_transforms:
-                body = apply_transforms(shim.to_transforms, body)
-
-            # Fix orphaned tool_calls/results in passthrough mode — OpenAI
-            # and Anthropic strictly require bidirectional pairing between
-            # tool calls and results (Google is lenient).  For cross-format
-            # conversion this is handled at the IR level by llm-rosetta's
-            # converters.
-            # See: https://llm-rosetta.readthedocs.io/en/latest/guide/converters/#tool-call-result-pairing
-            if target_provider == "openai_chat":
-                messages = body.get("messages")
-                if messages and isinstance(messages, list):
-                    body["messages"] = fix_orphaned_tool_calls_chat(messages)
-            elif target_provider == "openai_responses":
-                input_items = body.get("input")
-                if input_items and isinstance(input_items, list):
-                    body["input"] = fix_orphaned_tool_calls_responses(input_items)
-            elif target_provider == "anthropic":
-                messages = body.get("messages")
-                if messages and isinstance(messages, list):
-                    body["messages"] = fix_orphaned_tool_calls_anthropic(messages)
-
-            if stream:
-                return await _passthrough_streaming(
-                    session,
-                    upstream_url,
-                    headers,
-                    body,
-                    request,
-                    target_provider,
-                    source_provider,
-                    config=config,
-                )
-            # Handle Anthropic non-streaming requests based on configured
-            # mode (force/retry/passthrough) to work around the "Streaming
-            # is required for operations that may take longer than 10
-            # minutes" error from the Anthropic API.
-            if target_provider == "anthropic":
-                mode = config.anthropic_stream_mode
-                if mode == "force":
-                    return await _passthrough_buffered_streaming(
-                        session, upstream_url, headers, body, source_provider
-                    )
-                elif mode == "retry":
-                    return await _passthrough_with_retry(
-                        session, upstream_url, headers, body, source_provider
-                    )
-                # "passthrough": fall through to normal non-streaming
-            return await _passthrough_non_streaming(
-                session, upstream_url, headers, body, source_provider, config=config
-            )
-
-        # Cross-format conversion (or forced same-format conversion)
+        # All requests go through the full converter + shim pipeline.
+        # Same-format (e.g. anthropic → anthropic) still benefits from
+        # shim reasoning config, transforms, and unsigned reasoning policy.
         if config.verbose:
             if source_provider == target_provider:
                 log_debug(
-                    f"Force conversion: {source_provider} -> IR -> {target_provider}",
+                    f"Same-format conversion: {source_provider} -> IR -> {target_provider}",
                     context="dispatch",
                 )
             else:
