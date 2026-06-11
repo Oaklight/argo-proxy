@@ -751,12 +751,23 @@ def _prepare_convert(
     source_provider: ProviderType,
     target_provider: ProviderType,
     config: ArgoConfig,
+    *,
+    dump_prefix: str = "",
 ) -> Union[_PreparedConvert, web.Response]:
     """Source → IR → target + shim transforms.  Returns prepared state or error.
 
     The expensive IR round-trip is done once here.  The result can be passed
     to ``_execute_convert`` one or more times with different ``force_stream``
-    settings.
+    settings, or consumed directly by the streaming path.
+
+    Args:
+        body: Client request body in ``source_provider`` format.
+        source_provider: Format of the incoming request.
+        target_provider: Format of the upstream endpoint.
+        config: Active ArgoConfig.
+        dump_prefix: Optional prefix prepended to the debug dump stage label
+            (e.g. ``"s"`` for the streaming path).  Lets callers keep their
+            existing dump filenames distinguishable.
     """
     source_converter = get_converter_for_provider(source_provider)
     target_converter = get_converter_for_provider(target_provider)
@@ -765,7 +776,7 @@ def _prepare_convert(
     _inject_shim_reasoning(ctx, shim, body.get("model", ""))
 
     # 1. Source → IR
-    _debug_dump("1_request_received", body, config)
+    _debug_dump(f"{dump_prefix}1_request_received", body, config)
     try:
         ir_request = source_converter.request_from_provider(body, context=ctx)
     except Exception as exc:
@@ -868,9 +879,7 @@ async def _execute_convert(
                 )
 
             upstream_fmt = (
-                "anthropic"
-                if prepared.target_provider == "anthropic"
-                else "openai"
+                "anthropic" if prepared.target_provider == "anthropic" else "openai"
             )
 
             if force_stream:
@@ -949,7 +958,12 @@ async def _convert(
     if isinstance(prepared, web.Response):
         return prepared
     return await _execute_convert(
-        prepared, session, upstream_url, headers, body, config,
+        prepared,
+        session,
+        upstream_url,
+        headers,
+        body,
+        config,
         force_stream=force_stream,
     )
 
@@ -1008,48 +1022,25 @@ async def _convert_streaming(
     config: ArgoConfig,
 ) -> web.StreamResponse:
     """Streaming: source → IR → target → upstream SSE → IR events → source SSE."""
-    source_converter = get_converter_for_provider(source_provider)
-    target_converter = get_converter_for_provider(target_provider)
-    shim = _resolve_shim(target_provider)
-    ctx = ConversionContext(options={"metadata_mode": "preserve"})
-    _inject_shim_reasoning(ctx, shim, body.get("model", ""))
+    # Reuse the shared prepare phase (source → IR → target + shim transforms).
+    prepared = _prepare_convert(
+        body, source_provider, target_provider, config, dump_prefix="s"
+    )
+    if isinstance(prepared, web.Response):
+        return prepared
 
-    # 1. Source → IR
-    _debug_dump("s1_request_received", body, config)
-    try:
-        ir_request = source_converter.request_from_provider(body, context=ctx)
-    except Exception as exc:
-        return _error_response(source_provider, 400, f"Failed to parse request: {exc}")
+    source_converter = prepared.source_converter
+    target_converter = prepared.target_converter
+    ctx = prepared.ctx
 
-    # 2. IR → Target
-    try:
-        convert_kwargs: dict[str, str] = {}
-        if target_provider == "google":
-            convert_kwargs["output_format"] = "rest"
-        target_body, warnings = target_converter.request_to_provider(
-            ir_request, context=ctx, **convert_kwargs
-        )
-    except Exception as exc:
-        return _error_response(source_provider, 400, f"Conversion error: {exc}")
-
-    if warnings:
-        log_info(f"Conversion warnings: {warnings}", context="dispatch")
-
-    # Apply shim to_transforms
-    if shim and shim.to_transforms:
-        target_body = apply_transforms(shim.to_transforms, target_body)
-
-    # 3. Inject stream flags
-    target_body = _inject_stream_flags(target_body, target_provider)
+    # Streaming-specific: flip on stream flags.  _inject_stream_flags returns
+    # a fresh dict, so prepared.target_body stays untouched.
+    target_body = _inject_stream_flags(prepared.target_body, target_provider)
     _debug_dump("s2_request_converted", target_body, config)
     if config.verbose:
         log_converted_request(
             target_body, verbose=True, max_history_items=config.max_log_history
         )
-
-    _ensure_user_field(target_body, config.user)
-    _downgrade_developer_role(target_body)
-    _normalize_null_content(target_body)
 
     format_sse = _SSE_FORMATTERS[source_provider]
 
