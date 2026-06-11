@@ -712,41 +712,51 @@ def _debug_dump(stage: str, data: Any, config: ArgoConfig) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def _convert(
-    session: aiohttp.ClientSession,
-    upstream_url: str,
-    headers: dict[str, str],
+class _PreparedConvert:
+    """Holds the results of the prepare phase so execute can be called
+    multiple times (e.g. retry with force_stream) without re-doing the
+    IR round-trip."""
+
+    __slots__ = (
+        "source_converter",
+        "target_converter",
+        "shim",
+        "ctx",
+        "target_body",
+        "source_provider",
+        "target_provider",
+    )
+
+    def __init__(
+        self,
+        source_converter: Any,
+        target_converter: Any,
+        shim: ProviderShim | None,
+        ctx: ConversionContext,
+        target_body: dict[str, Any],
+        source_provider: ProviderType,
+        target_provider: ProviderType,
+    ):
+        self.source_converter = source_converter
+        self.target_converter = target_converter
+        self.shim = shim
+        self.ctx = ctx
+        self.target_body = target_body
+        self.source_provider = source_provider
+        self.target_provider = target_provider
+
+
+def _prepare_convert(
     body: dict[str, Any],
     source_provider: ProviderType,
     target_provider: ProviderType,
     config: ArgoConfig,
-    *,
-    force_stream: bool = False,
-) -> web.Response:
-    """Unified non-streaming convert path: source → IR → target → upstream → IR → source.
+) -> Union[_PreparedConvert, web.Response]:
+    """Source → IR → target + shim transforms.  Returns prepared state or error.
 
-    When ``force_stream`` is True, the upstream leg is sent with ``stream: true``
-    plus SSE-friendly headers, and the SSE event stream is aggregated back into
-    a single Anthropic Messages JSON response before continuing the IR
-    round-trip. This is used to work around Anthropic's "long requests require
-    streaming" bounce-back (see https://docs.anthropic.com/...).
-
-    The client always receives a single non-streaming JSON response either way.
-
-    Args:
-        session: Shared aiohttp client session.
-        upstream_url: Fully-qualified upstream endpoint.
-        headers: Pre-built upstream headers (will be copied if mutated).
-        body: Client request body in ``source_provider`` format.
-        source_provider: Format of the incoming request.
-        target_provider: Format of the upstream endpoint.
-        config: Active ArgoConfig.
-        force_stream: Whether to force the upstream leg to use SSE and
-            aggregate locally. Only meaningful when ``target_provider`` is
-            ``"anthropic"`` (the aggregator only knows Anthropic events).
-
-    Returns:
-        A non-streaming ``web.Response`` in ``source_provider`` format.
+    The expensive IR round-trip is done once here.  The result can be passed
+    to ``_execute_convert`` one or more times with different ``force_stream``
+    settings.
     """
     source_converter = get_converter_for_provider(source_provider)
     target_converter = get_converter_for_provider(target_provider)
@@ -786,11 +796,36 @@ async def _convert(
     _downgrade_developer_role(target_body)
     _normalize_null_content(target_body)
 
-    # 3. Optionally upgrade the upstream leg to streaming so we can survive
-    #    Anthropic's non-streaming timeout. The client-facing response is
-    #    still non-streaming — we aggregate the SSE locally.
+    return _PreparedConvert(
+        source_converter=source_converter,
+        target_converter=target_converter,
+        shim=shim,
+        ctx=ctx,
+        target_body=target_body,
+        source_provider=source_provider,
+        target_provider=target_provider,
+    )
+
+
+async def _execute_convert(
+    prepared: _PreparedConvert,
+    session: aiohttp.ClientSession,
+    upstream_url: str,
+    headers: dict[str, str],
+    body: dict[str, Any],
+    config: ArgoConfig,
+    *,
+    force_stream: bool = False,
+) -> web.Response:
+    """Forward prepared request to upstream and convert the response back.
+
+    When ``force_stream`` is True the upstream leg uses SSE and the event
+    stream is aggregated into a single JSON dict before conversion.
+    """
+    target_body = dict(prepared.target_body)  # shallow copy for mutation
+
     if force_stream:
-        target_body = _inject_stream_flags(target_body, target_provider)
+        target_body = _inject_stream_flags(target_body, prepared.target_provider)
         headers = dict(headers)
         headers["Accept"] = "text/event-stream"
         headers["Accept-Encoding"] = "identity"
@@ -806,18 +841,16 @@ async def _convert(
             target_body, verbose=True, max_history_items=config.max_log_history
         )
 
-    # 4. Forward to upstream
     try:
         async with session.post(
             upstream_url, headers=headers, json=target_body
         ) as upstream_resp:
-            # 5. Handle HTTP errors
             if upstream_resp.status >= 400:
                 error_text = await upstream_resp.text()
                 log_upstream_error(
                     upstream_resp.status,
                     error_text,
-                    endpoint=str(target_provider),
+                    endpoint=str(prepared.target_provider),
                     is_streaming=force_stream,
                 )
                 _dump_error_request(
@@ -825,8 +858,8 @@ async def _convert(
                     upstream_resp.status,
                     error_text,
                     upstream_url,
-                    source_provider=source_provider,
-                    target_provider=target_provider,
+                    source_provider=prepared.source_provider,
+                    target_provider=prepared.target_provider,
                 )
                 return web.Response(
                     text=error_text,
@@ -834,56 +867,59 @@ async def _convert(
                     content_type="application/json",
                 )
 
-            # 6. Decode upstream payload into a single JSON dict.
-            upstream_fmt = "anthropic" if target_provider == "anthropic" else "openai"
+            upstream_fmt = (
+                "anthropic"
+                if prepared.target_provider == "anthropic"
+                else "openai"
+            )
 
             if force_stream:
                 upstream_json = await _aggregate_anthropic_sse(upstream_resp)
                 if upstream_json is None:
                     log_error(ARGO_AUTH_ERROR_MESSAGE, context="dispatch")
                     return _error_response(
-                        source_provider, 403, ARGO_AUTH_ERROR_MESSAGE
+                        prepared.source_provider, 403, ARGO_AUTH_ERROR_MESSAGE
                     )
             else:
                 try:
                     upstream_json = await upstream_resp.json()
                 except (aiohttp.ContentTypeError, json.JSONDecodeError):
                     return _error_response(
-                        source_provider, 502, "Upstream returned non-JSON response"
+                        prepared.source_provider,
+                        502,
+                        "Upstream returned non-JSON response",
                     )
                 if check_response_for_argo_warning(upstream_json, upstream_fmt):
                     log_error(ARGO_AUTH_ERROR_MESSAGE, context="dispatch")
                     return _error_response(
-                        source_provider, 403, ARGO_AUTH_ERROR_MESSAGE
+                        prepared.source_provider, 403, ARGO_AUTH_ERROR_MESSAGE
                     )
 
             _debug_dump("3_response_received", upstream_json, config)
 
-            # 7. Apply shim from_transforms on raw response before conversion
-            #    (e.g. Argo Anthropic _normalize_openai_response)
-            if shim and shim.from_transforms:
-                upstream_json = apply_transforms(shim.from_transforms, upstream_json)
+            if prepared.shim and prepared.shim.from_transforms:
+                upstream_json = apply_transforms(
+                    prepared.shim.from_transforms, upstream_json
+                )
 
-            # 8. Target response → IR
             try:
-                ir_response = target_converter.response_from_provider(
-                    upstream_json, context=ctx
+                ir_response = prepared.target_converter.response_from_provider(
+                    upstream_json, context=prepared.ctx
                 )
             except Exception as exc:
                 return _error_response(
-                    source_provider,
+                    prepared.source_provider,
                     502,
                     f"Failed to parse upstream response: {exc}",
                 )
 
-            # 9. IR → Source response
             try:
-                source_response = source_converter.response_to_provider(
-                    ir_response, context=ctx
+                source_response = prepared.source_converter.response_to_provider(
+                    ir_response, context=prepared.ctx
                 )
             except Exception as exc:
                 return _error_response(
-                    source_provider,
+                    prepared.source_provider,
                     500,
                     f"Failed to convert response: {exc}",
                 )
@@ -892,7 +928,30 @@ async def _convert(
             return web.json_response(source_response)
 
     except aiohttp.ClientError as exc:
-        return _error_response(source_provider, 502, f"Upstream request failed: {exc}")
+        return _error_response(
+            prepared.source_provider, 502, f"Upstream request failed: {exc}"
+        )
+
+
+async def _convert(
+    session: aiohttp.ClientSession,
+    upstream_url: str,
+    headers: dict[str, str],
+    body: dict[str, Any],
+    source_provider: ProviderType,
+    target_provider: ProviderType,
+    config: ArgoConfig,
+    *,
+    force_stream: bool = False,
+) -> web.Response:
+    """Convenience wrapper: prepare + execute in one call."""
+    prepared = _prepare_convert(body, source_provider, target_provider, config)
+    if isinstance(prepared, web.Response):
+        return prepared
+    return await _execute_convert(
+        prepared, session, upstream_url, headers, body, config,
+        force_stream=force_stream,
+    )
 
 
 async def _convert_with_retry(
@@ -904,22 +963,16 @@ async def _convert_with_retry(
     target_provider: ProviderType,
     config: ArgoConfig,
 ) -> web.Response:
-    """Try non-streaming convert, fall back to forced-stream on bounce-back.
+    """Try non-streaming, fall back to forced-stream on Anthropic bounce-back.
 
-    Used in ``anthropic_stream_mode = "retry"``: send non-streaming first;
-    if the upstream replies with the Anthropic "streaming is required" 500
-    error, dump the request for diagnostics and retry with
-    ``force_stream=True``.
+    Prepares the IR conversion once, then executes twice if needed.
     """
-    result = await _convert(
-        session,
-        upstream_url,
-        headers,
-        body,
-        source_provider,
-        target_provider,
-        config,
-        force_stream=False,
+    prepared = _prepare_convert(body, source_provider, target_provider, config)
+    if isinstance(prepared, web.Response):
+        return prepared
+
+    result = await _execute_convert(
+        prepared, session, upstream_url, headers, body, config, force_stream=False
     )
 
     if result.status != 500 or not result.body:
@@ -939,15 +992,8 @@ async def _convert_with_retry(
         context="dispatch",
     )
     _dump_stream_retry_request(body, 500, body_text, upstream_url)
-    return await _convert(
-        session,
-        upstream_url,
-        headers,
-        body,
-        source_provider,
-        target_provider,
-        config,
-        force_stream=True,
+    return await _execute_convert(
+        prepared, session, upstream_url, headers, body, config, force_stream=True
     )
 
 
