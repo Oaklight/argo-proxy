@@ -24,6 +24,9 @@ from llm_rosetta import get_converter_for_provider
 from llm_rosetta.auto_detect import ProviderType
 from llm_rosetta.converters.base.context import ConversionContext, StreamContext
 from llm_rosetta.converters.base.tools import sanitize_schema
+from llm_rosetta.shims.provider_shim import ProviderShim, get_shim
+from llm_rosetta.shims.providers import load_providers
+from llm_rosetta.shims.transforms import apply_transforms
 from llm_rosetta.converters.anthropic.tool_ops import (
     fix_orphaned_tool_calls as fix_orphaned_tool_calls_anthropic,
 )
@@ -99,6 +102,40 @@ def _parse_sse_line(line: str) -> tuple[str, str] | None:
 
 def _is_openai_done(data: str) -> bool:
     return data.strip() == "[DONE]"
+
+
+# ---------------------------------------------------------------------------
+# Shim integration
+# ---------------------------------------------------------------------------
+
+# Load llm-rosetta provider shims on module import
+load_providers()
+
+# Map argo-proxy target_provider to llm-rosetta shim name
+_SHIM_NAME_MAP: dict[str, str] = {
+    "anthropic": "argo--anthropic",
+    "openai_chat": "argo--openai_chat",
+}
+
+
+def _resolve_shim(target_provider: ProviderType) -> ProviderShim | None:
+    """Look up the llm-rosetta shim for the given target provider."""
+    name = _SHIM_NAME_MAP.get(target_provider)
+    return get_shim(name) if name else None
+
+
+def _inject_shim_reasoning(
+    ctx: ConversionContext,
+    shim: ProviderShim | None,
+    model: str,
+) -> None:
+    """Inject the shim's reasoning capability config into the conversion context."""
+    if shim is None or shim.reasoning is None:
+        return
+    cap = shim.reasoning
+    if shim.model_reasoning and model in shim.model_reasoning:
+        cap = shim.model_reasoning[model]
+    ctx.options["reasoning_cap"] = cap
 
 
 # ---------------------------------------------------------------------------
@@ -337,19 +374,6 @@ def _sanitize_tool_schemas(body: dict[str, Any]) -> dict[str, Any]:
     return body
 
 
-def _upgrade_max_tokens(body: dict[str, Any]) -> None:
-    """Convert deprecated ``max_tokens`` to ``max_completion_tokens`` for OpenAI Chat.
-
-    OpenAI deprecated ``max_tokens`` in favor of ``max_completion_tokens`` for
-    newer models (GPT-4o, o1, etc.).  Convert proactively to avoid upstream
-    rejections.
-
-    Args:
-        body: The request body (modified in-place).
-    """
-    if "max_tokens" in body and "max_completion_tokens" not in body:
-        body["max_completion_tokens"] = body.pop("max_tokens")
-
 
 def _strip_temperature_for_reasoning_models(
     body: dict[str, Any], resolved_model: str
@@ -377,24 +401,6 @@ def _strip_temperature_for_reasoning_models(
             context="dispatch",
         )
 
-
-def _normalize_thinking_for_upstream(body: dict[str, Any]) -> None:
-    """Normalize ``thinking`` parameter for upstream compatibility.
-
-    Converts ``thinking.type`` from ``"enabled"`` to ``"adaptive"`` because
-    the ARGO upstream gateway now requires ``"adaptive"`` and no longer
-    accepts ``"enabled"``.
-
-    Args:
-        body: The request body (modified in-place).
-    """
-    thinking = body.get("thinking")
-    if not isinstance(thinking, dict):
-        return
-    if thinking.get("type") != "enabled":
-        return
-    thinking["type"] = "adaptive"
-    thinking.pop("budget_tokens", None)
 
 
 def _extract_client_credential(
@@ -996,7 +1002,9 @@ async def _convert_non_streaming(
     """Non-streaming: source → IR → target → upstream → IR → source."""
     source_converter = get_converter_for_provider(source_provider)
     target_converter = get_converter_for_provider(target_provider)
+    shim = _resolve_shim(target_provider)
     ctx = ConversionContext(options={"metadata_mode": "preserve"})
+    _inject_shim_reasoning(ctx, shim, body.get("model", ""))
 
     # 1. Source → IR
     _debug_dump("1_request_received", body, config)
@@ -1022,10 +1030,13 @@ async def _convert_non_streaming(
     if warnings:
         log_info(f"Conversion warnings: {warnings}", context="dispatch")
 
+    # Apply shim to_transforms (e.g. strip unsupported fields, rename fields)
+    if shim and shim.to_transforms:
+        target_body = apply_transforms(shim.to_transforms, target_body)
+
     _ensure_user_field(target_body, config.user)
     _downgrade_developer_role(target_body)
     _normalize_null_content(target_body)
-    _normalize_thinking_for_upstream(target_body)
     _debug_dump("2_request_converted", target_body, config)
 
     # Log the converted body
@@ -1076,6 +1087,11 @@ async def _convert_non_streaming(
                 log_error(ARGO_AUTH_ERROR_MESSAGE, context="dispatch")
                 return _error_response(source_provider, 403, ARGO_AUTH_ERROR_MESSAGE)
 
+            # Apply shim from_transforms on raw response before conversion
+            # (e.g. Argo Anthropic _normalize_openai_response)
+            if shim and shim.from_transforms:
+                upstream_json = apply_transforms(shim.from_transforms, upstream_json)
+
             try:
                 ir_response = target_converter.response_from_provider(
                     upstream_json, context=ctx
@@ -1125,7 +1141,9 @@ async def _convert_buffered_streaming(
     """
     source_converter = get_converter_for_provider(source_provider)
     target_converter = get_converter_for_provider(target_provider)
+    shim = _resolve_shim(target_provider)
     ctx = ConversionContext(options={"metadata_mode": "preserve"})
+    _inject_shim_reasoning(ctx, shim, body.get("model", ""))
 
     # 1. Source → IR
     try:
@@ -1144,10 +1162,12 @@ async def _convert_buffered_streaming(
     if warnings:
         log_info(f"Conversion warnings: {warnings}", context="dispatch")
 
+    if shim and shim.to_transforms:
+        target_body = apply_transforms(shim.to_transforms, target_body)
+
     _ensure_user_field(target_body, config.user)
     _downgrade_developer_role(target_body)
     _normalize_null_content(target_body)
-    _normalize_thinking_for_upstream(target_body)
 
     # 3. Inject stream flags and update headers for streaming
     target_body = _inject_stream_flags(target_body, target_provider)
@@ -1196,6 +1216,10 @@ async def _convert_buffered_streaming(
             if upstream_json is None:
                 log_error(ARGO_AUTH_ERROR_MESSAGE, context="dispatch")
                 return _error_response(source_provider, 403, ARGO_AUTH_ERROR_MESSAGE)
+
+            # Apply shim from_transforms on aggregated response
+            if shim and shim.from_transforms:
+                upstream_json = apply_transforms(shim.from_transforms, upstream_json)
 
             # 5. Target response → IR
             try:
@@ -1285,7 +1309,9 @@ async def _convert_streaming(
     """Streaming: source → IR → target → upstream SSE → IR events → source SSE."""
     source_converter = get_converter_for_provider(source_provider)
     target_converter = get_converter_for_provider(target_provider)
+    shim = _resolve_shim(target_provider)
     ctx = ConversionContext(options={"metadata_mode": "preserve"})
+    _inject_shim_reasoning(ctx, shim, body.get("model", ""))
 
     # 1. Source → IR
     _debug_dump("s1_request_received", body, config)
@@ -1308,6 +1334,10 @@ async def _convert_streaming(
     if warnings:
         log_info(f"Conversion warnings: {warnings}", context="dispatch")
 
+    # Apply shim to_transforms
+    if shim and shim.to_transforms:
+        target_body = apply_transforms(shim.to_transforms, target_body)
+
     # 3. Inject stream flags
     target_body = _inject_stream_flags(target_body, target_provider)
     _debug_dump("s2_request_converted", target_body, config)
@@ -1319,7 +1349,6 @@ async def _convert_streaming(
     _ensure_user_field(target_body, config.user)
     _downgrade_developer_role(target_body)
     _normalize_null_content(target_body)
-    _normalize_thinking_for_upstream(target_body)
 
     format_sse = _SSE_FORMATTERS[source_provider]
 
@@ -1624,15 +1653,11 @@ async def proxy_request(
             # with TypeError when content is null.
             _normalize_null_content(body)
 
-            # Provider-specific passthrough compatibility fixes
-            if target_provider == "openai_chat":
-                # Upgrade deprecated max_tokens to max_completion_tokens —
-                # newer OpenAI models (GPT-4o, o1, etc.) reject max_tokens.
-                _upgrade_max_tokens(body)
-            elif target_provider == "anthropic":
-                # Normalize thinking.type "enabled" to "adaptive" — the ARGO
-                # upstream gateway now requires "adaptive".
-                _normalize_thinking_for_upstream(body)
+            # Apply shim to_transforms in passthrough mode
+            # (e.g. max_tokens → max_completion_tokens, strip unsupported fields)
+            shim = _resolve_shim(target_provider)
+            if shim and shim.to_transforms:
+                body = apply_transforms(shim.to_transforms, body)
 
             # Fix orphaned tool_calls/results in passthrough mode — OpenAI
             # and Anthropic strictly require bidirectional pairing between
