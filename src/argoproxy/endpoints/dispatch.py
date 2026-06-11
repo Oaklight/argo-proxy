@@ -374,7 +374,6 @@ def _sanitize_tool_schemas(body: dict[str, Any]) -> dict[str, Any]:
     return body
 
 
-
 def _strip_temperature_for_reasoning_models(
     body: dict[str, Any], resolved_model: str
 ) -> None:
@@ -400,7 +399,6 @@ def _strip_temperature_for_reasoning_models(
             f"Stripped temperature={removed} (unsupported by {resolved_model})",
             context="dispatch",
         )
-
 
 
 def _extract_client_credential(
@@ -681,7 +679,6 @@ async def _aggregate_anthropic_sse(
     return message
 
 
-
 # ---------------------------------------------------------------------------
 # Debug dump helper
 # ---------------------------------------------------------------------------
@@ -715,7 +712,7 @@ def _debug_dump(stage: str, data: Any, config: ArgoConfig) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def _convert_non_streaming(
+async def _convert(
     session: aiohttp.ClientSession,
     upstream_url: str,
     headers: dict[str, str],
@@ -723,8 +720,34 @@ async def _convert_non_streaming(
     source_provider: ProviderType,
     target_provider: ProviderType,
     config: ArgoConfig,
+    *,
+    force_stream: bool = False,
 ) -> web.Response:
-    """Non-streaming: source → IR → target → upstream → IR → source."""
+    """Unified non-streaming convert path: source → IR → target → upstream → IR → source.
+
+    When ``force_stream`` is True, the upstream leg is sent with ``stream: true``
+    plus SSE-friendly headers, and the SSE event stream is aggregated back into
+    a single Anthropic Messages JSON response before continuing the IR
+    round-trip. This is used to work around Anthropic's "long requests require
+    streaming" bounce-back (see https://docs.anthropic.com/...).
+
+    The client always receives a single non-streaming JSON response either way.
+
+    Args:
+        session: Shared aiohttp client session.
+        upstream_url: Fully-qualified upstream endpoint.
+        headers: Pre-built upstream headers (will be copied if mutated).
+        body: Client request body in ``source_provider`` format.
+        source_provider: Format of the incoming request.
+        target_provider: Format of the upstream endpoint.
+        config: Active ArgoConfig.
+        force_stream: Whether to force the upstream leg to use SSE and
+            aggregate locally. Only meaningful when ``target_provider`` is
+            ``"anthropic"`` (the aggregator only knows Anthropic events).
+
+    Returns:
+        A non-streaming ``web.Response`` in ``source_provider`` format.
+    """
     source_converter = get_converter_for_provider(source_provider)
     target_converter = get_converter_for_provider(target_provider)
     shim = _resolve_shim(target_provider)
@@ -762,26 +785,40 @@ async def _convert_non_streaming(
     _ensure_user_field(target_body, config.user)
     _downgrade_developer_role(target_body)
     _normalize_null_content(target_body)
+
+    # 3. Optionally upgrade the upstream leg to streaming so we can survive
+    #    Anthropic's non-streaming timeout. The client-facing response is
+    #    still non-streaming — we aggregate the SSE locally.
+    if force_stream:
+        target_body = _inject_stream_flags(target_body, target_provider)
+        headers = dict(headers)
+        headers["Accept"] = "text/event-stream"
+        headers["Accept-Encoding"] = "identity"
+        log_info(
+            "Forcing streaming on upstream leg (client requested non-streaming)",
+            context="dispatch",
+        )
+
     _debug_dump("2_request_converted", target_body, config)
 
-    # Log the converted body
     if config.verbose:
         log_converted_request(
             target_body, verbose=True, max_history_items=config.max_log_history
         )
 
-    # 3. Forward to upstream
+    # 4. Forward to upstream
     try:
         async with session.post(
             upstream_url, headers=headers, json=target_body
         ) as upstream_resp:
-            # 4. Handle errors
+            # 5. Handle HTTP errors
             if upstream_resp.status >= 400:
                 error_text = await upstream_resp.text()
                 log_upstream_error(
                     upstream_resp.status,
                     error_text,
                     endpoint=str(target_provider),
+                    is_streaming=force_stream,
                 )
                 _dump_error_request(
                     body,
@@ -797,26 +834,37 @@ async def _convert_non_streaming(
                     content_type="application/json",
                 )
 
-            # 5. Target response → IR
-            try:
-                upstream_json = await upstream_resp.json()
-            except (aiohttp.ContentTypeError, json.JSONDecodeError):
-                return _error_response(
-                    source_provider, 502, "Upstream returned non-JSON response"
-                )
+            # 6. Decode upstream payload into a single JSON dict.
+            upstream_fmt = "anthropic" if target_provider == "anthropic" else "openai"
+
+            if force_stream:
+                upstream_json = await _aggregate_anthropic_sse(upstream_resp)
+                if upstream_json is None:
+                    log_error(ARGO_AUTH_ERROR_MESSAGE, context="dispatch")
+                    return _error_response(
+                        source_provider, 403, ARGO_AUTH_ERROR_MESSAGE
+                    )
+            else:
+                try:
+                    upstream_json = await upstream_resp.json()
+                except (aiohttp.ContentTypeError, json.JSONDecodeError):
+                    return _error_response(
+                        source_provider, 502, "Upstream returned non-JSON response"
+                    )
+                if check_response_for_argo_warning(upstream_json, upstream_fmt):
+                    log_error(ARGO_AUTH_ERROR_MESSAGE, context="dispatch")
+                    return _error_response(
+                        source_provider, 403, ARGO_AUTH_ERROR_MESSAGE
+                    )
+
             _debug_dump("3_response_received", upstream_json, config)
 
-            # Check for ARGO auth warning before conversion
-            upstream_fmt = "anthropic" if target_provider == "anthropic" else "openai"
-            if check_response_for_argo_warning(upstream_json, upstream_fmt):
-                log_error(ARGO_AUTH_ERROR_MESSAGE, context="dispatch")
-                return _error_response(source_provider, 403, ARGO_AUTH_ERROR_MESSAGE)
-
-            # Apply shim from_transforms on raw response before conversion
-            # (e.g. Argo Anthropic _normalize_openai_response)
+            # 7. Apply shim from_transforms on raw response before conversion
+            #    (e.g. Argo Anthropic _normalize_openai_response)
             if shim and shim.from_transforms:
                 upstream_json = apply_transforms(shim.from_transforms, upstream_json)
 
+            # 8. Target response → IR
             try:
                 ir_response = target_converter.response_from_provider(
                     upstream_json, context=ctx
@@ -828,7 +876,7 @@ async def _convert_non_streaming(
                     f"Failed to parse upstream response: {exc}",
                 )
 
-            # 6. IR → Source response
+            # 9. IR → Source response
             try:
                 source_response = source_converter.response_to_provider(
                     ir_response, context=ctx
@@ -847,135 +895,6 @@ async def _convert_non_streaming(
         return _error_response(source_provider, 502, f"Upstream request failed: {exc}")
 
 
-async def _convert_buffered_streaming(
-    session: aiohttp.ClientSession,
-    upstream_url: str,
-    headers: dict[str, str],
-    body: dict[str, Any],
-    source_provider: ProviderType,
-    target_provider: ProviderType,
-    config: ArgoConfig,
-) -> web.Response:
-    """Force streaming upstream, aggregate, then convert response format.
-
-    Used when target is Anthropic, the client requested non-streaming, and
-    source format differs from target.  Performs the full IR round-trip
-    (source → IR → target request, then target response → IR → source
-    response) but forces streaming on the upstream leg to avoid Anthropic's
-    10-minute non-streaming timeout.
-    """
-    source_converter = get_converter_for_provider(source_provider)
-    target_converter = get_converter_for_provider(target_provider)
-    shim = _resolve_shim(target_provider)
-    ctx = ConversionContext(options={"metadata_mode": "preserve"})
-    _inject_shim_reasoning(ctx, shim, body.get("model", ""))
-
-    # 1. Source → IR
-    try:
-        ir_request = source_converter.request_from_provider(body, context=ctx)
-    except Exception as exc:
-        return _error_response(source_provider, 400, f"Failed to parse request: {exc}")
-
-    # 2. IR → Target (Anthropic)
-    try:
-        target_body, warnings = target_converter.request_to_provider(
-            ir_request, context=ctx
-        )
-    except Exception as exc:
-        return _error_response(source_provider, 400, f"Conversion error: {exc}")
-
-    if warnings:
-        log_info(f"Conversion warnings: {warnings}", context="dispatch")
-
-    if shim and shim.to_transforms:
-        target_body = apply_transforms(shim.to_transforms, target_body)
-
-    _ensure_user_field(target_body, config.user)
-    _downgrade_developer_role(target_body)
-    _normalize_null_content(target_body)
-
-    # 3. Inject stream flags and update headers for streaming
-    target_body = _inject_stream_flags(target_body, target_provider)
-    if config.verbose:
-        log_converted_request(
-            target_body, verbose=True, max_history_items=config.max_log_history
-        )
-
-    headers = dict(headers)
-    headers["Accept"] = "text/event-stream"
-    headers["Accept-Encoding"] = "identity"
-
-    log_info(
-        "Forcing streaming for Anthropic non-streaming request (cross-format)",
-        context="dispatch",
-    )
-
-    try:
-        async with session.post(
-            upstream_url, headers=headers, json=target_body
-        ) as upstream_resp:
-            if upstream_resp.status >= 400:
-                error_text = await upstream_resp.text()
-                log_upstream_error(
-                    upstream_resp.status,
-                    error_text,
-                    endpoint=str(target_provider),
-                )
-                _dump_error_request(
-                    body,
-                    upstream_resp.status,
-                    error_text,
-                    upstream_url,
-                    source_provider=source_provider,
-                    target_provider=target_provider,
-                )
-                return web.Response(
-                    text=error_text,
-                    status=upstream_resp.status,
-                    content_type="application/json",
-                )
-
-            # 4. Aggregate Anthropic SSE into complete response
-            upstream_json = await _aggregate_anthropic_sse(upstream_resp)
-
-            if upstream_json is None:
-                log_error(ARGO_AUTH_ERROR_MESSAGE, context="dispatch")
-                return _error_response(source_provider, 403, ARGO_AUTH_ERROR_MESSAGE)
-
-            # Apply shim from_transforms on aggregated response
-            if shim and shim.from_transforms:
-                upstream_json = apply_transforms(shim.from_transforms, upstream_json)
-
-            # 5. Target response → IR
-            try:
-                ir_response = target_converter.response_from_provider(
-                    upstream_json, context=ctx
-                )
-            except Exception as exc:
-                return _error_response(
-                    source_provider,
-                    502,
-                    f"Failed to parse upstream response: {exc}",
-                )
-
-            # 6. IR → Source response
-            try:
-                source_response = source_converter.response_to_provider(
-                    ir_response, context=ctx
-                )
-            except Exception as exc:
-                return _error_response(
-                    source_provider,
-                    500,
-                    f"Failed to convert response: {exc}",
-                )
-
-            return web.json_response(source_response)
-
-    except aiohttp.ClientError as exc:
-        return _error_response(source_provider, 502, f"Upstream request failed: {exc}")
-
-
 async def _convert_with_retry(
     session: aiohttp.ClientSession,
     upstream_url: str,
@@ -985,40 +904,51 @@ async def _convert_with_retry(
     target_provider: ProviderType,
     config: ArgoConfig,
 ) -> web.Response:
-    """Try non-streaming cross-format conversion, retry with buffered streaming.
+    """Try non-streaming convert, fall back to forced-stream on bounce-back.
 
-    Used in ``retry`` mode for cross-format requests targeting Anthropic.
-    Calls ``_convert_non_streaming`` first; if the upstream returns the
-    "streaming is required" bounce-back, dumps the request and retries
-    via ``_convert_buffered_streaming``.
+    Used in ``anthropic_stream_mode = "retry"``: send non-streaming first;
+    if the upstream replies with the Anthropic "streaming is required" 500
+    error, dump the request for diagnostics and retry with
+    ``force_stream=True``.
     """
-    result = await _convert_non_streaming(
-        session, upstream_url, headers, body, source_provider, target_provider, config
+    result = await _convert(
+        session,
+        upstream_url,
+        headers,
+        body,
+        source_provider,
+        target_provider,
+        config,
+        force_stream=False,
     )
 
-    if result.status == 500 and result.body:
-        try:
-            body_text = result.body.decode("utf-8")
-            if _is_anthropic_stream_required_error(500, body_text):
-                log_info(
-                    "Anthropic returned 'streaming required' error, "
-                    "retrying with forced streaming (retry mode, cross-format)",
-                    context="dispatch",
-                )
-                _dump_stream_retry_request(body, 500, body_text, upstream_url)
-                return await _convert_buffered_streaming(
-                    session,
-                    upstream_url,
-                    headers,
-                    body,
-                    source_provider,
-                    target_provider,
-                    config,
-                )
-        except (UnicodeDecodeError, AttributeError):
-            pass
+    if result.status != 500 or not result.body:
+        return result
 
-    return result
+    try:
+        body_text = result.body.decode("utf-8")
+    except (UnicodeDecodeError, AttributeError):
+        return result
+
+    if not _is_anthropic_stream_required_error(500, body_text):
+        return result
+
+    log_info(
+        "Anthropic returned 'streaming required' error, "
+        "retrying with forced streaming (retry mode)",
+        context="dispatch",
+    )
+    _dump_stream_retry_request(body, 500, body_text, upstream_url)
+    return await _convert(
+        session,
+        upstream_url,
+        headers,
+        body,
+        source_provider,
+        target_provider,
+        config,
+        force_stream=True,
+    )
 
 
 async def _convert_streaming(
@@ -1386,11 +1316,13 @@ async def proxy_request(
                 config,
             )
 
-        # Handle Anthropic non-streaming requests (cross-format)
+        # Handle Anthropic non-streaming requests: pick a strategy that
+        # accounts for Anthropic's "long requests require streaming" bounce.
         if target_provider == "anthropic":
             mode = config.anthropic_stream_mode
             if mode == "force":
-                return await _convert_buffered_streaming(
+                # Always upgrade the upstream leg to streaming and aggregate.
+                return await _convert(
                     session,
                     upstream_url,
                     headers,
@@ -1398,8 +1330,10 @@ async def proxy_request(
                     source_provider,
                     target_provider,
                     config,
+                    force_stream=True,
                 )
-            elif mode == "retry":
+            if mode == "retry":
+                # Try non-streaming first, only force-stream on bounce-back.
                 return await _convert_with_retry(
                     session,
                     upstream_url,
@@ -1409,9 +1343,9 @@ async def proxy_request(
                     target_provider,
                     config,
                 )
-            # "passthrough": fall through to normal non-streaming
+            # "passthrough": fall through to the plain non-streaming path.
 
-        return await _convert_non_streaming(
+        return await _convert(
             session,
             upstream_url,
             headers,
@@ -1419,6 +1353,7 @@ async def proxy_request(
             source_provider,
             target_provider,
             config,
+            force_stream=False,
         )
     except (
         ConnectionResetError,
