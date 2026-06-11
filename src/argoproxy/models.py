@@ -560,12 +560,7 @@ class ModelRegistry:
         if not self._config:
             raise ValueError("Failed to load valid configuration")
 
-        # Choose model list URL based on mode
-        if self._config.use_legacy_argo:
-            model_url = self._config.argo_model_url
-        else:
-            # v3 universal mode: use the native OpenAI models endpoint
-            model_url = f"{self._config.native_openai_base_url}/models"
+        model_url = f"{self._config.native_openai_base_url}/models"
 
         # Initial model list fetch
         log_debug(

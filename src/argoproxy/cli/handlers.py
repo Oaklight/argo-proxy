@@ -41,8 +41,6 @@ def set_config_envs(args: argparse.Namespace):
         os.environ["TOOL_PROMPT"] = str(True)
     if args.username_passthrough:
         os.environ["USERNAME_PASSTHROUGH"] = str(True)
-    if args.legacy_argo:
-        os.environ["USE_LEGACY_ARGO"] = str(True)
     if args.enable_leaked_tool_fix:
         os.environ["ENABLE_LEAKED_TOOL_FIX"] = str(True)
     if args.dev:

@@ -42,7 +42,6 @@ def _format_config_yaml(data: dict) -> str:
                 "argo_base_url",
                 "native_openai_base_url",
                 "native_anthropic_base_url",
-                "use_legacy_argo",
                 "anthropic_stream_mode",
             ],
         ),
@@ -152,9 +151,6 @@ def _apply_env_overrides(config_data: ArgoConfig) -> ArgoConfig:
             "Format conversion is now handled by llm-rosetta.",
             context="config",
         )
-
-    if env_use_legacy_argo := os.getenv("USE_LEGACY_ARGO"):
-        config_data._use_legacy_argo = str_to_bool(env_use_legacy_argo)
 
     if env_enable_leaked_tool_fix := os.getenv("ENABLE_LEAKED_TOOL_FIX"):
         config_data._enable_leaked_tool_fix = str_to_bool(env_enable_leaked_tool_fix)

@@ -184,11 +184,11 @@ def contains_argo_auth_warning(text: str) -> bool:
 def extract_text_from_response(response_data: dict[str, Any], provider: str) -> str:
     """Best-effort extraction of assistant text from a parsed upstream JSON.
 
-    Supports OpenAI Chat, Anthropic Messages, and legacy ARGO formats.
+    Supports OpenAI Chat and Anthropic Messages formats.
 
     Args:
         response_data: Parsed JSON body from upstream.
-        provider: One of ``"openai"``, ``"anthropic"``, or ``"legacy"``.
+        provider: One of ``"openai"`` or ``"anthropic"``.
 
     Returns:
         The extracted text, or ``""`` if extraction fails.
@@ -205,9 +205,6 @@ def extract_text_from_response(response_data: dict[str, Any], provider: str) -> 
             content = response_data.get("content", [{}])
             if content and isinstance(content, list):
                 return content[0].get("text") or ""
-        elif provider == "legacy":
-            resp = response_data.get("response", "")
-            return resp if isinstance(resp, str) else ""
     except (IndexError, TypeError, AttributeError):
         pass
     return ""
@@ -220,7 +217,7 @@ def check_response_for_argo_warning(
 
     Args:
         response_data: Parsed JSON body from upstream.
-        provider: One of ``"openai"``, ``"anthropic"``, or ``"legacy"``.
+        provider: One of ``"openai"`` or ``"anthropic"``.
 
     Returns:
         True if the ARGO authentication warning is detected.

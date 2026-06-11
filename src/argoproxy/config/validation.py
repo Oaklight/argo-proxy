@@ -115,9 +115,7 @@ def validate_port(config: ArgoConfig) -> None:
 def validate_urls(config: ArgoConfig) -> None:
     """Validate URL connectivity.
 
-    In v3 universal mode, tests the native OpenAI models endpoint (GET)
-    and the native Anthropic messages endpoint (POST).
-    In legacy mode, tests the legacy ARGO chat and embedding endpoints.
+    Tests the native OpenAI models endpoint (GET).
 
     Args:
         config: The ArgoConfig instance to validate.
@@ -130,28 +128,10 @@ def validate_urls(config: ArgoConfig) -> None:
     attempts = 2
     failed_urls: list[str] = []
 
-    if config.use_legacy_argo:
-        # Legacy mode: POST-based validation against ARGO gateway
-        post_urls: list[tuple[str, dict[str, Any]]] = [
-            (
-                config.argo_url,
-                {
-                    "model": "gpt4o",
-                    "messages": [{"role": "user", "content": "What are you?"}],
-                },
-            ),
-            (
-                config.argo_embedding_url,
-                {"model": "v3small", "prompt": ["hello"]},
-            ),
-        ]
-        get_urls: list[str] = []
-    else:
-        # Universal mode: test native endpoints
-        post_urls = []
-        get_urls = [
-            f"{config.native_openai_base_url}/models",
-        ]
+    post_urls: list[tuple[str, dict[str, Any]]] = []
+    get_urls: list[str] = [
+        f"{config.native_openai_base_url}/models",
+    ]
 
     log_info("Validating URL connectivity...", context="config")
 
