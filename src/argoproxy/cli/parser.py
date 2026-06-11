@@ -109,7 +109,6 @@ def _add_serve_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
-
 def _add_config_subparsers(parser: argparse.ArgumentParser) -> None:
     """Add sub-subcommands for the ``config`` subcommand."""
     sub = parser.add_subparsers(dest="config_action", metavar="action")

@@ -314,7 +314,6 @@ def create_app():
     # Check dev mode from environment (set by CLI before app creation)
     import os
 
-    from .config import ArgoConfig
     from .utils.misc import str_to_bool
 
     dev_mode = str_to_bool(os.environ.get("DEV_MODE", "false"))
