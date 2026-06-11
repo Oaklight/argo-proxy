@@ -124,37 +124,6 @@ def _apply_env_overrides(config_data: ArgoConfig) -> ArgoConfig:
     if env_verbose := os.getenv("VERBOSE"):
         config_data.verbose = str_to_bool(env_verbose)
 
-    if env_real_stream := os.getenv("REAL_STREAM"):
-        config_data._real_stream = str_to_bool(env_real_stream)
-
-    if env_tool_prompt := os.getenv("TOOL_PROMPT"):
-        config_data._tool_prompt = str_to_bool(env_tool_prompt)
-
-    # Deprecated: USE_NATIVE_OPENAI and USE_NATIVE_ANTHROPIC are ignored in v3.0.0
-    # (native endpoints are now always used via universal dispatch)
-    if os.getenv("USE_NATIVE_OPENAI"):
-        log_warning(
-            "USE_NATIVE_OPENAI is deprecated in v3.0.0 and will be ignored. "
-            "Native endpoints are now used by default via universal dispatch.",
-            context="config",
-        )
-    if os.getenv("USE_NATIVE_ANTHROPIC"):
-        log_warning(
-            "USE_NATIVE_ANTHROPIC is deprecated in v3.0.0 and will be ignored. "
-            "Native endpoints are now used by default via universal dispatch.",
-            context="config",
-        )
-    # Deprecated: PROVIDER_TOOL_FORMAT is handled by llm-rosetta in v3.0.0
-    if os.getenv("PROVIDER_TOOL_FORMAT"):
-        log_warning(
-            "PROVIDER_TOOL_FORMAT is deprecated in v3.0.0 and will be ignored. "
-            "Format conversion is now handled by llm-rosetta.",
-            context="config",
-        )
-
-    if env_enable_leaked_tool_fix := os.getenv("ENABLE_LEAKED_TOOL_FIX"):
-        config_data._enable_leaked_tool_fix = str_to_bool(env_enable_leaked_tool_fix)
-
     if env_dev_mode := os.getenv("DEV_MODE"):
         config_data._dev_mode = str_to_bool(env_dev_mode)
 
@@ -175,9 +144,6 @@ def _apply_env_overrides(config_data: ArgoConfig) -> ArgoConfig:
                 f"expected one of {valid_modes}. Using default 'force'.",
                 context="config",
             )
-
-    if env_force_conversion := os.getenv("FORCE_CONVERSION"):
-        config_data._force_conversion = str_to_bool(env_force_conversion)
 
     if env_dump_requests := os.getenv("DUMP_REQUESTS"):
         config_data._dump_requests = str_to_bool(env_dump_requests)

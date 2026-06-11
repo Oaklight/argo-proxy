@@ -32,23 +32,12 @@ def set_config_envs(args: argparse.Namespace):
     if args.quiet:
         os.environ["VERBOSE"] = str(False)
 
-    # Legacy-only streaming flags
-    if args.real_stream:
-        os.environ["REAL_STREAM"] = str(True)
-    if args.pseudo_stream:
-        os.environ["REAL_STREAM"] = str(False)
-    if args.tool_prompting:
-        os.environ["TOOL_PROMPT"] = str(True)
     if args.username_passthrough:
         os.environ["USERNAME_PASSTHROUGH"] = str(True)
-    if args.enable_leaked_tool_fix:
-        os.environ["ENABLE_LEAKED_TOOL_FIX"] = str(True)
     if args.dev:
         os.environ["DEV_MODE"] = str(True)
     if args.anthropic_stream_mode:
         os.environ["ANTHROPIC_STREAM_MODE"] = args.anthropic_stream_mode
-    if args.force_conversion:
-        os.environ["FORCE_CONVERSION"] = str(True)
     if args.dump_requests:
         os.environ["DUMP_REQUESTS"] = str(True)
     if args.dump_dir:
