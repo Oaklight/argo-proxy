@@ -7,12 +7,6 @@ from aiohttp import web
 
 from .__init__ import __version__
 from .config import ArgoConfig, load_config
-from ._legacy.endpoints import (
-    chat,
-    completions,
-    embed,
-    responses,
-)
 from .endpoints import (
     dispatch,
     extras,
@@ -123,55 +117,21 @@ async def cleanup_app(app):
         await asyncio.gather(*pending, return_exceptions=True)
 
 
-# ================= Argo Direct Access =================
-
-
-async def proxy_argo_chat_directly(request: web.Request):
-    log_info("/v1/chat", context="app")
-    return await chat.proxy_request(request, convert_to_openai=False)
-
-
-async def proxy_embedding_directly(request: web.Request):
-    log_info("/v1/embed", context="app")
-    return await embed.proxy_request(request, convert_to_openai=False)
-
-
 # ================= OpenAI Compatible =================
 
 
 async def proxy_openai_chat_compatible(request: web.Request):
     log_info("/v1/chat/completions", context="app")
-    config: ArgoConfig = request.app["config"]
-
-    if config.use_legacy_argo:
-        return await chat.proxy_request(request)
-
     return await dispatch.proxy_request(request, source_provider="openai_chat")
-
-
-async def proxy_openai_legacy_completions_compatible(request: web.Request):
-    log_info("/v1/completions", context="app")
-    return await completions.proxy_request(request)
 
 
 async def proxy_openai_responses_request(request: web.Request):
     log_info("/v1/responses", context="app")
-    config: ArgoConfig = request.app["config"]
-
-    if config.use_legacy_argo:
-        return await responses.proxy_request(request)
-
     return await dispatch.proxy_request(request, source_provider="openai_responses")
 
 
 async def proxy_openai_embedding_request(request: web.Request):
     log_info("/v1/embeddings", context="app")
-    config: ArgoConfig = request.app["config"]
-
-    # In legacy mode, use old ARGO gateway pipeline
-    if config.use_legacy_argo:
-        return await embed.proxy_request(request, convert_to_openai=True)
-
     return await passthrough.proxy_embeddings_request(request)
 
 
@@ -385,15 +345,6 @@ def create_app():
     # root endpoints
     app.router.add_get("/", root_endpoint)
     app.router.add_get("/v1", v1_endpoint)
-
-    # Legacy ARGO direct-access endpoints (only in legacy mode)
-    use_legacy = str_to_bool(os.environ.get("USE_LEGACY_ARGO", "false"))
-    if use_legacy:
-        app.router.add_post("/v1/chat", proxy_argo_chat_directly)
-        app.router.add_post("/v1/embed", proxy_embedding_directly)
-        app.router.add_post(
-            "/v1/completions", proxy_openai_legacy_completions_compatible
-        )
 
     # Universal endpoints (all 4 client formats)
     app.router.add_post("/v1/chat/completions", proxy_openai_chat_compatible)

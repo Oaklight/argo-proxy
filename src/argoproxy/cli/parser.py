@@ -75,12 +75,6 @@ def _add_serve_arguments(parser: argparse.ArgumentParser) -> None:
         help="Use API key from request headers as user field",
     )
     parser.add_argument(
-        "--legacy-argo",
-        action="store_true",
-        default=False,
-        help="Use the legacy ARGO gateway pipeline instead of universal dispatch",
-    )
-    parser.add_argument(
         "--enable-leaked-tool-fix",
         action="store_true",
         default=False,

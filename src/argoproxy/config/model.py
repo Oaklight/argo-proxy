@@ -49,9 +49,6 @@ class ArgoConfig:
     # Native Anthropic endpoint
     _native_anthropic_base_url: str = ""
 
-    # Legacy ARGO gateway (opt-in fallback for v3.0.0)
-    _use_legacy_argo: bool = False
-
     # Config version for migration tracking
     config_version: str = ""
 
@@ -163,11 +160,6 @@ class ArgoConfig:
         return f"{self.argo_base_url}/v1"
 
     @property
-    def use_legacy_argo(self):
-        """Check if legacy ARGO gateway mode is enabled (opt-in fallback)."""
-        return self._use_legacy_argo
-
-    @property
     def native_anthropic_base_url(self) -> str:
         """Get the native Anthropic base URL.
 
@@ -261,7 +253,6 @@ class ArgoConfig:
             "real_stream": "_real_stream",
             "native_openai_base_url": "_native_openai_base_url",
             "native_anthropic_base_url": "_native_anthropic_base_url",
-            "use_legacy_argo": "_use_legacy_argo",
             "skip_url_validation": "_skip_url_validation",
             "anthropic_stream_mode": "_anthropic_stream_mode",
             "force_conversion": "_force_conversion",
@@ -294,8 +285,6 @@ class ArgoConfig:
             serialized["argo_base_url"] = self.argo_base_url
 
         # Persist optional flags only when set to non-default values
-        if self._use_legacy_argo:
-            serialized["use_legacy_argo"] = True
         if self._skip_url_validation:
             serialized["skip_url_validation"] = True
         if self._anthropic_stream_mode != "force":
@@ -327,21 +316,13 @@ class ArgoConfig:
         """Convert ArgoConfig instance to a dictionary for display.
 
         In v3 universal mode, exposes native endpoint URLs and mode info.
-        In legacy mode, exposes the classic ARGO gateway URLs.
+
         """
         serialized = self.to_persistent_dict()
 
-        if self.use_legacy_argo:
-            # Legacy mode: show ARGO gateway URLs
-            serialized["argo_url"] = self.argo_url
-            serialized["argo_stream_url"] = self.argo_stream_url
-            serialized["argo_embedding_url"] = self.argo_embedding_url
-            serialized["mode"] = "legacy"
-        else:
-            # Universal mode: show native endpoint URLs
-            serialized["native_openai_base_url"] = self.native_openai_base_url
-            serialized["native_anthropic_base_url"] = self.native_anthropic_base_url
-            serialized["mode"] = "universal"
+        serialized["native_openai_base_url"] = self.native_openai_base_url
+        serialized["native_anthropic_base_url"] = self.native_anthropic_base_url
+        serialized["mode"] = "universal"
 
         return dict(sorted(serialized.items()))
 

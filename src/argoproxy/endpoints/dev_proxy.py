@@ -162,7 +162,7 @@ def register_dev_routes(app: web.Application, config) -> None:
 
     # Route definitions: (local_prefix, upstream_base)
     route_map = [
-        ("/api/", f"{base_url}/api/"),  # Gateway legacy API paths
+        ("/api/", f"{base_url}/api/"),  # Gateway API paths
         ("/chat/", f"{base_url}/api/v1/resource/chat/"),  # Shortcut
         ("/stream/", f"{base_url}/api/v1/resource/streamchat/"),  # Shortcut
         ("/embed/", f"{base_url}/api/v1/resource/embed/"),  # Shortcut
