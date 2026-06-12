@@ -50,9 +50,27 @@ Each entry contains:
 - **`internal_name`** — the upstream ARGO internal model identifier (e.g. `gpt5`)
 - **`owned_by`** — the model provider family (`openai`, `anthropic`, `google`, or `unknown`)
 
-### Refresh Model List
+### Model List Refresh
 
-If new models are added upstream, you can reload the model list without restarting:
+#### Automatic Refresh
+
+Argo Proxy periodically refreshes the model list in the background so long-running instances stay current. By default this happens **every 24 hours**.
+
+You can change the interval (in hours) or disable it entirely in your `config.yaml`:
+
+```yaml
+# Refresh every 12 hours
+model_refresh_interval_hours: 12
+
+# Disable automatic refresh
+model_refresh_interval_hours: 0
+```
+
+Refresh events are logged at `INFO` level, so you can confirm they're working by checking the server log.
+
+#### Manual Refresh
+
+You can also trigger a refresh on-demand without restarting:
 
 ```bash
 curl -X POST http://localhost:44497/refresh
@@ -117,12 +135,20 @@ Argo Proxy is lenient when resolving model names. The following variations are a
 - **Separator**: `argo:gpt-5` or `argo/gpt-5` (slash works as well)
 - **Case**: `argo:GPT-5` or `argo:gpt-5` (case-insensitive)
 
-If a model name cannot be resolved, Argo Proxy falls back to `gpt5nano` for chat models and `v3small` for embedding models. A warning is logged when this happens.
+### Default Fallback Model
+
+If a model name cannot be resolved to any known model, Argo Proxy falls back to a default model and logs a warning. This typically means the requested model name was mistyped or refers to a retired model.
+
+| Model Type | Fallback Model | Internal ID |
+|---|---|---|
+| Chat | `argo:gpt-5-nano` | `gpt5nano` |
+| Embedding | `argo:text-embedding-3-small` | `v3small` |
 
 ## Why No Static Model List?
 
-The upstream ARGO API evolves over time — models are added, retired, or renamed. Argo Proxy fetches the model list dynamically at startup and generates aliases automatically based on the naming rules above. This means:
+The upstream ARGO API evolves over time — models are added, retired, or renamed. Argo Proxy fetches the model list dynamically at startup, refreshes it periodically, and generates aliases automatically based on the naming rules above. This means:
 
-1. **New models are available immediately** after an upstream update (just call `/refresh` or restart).
-2. **Documentation stays accurate** without manual updates.
-3. **You always have the ground truth** via the `/v1/models` endpoint.
+1. **New models appear automatically** — the periodic refresh picks them up without manual intervention.
+2. **On-demand refresh** is available via `/refresh` or a restart if you need it sooner.
+3. **Documentation stays accurate** without manual updates.
+4. **You always have the ground truth** via `/v1/models` or `argo-proxy models`.

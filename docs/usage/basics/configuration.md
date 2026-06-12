@@ -18,6 +18,9 @@ max_log_history: 3
 # Upstream
 argo_base_url: https://apps-dev.inside.anl.gov/argoapi
 
+# Model list auto-refresh (0 to disable)
+model_refresh_interval_hours: 24
+
 # Network & validation
 connection_test_timeout: 5
 resolve_overrides: {}
@@ -65,6 +68,7 @@ argo-proxy config env test    # switch to test
 | `argo_base_url` | Base URL for the Argo API (see [Upstream Environments](#upstream-environments)) | Dev URL |
 | `connection_test_timeout` | Timeout (seconds) per URL validation request | `5` |
 | `resolve_overrides` | DNS resolution overrides (see [DNS Resolution](../advanced/dns-resolution.md)) | `{}` |
+| `model_refresh_interval_hours` | How often (in hours) to auto-refresh the model list from upstream. Set to `0` to disable. See [Models — Automatic Refresh](../models.md#automatic-refresh) | `24` |
 | `enable_payload_control` | Enable automatic image payload size control | `false` |
 | `max_payload_size` | Max payload size in MB (total for all images) | `20` |
 | `image_timeout` | Image download timeout in seconds | `30` |
