@@ -2,6 +2,57 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v3.1.1 (2026-06-12)
+
+**Model list refresh and modernization.**
+
+### Added
+
+- **Periodic model list auto-refresh**: The model registry now automatically refreshes from upstream on a configurable interval (default: every 24 hours). Configure via `model_refresh_interval_hours` in `config.yaml` (set to `0` to disable). Refresh events are logged at INFO level
+- **Fallback model warning**: When a model name cannot be resolved, a `WARNING` log is now emitted showing the requested name and the fallback model used
+
+### Changed
+
+- **Default fallback model**: Changed from `argo:gpt-4o` to `argo:gpt-5-nano` for unresolved chat model names
+- **Updated default model list** to match the live `/v1/models` endpoint:
+    - Added: GPT-5 family (gpt-5, gpt-5-mini, gpt-5-nano, gpt-5.1, gpt-5.2, gpt-5.4, gpt-5.5), Gemini 3.x (gemini-3.5-flash, gemini-3.1-flash-lite), Claude opus 4.1/4.5/4.6, sonnet 4.5/4.6, haiku 4.5
+    - Removed: GPT-3.5 family, GPT-4/4-turbo, gpt-4o-latest, o1-mini, o1-preview, old Claude versions (opus-4, sonnet-4, sonnet-3.7, sonnet-3.5-v2)
+- **Tiktoken encoding mapping**: Added `gpt5` and `gpt41` prefix mappings, removed `gpt3`
+- **Cleared `NO_SYS_MSG_PATTERNS`**: o1-mini and o1-preview (which couldn't handle system prompts) are retired
+
+**Full Changelog**: https://github.com/Oaklight/argo-proxy/compare/v3.1.0...v3.1.1<br>
+**PyPI**: https://pypi.org/project/argo-proxy/3.1.1/
+
+---
+
+## v3.1.0 (2026-06-11)
+
+**Major refactor: remove legacy mode, integrate llm-rosetta shim pipeline.**
+
+### Breaking Changes
+
+- **Removed legacy ARGO gateway mode** — `--legacy-argo` flag, `USE_LEGACY_ARGO` env, `use_legacy_argo` config field all deleted. The `_legacy` module (~8,500 lines) is removed entirely
+- **Removed same-format passthrough** — all requests now go through the full llm-rosetta converter + shim pipeline, ensuring consistent reasoning handling, transforms, and metadata preservation
+- **Removed CLI flags** — `--force-conversion`, `--enable-leaked-tool-fix`, `--real-stream`, `--pseudo-stream`, `--tool-prompting` are all deleted
+
+### Added
+
+- **llm-rosetta shim integration** — dispatch pipeline now uses `argo-anthropic` and `argo-openai_chat` shims for declarative reasoning config, transforms, and per-model overrides
+- **Model-level thinking_type** — Opus 4.7 correctly gets `thinking.type=adaptive` via shim `model_overrides`, while other models keep `enabled`
+- **Unsigned reasoning block policy** — `argo-anthropic` uses `unsigned_reasoning_blocks: preserve` to avoid Argo 400 errors from history with empty/missing thinking signatures
+
+### Changed
+
+- **Unified non-streaming convert path** — `_convert_non_streaming` and `_convert_buffered_streaming` merged into `_convert(force_stream=False|True)`
+- **Prepare/execute split** — `_prepare_convert` + `_execute_convert` avoids redundant IR round-trips in `_convert_with_retry`
+- **Streaming reuses prepare** — `_convert_streaming` now shares `_prepare_convert` with non-streaming paths
+- **Bumped llm-rosetta to >=0.6.8** — includes all reasoning/signature/effort fixes and the shim plugin loader
+
+**Full Changelog**: https://github.com/Oaklight/argo-proxy/compare/v3.0.4...v3.1.0<br>
+**PyPI**: https://pypi.org/project/argo-proxy/3.1.0/
+
+---
+
 ## v3.0.4 (2026-05-23)
 
 **Fix: startup user validation model selection.**
