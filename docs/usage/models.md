@@ -2,11 +2,25 @@
 
 Argo Proxy dynamically fetches the model list from the upstream ARGO API at startup. Rather than maintaining a static list of models (which quickly becomes outdated), this page explains the **naming scheme** used by Argo Proxy and how to **query available models** at runtime.
 
+!!! warning "Models change frequently"
+    The upstream ARGO API adds, retires, and renames models regularly. All model names shown on this page are **examples only** and may not reflect what is currently available. Always query the live model list to see what you can use right now.
+
 ## Querying Available Models
 
-### List Models
+### CLI
 
-Send a `GET` request to the `/v1/models` endpoint to retrieve all currently available models:
+The easiest way to see available models is the built-in CLI command:
+
+```bash
+argo-proxy models          # table format
+argo-proxy models --json   # machine-readable JSON
+```
+
+See [CLI Reference — `models`](basics/cli.md#models-list-available-models) for details.
+
+### API
+
+Send a `GET` request to the `/v1/models` endpoint:
 
 ```bash
 curl http://localhost:44497/v1/models
@@ -48,7 +62,7 @@ See [Endpoints — `/refresh`](endpoints.md#refresh) for details on the response
 
 ## Model Naming Scheme
 
-All Argo Proxy model names use the `argo:` prefix followed by a human-readable, OpenAI-style name. The naming rules vary by model family.
+All Argo Proxy model names use the `argo:` prefix followed by a human-readable, OpenAI-style name. The naming rules vary by model family. The examples below illustrate the pattern — run `argo-proxy models` or query `/v1/models` for the actual list.
 
 ### OpenAI Models
 
