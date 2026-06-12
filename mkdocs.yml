@@ -55,6 +55,10 @@ plugins:
             merge_init_into_class: true
             separate_signature: true
             show_signature_annotations: true
+  - git-revision-date-localized:
+      enable_creation_date: false
+      fallback_to_build_date: true
+      type: date
   - llmstxt:
       full_output: llms-full.txt
       sections:
