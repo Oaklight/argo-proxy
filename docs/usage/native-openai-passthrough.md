@@ -31,7 +31,7 @@ native_openai_base_url: "https://apps-dev.inside.anl.gov/argoapi/v1"
 
 ## Model Name Mapping
 
-Argo model aliases (e.g., `argo:gpt-4o`, `argo:claude-4-sonnet`) are resolved to their upstream model IDs before forwarding.
+Argo model aliases (e.g., `argo:gpt-5`, `argo:claude-4.5-sonnet`) are resolved to their upstream model IDs before forwarding.
 
 ```python
 from openai import OpenAI
@@ -42,7 +42,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="argo:gpt-4o",  # Resolved to actual model ID
+    model="argo:gpt-5",  # Resolved to actual model ID
     messages=[{"role": "user", "content": "Hello!"}]
 )
 ```

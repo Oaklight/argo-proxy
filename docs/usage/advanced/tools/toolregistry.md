@@ -148,7 +148,7 @@ client = openai.OpenAI(
 # Get tools and send requests
 tools = registry.get_tools_json()
 response = client.chat.completions.create(
-    model="argo:gpt-4o",
+    model="argo:gpt-5",
     messages=[{"role": "user", "content": "What's 15 + 27?"}],
     tools=tools
 )
@@ -168,7 +168,7 @@ if response.choices[0].message.tool_calls:
     messages.extend(assistant_messages)
 
     final_response = client.chat.completions.create(
-        model="argo:gpt-4o",
+        model="argo:gpt-5",
         messages=messages
     )
 

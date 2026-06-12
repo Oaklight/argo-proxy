@@ -55,7 +55,7 @@ Argo Proxy v3 serves all major LLM API formats, which means it works out of the 
     Add a custom provider in `~/.codex/config.toml`:
 
     ```toml
-    model = "argo:gpt-4o"
+    model = "argo:gpt-5"
     model_provider = "argo"
 
     [model_providers.argo]
@@ -93,7 +93,7 @@ Argo Proxy v3 serves all major LLM API formats, which means it works out of the 
     ```bash
     export OPENAI_API_BASE="http://localhost:44497/v1"
     export OPENAI_API_KEY="your-anl-username"
-    aider --model argo:gpt-4o
+    aider --model argo:gpt-5
     ```
 
 === "Anthropic Mode"
@@ -101,7 +101,7 @@ Argo Proxy v3 serves all major LLM API formats, which means it works out of the 
     ```bash
     export ANTHROPIC_BASE_URL="http://localhost:44497"
     export ANTHROPIC_API_KEY="your-anl-username"
-    aider --model argo:claude-4-sonnet
+    aider --model argo:claude-4.5-sonnet
     ```
 
 !!! tip
@@ -182,11 +182,11 @@ Argo Proxy v3 serves all major LLM API formats, which means it works out of the 
                     "apiKey": "your-anl-username"
                 },
                 "models": {
-                    "argo:gpt-4o": {
-                        "name": "GPT-4o"
+                    "argo:gpt-5": {
+                        "name": "GPT-5"
                     },
-                    "argo:claude-4-sonnet": {
-                        "name": "Claude 4 Sonnet"
+                    "argo:claude-4.5-sonnet": {
+                        "name": "Claude 4.5 Sonnet"
                     }
                 }
             }
@@ -228,7 +228,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="argo:gpt-4o",
+    model="argo:gpt-5",
     messages=[{"role": "user", "content": "Hello!"}],
 )
 print(response.choices[0].message.content)
@@ -247,7 +247,7 @@ client = anthropic.Anthropic(
 )
 
 message = client.messages.create(
-    model="argo:claude-4-sonnet",
+    model="argo:claude-4.5-sonnet",
     max_tokens=1024,
     messages=[{"role": "user", "content": "Hello!"}],
 )

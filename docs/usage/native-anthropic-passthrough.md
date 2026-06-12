@@ -36,7 +36,7 @@ client = anthropic.Anthropic(
 )
 
 message = client.messages.create(
-    model="argo:claude-4-sonnet",
+    model="argo:claude-4.5-sonnet",
     max_tokens=1024,
     messages=[
         {"role": "user", "content": "Hello, Claude!"}
@@ -49,7 +49,7 @@ print(message.content[0].text)
 
 ```python
 with client.messages.stream(
-    model="argo:claude-4-sonnet",
+    model="argo:claude-4.5-sonnet",
     max_tokens=1024,
     messages=[
         {"role": "user", "content": "Count from 1 to 10."}

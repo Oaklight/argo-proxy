@@ -99,7 +99,7 @@ def execute_function_call(function_name: str, arguments: dict):
 
 # Step 4: Make a request with tool calls
 response = client.chat.completions.create(
-    model="argo:gpt-4o",
+    model="argo:gpt-5",
     messages=[
         {"role": "user", "content": "What's the weather in New York?"}
     ],

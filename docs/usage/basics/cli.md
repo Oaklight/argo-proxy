@@ -312,20 +312,22 @@ argo-proxy models --json
 Example output:
 
 ```
-Available models: 22 models, 50 aliases
+Available models: 30 models, 55 aliases
 
-  OpenAI (8 models)
+  OpenAI (15 models)
+    gpt5                           argo:gpt-5
+    gpt5nano                       argo:gpt-5-nano
     gpt4o                          argo:gpt-4o
-    gpt4omini                      argo:gpt-4o-mini
     ...
 
-  Anthropic (5 models)
-    claudesonnet4                  argo:claude-4-sonnet, argo:claude-sonnet-4
-    claudeopus4                    argo:claude-4-opus, argo:claude-opus-4
+  Anthropic (7 models)
+    claudesonnet46                 argo:claude-4.6-sonnet, argo:claude-sonnet-4.6
+    claudeopus47                   argo:claude-4.7-opus, argo:claude-opus-4.7
     ...
 
   Google (4 models)
-    gemini25flash                  argo:gemini-2.5-flash
+    gemini35flash                  argo:gemini-3.5-flash
+    gemini25pro                    argo:gemini-2.5-pro
     ...
 ```
 

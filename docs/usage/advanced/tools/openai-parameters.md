@@ -86,7 +86,7 @@ Control when and how tools are called using the `tool_choice` parameter:
 
 ```python
 response = client.chat.completions.create(
-    model="argo:gpt-4o",
+    model="argo:gpt-5",
     messages=[{"role": "user", "content": "What's the weather?"}],
     tools=tools,
     tool_choice="auto"  # Model decides whether to call functions
@@ -99,7 +99,7 @@ The model decides whether to call functions based on the conversation context.
 
 ```python
 response = client.chat.completions.create(
-    model="argo:gpt-4o",
+    model="argo:gpt-5",
     messages=[{"role": "user", "content": "What's the weather?"}],
     tools=tools,
     tool_choice="none"  # Model will not call any functions
@@ -112,7 +112,7 @@ The model will not call any functions, even if tools are provided.
 
 ```python
 response = client.chat.completions.create(
-    model="argo:gpt-4o",
+    model="argo:gpt-5",
     messages=[{"role": "user", "content": "What's the weather?"}],
     tools=tools,
     tool_choice="required"  # Model must call at least one function
@@ -125,7 +125,7 @@ Forces the model to call at least one function.
 
 ```python
 response = client.chat.completions.create(
-    model="argo:gpt-4o",
+    model="argo:gpt-5",
     messages=[{"role": "user", "content": "What's the weather?"}],
     tools=tools,
     tool_choice={
@@ -143,7 +143,7 @@ Forces the model to call a specific function.
 
 ```python
 response = client.chat.completions.create(
-    model="argo:gpt-4o",                    # Required: Model name
+    model="argo:gpt-5",                    # Required: Model name
     messages=[                              # Required: Conversation history
         {"role": "user", "content": "Hello"}
     ],
@@ -221,7 +221,7 @@ When the model decides to call a function, the response includes:
 ```python
 # Initial request
 response = client.chat.completions.create(
-    model="argo:gpt-4o",
+    model="argo:gpt-5",
     messages=[{"role": "user", "content": "What's the weather in Paris?"}],
     tools=tools,
     tool_choice="auto"
@@ -250,7 +250,7 @@ if response.choices[0].message.tool_calls:
 
     # Get final response
     final_response = client.chat.completions.create(
-        model="argo:gpt-4o",
+        model="argo:gpt-5",
         messages=messages
     )
 ```

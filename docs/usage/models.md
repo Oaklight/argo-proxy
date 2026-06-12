@@ -19,8 +19,8 @@ The response follows the OpenAI-compatible format:
     "object": "list",
     "data": [
         {
-            "id": "argo:gpt-4o",
-            "internal_name": "gpt4o",
+            "id": "argo:gpt-5",
+            "internal_name": "gpt5",
             "object": "model",
             "created": 1700000000,
             "owned_by": "openai"
@@ -32,8 +32,8 @@ The response follows the OpenAI-compatible format:
 
 Each entry contains:
 
-- **`id`** — the Argo Proxy alias you use in API requests (e.g. `argo:gpt-4o`)
-- **`internal_name`** — the upstream ARGO internal model identifier (e.g. `gpt4o`)
+- **`id`** — the Argo Proxy alias you use in API requests (e.g. `argo:gpt-5`)
+- **`internal_name`** — the upstream ARGO internal model identifier (e.g. `gpt5`)
 - **`owned_by`** — the model provider family (`openai`, `anthropic`, `google`, or `unknown`)
 
 ### Refresh Model List
@@ -56,8 +56,8 @@ Standard GPT models use the format `argo:gpt-{version}`:
 
 | Pattern | Example |
 | --- | --- |
-| `argo:gpt-{version}` | `argo:gpt-4`, `argo:gpt-4-turbo`, `argo:gpt-4o` |
-| `argo:gpt-{version}-{variant}` | `argo:gpt-3.5-turbo-16k`, `argo:gpt-4.1-mini` |
+| `argo:gpt-{version}` | `argo:gpt-4o`, `argo:gpt-5` |
+| `argo:gpt-{version}-{variant}` | `argo:gpt-4.1-mini`, `argo:gpt-5-nano` |
 
 OpenAI reasoning models (o-series) have **two equivalent aliases**:
 
@@ -74,15 +74,10 @@ Claude models have **two equivalent aliases** with different ordering:
 
 | Pattern | Example |
 | --- | --- |
-| `argo:claude-{codename}-{generation}` | `argo:claude-sonnet-4`, `argo:claude-opus-4` |
-| `argo:claude-{generation}-{codename}` | `argo:claude-4-sonnet`, `argo:claude-4-opus` |
+| `argo:claude-{codename}-{generation}` | `argo:claude-sonnet-4.5`, `argo:claude-opus-4.7` |
+| `argo:claude-{generation}-{codename}` | `argo:claude-4.5-sonnet`, `argo:claude-4.7-opus` |
 
-For versioned models, a version suffix is appended:
-
-| Pattern | Example |
-| --- | --- |
-| `argo:claude-{codename}-{generation}-{version}` | `argo:claude-sonnet-3.5-v2` |
-| `argo:claude-{generation}-{codename}-{version}` | `argo:claude-3.5-sonnet-v2` |
+Both forms resolve to the same upstream model. Use whichever you prefer.
 
 ### Google Gemini Models
 
@@ -104,11 +99,11 @@ Embedding models follow OpenAI's naming convention:
 
 Argo Proxy is lenient when resolving model names. The following variations are all accepted:
 
-- **Prefix**: `argo:gpt-4o` or just `gpt-4o` (the `argo:` prefix is optional)
-- **Separator**: `argo:gpt-4o` or `argo/gpt-4o` (slash works as well)
-- **Case**: `argo:GPT-4o` or `argo:gpt-4o` (case-insensitive)
+- **Prefix**: `argo:gpt-5` or just `gpt-5` (the `argo:` prefix is optional)
+- **Separator**: `argo:gpt-5` or `argo/gpt-5` (slash works as well)
+- **Case**: `argo:GPT-5` or `argo:gpt-5` (case-insensitive)
 
-If a model name cannot be resolved, Argo Proxy falls back to `gpt4o` for chat models and `v3small` for embedding models.
+If a model name cannot be resolved, Argo Proxy falls back to `gpt5nano` for chat models and `v3small` for embedding models. A warning is logged when this happens.
 
 ## Why No Static Model List?
 
