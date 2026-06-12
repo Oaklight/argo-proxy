@@ -9,8 +9,6 @@ build:
     python: "3.11"
   jobs:
     pre_build:
-      # Unshallow clone so git-revision-date-localized can read full history
-      - git fetch --unshallow || true
       # Download the source code from the main repository for mkdocstrings
       - git clone https://github.com/Oaklight/argo-proxy.git src_repo
       - mkdir -p src
