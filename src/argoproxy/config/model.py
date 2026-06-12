@@ -72,6 +72,9 @@ class ArgoConfig:
     log_to_file: bool = False  # Enable file logging alongside stdout
     max_log_history: int = 3  # Keep last N messages in verbose request logs
 
+    # Model list auto-refresh
+    model_refresh_interval_hours: float = 24  # 0 to disable
+
     # Image processing settings
     enable_payload_control: bool = False  # Enable automatic payload size control
     max_payload_size: int = 20  # MB default (total for all images)
@@ -258,6 +261,10 @@ class ArgoConfig:
             serialized["dump_requests"] = True
         if self._dump_dir:
             serialized["dump_dir"] = self._dump_dir
+
+        # Persist model refresh interval only when non-default
+        if self.model_refresh_interval_hours == 24:
+            serialized.pop("model_refresh_interval_hours", None)
 
         # Persist native URLs only when explicitly overridden (differ from
         # the values that would be derived from argo_base_url)
