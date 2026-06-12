@@ -556,10 +556,16 @@ class ModelRegistry:
                 f"Initial availability check failed: {str(e)}", context="ModelRegistry"
             )
 
-        # # Start periodic refresh (default 24h)
-        # self._refresh_task = asyncio.create_task(
-        #     self._periodic_refresh(interval_hours=24)
-        # )
+        # Start periodic refresh if configured
+        interval = self._config.model_refresh_interval_hours
+        if interval > 0:
+            self._refresh_task = asyncio.create_task(
+                self._periodic_refresh(interval_hours=interval)
+            )
+            log_info(
+                f"Periodic model refresh enabled: every {interval}h",
+                context="ModelRegistry",
+            )
 
     async def refresh_availability(self, real_test: bool = False):
         """Refresh model availability status"""
@@ -638,14 +644,27 @@ class ModelRegistry:
                     "Falling back to default model list", context="ModelRegistry"
                 )
 
-    # async def _periodic_refresh(self, interval_hours: float):
-    #     """Background task for periodic refresh"""
-    #     while True:
-    #         await asyncio.sleep(interval_hours * 3600)
-    #         try:
-    #             await self.refresh_availability()
-    #         except Exception as e:
-    #             logger.error(f"Periodic refresh failed: {str(e)}")
+    async def _periodic_refresh(self, interval_hours: float):
+        """Background task that refreshes the model list on a fixed interval."""
+        try:
+            while True:
+                await asyncio.sleep(interval_hours * 3600)
+                log_info(
+                    f"Periodic model refresh triggered (every {interval_hours}h)",
+                    context="ModelRegistry",
+                )
+                try:
+                    await self.refresh_availability()
+                except Exception as e:
+                    log_error(
+                        f"Periodic refresh failed: {e!s}",
+                        context="ModelRegistry",
+                    )
+        except asyncio.CancelledError:
+            log_debug(
+                "Periodic model refresh task cancelled",
+                context="ModelRegistry",
+            )
 
     async def manual_refresh(self):
         """Trigger manual refresh of model data"""
