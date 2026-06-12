@@ -30,35 +30,43 @@ def flatten_mapping(mapping: dict[str, Any]) -> dict[str, str]:
     return flat
 
 
-# Default models fallback
+# Default models fallback — kept in sync with the live /v1/models endpoint.
 _DEFAULT_CHAT_MODELS = flatten_mapping(
     {
-        # openai
-        "gpt35": "argo:gpt-3.5-turbo",
-        "gpt35large": "argo:gpt-3.5-turbo-16k",
-        "gpt4": "argo:gpt-4",
-        "gpt4large": "argo:gpt-4-32k",
-        "gpt4turbo": "argo:gpt-4-turbo",
+        # openai – gpt-4o (legacy, still served)
         "gpt4o": "argo:gpt-4o",
-        "gpt4olatest": "argo:gpt-4o-latest",
-        "gpto1mini": ["argo:gpt-o1-mini", "argo:o1-mini"],
-        "gpto3mini": ["argo:gpt-o3-mini", "argo:o3-mini"],
+        # openai – o-series reasoning
         "gpto1": ["argo:gpt-o1", "argo:o1"],
-        "gpto1preview": ["argo:gpt-o1-preview", "argo:o1-preview"],  # about to retire
+        "gpto3mini": ["argo:gpt-o3-mini", "argo:o3-mini"],
         "gpto3": ["argo:gpt-o3", "argo:o3"],
         "gpto4mini": ["argo:gpt-o4-mini", "argo:o4-mini"],
+        # openai – gpt-4.1 family
         "gpt41": "argo:gpt-4.1",
         "gpt41mini": "argo:gpt-4.1-mini",
         "gpt41nano": "argo:gpt-4.1-nano",
+        # openai – gpt-5 family
+        "gpt5": "argo:gpt-5",
+        "gpt5mini": "argo:gpt-5-mini",
+        "gpt5nano": "argo:gpt-5-nano",
+        "gpt51": "argo:gpt-5.1",
+        "gpt52": "argo:gpt-5.2",
+        "gpt54": "argo:gpt-5.4",
+        "gpt55": "argo:gpt-5.5",
         # gemini
         "gemini25pro": "argo:gemini-2.5-pro",
         "gemini25flash": "argo:gemini-2.5-flash",
-        # claude
-        "claudeopus4": ["argo:claude-opus-4", "argo:claude-4-opus"],
-        "claudeopus47": ["argo:claude-opus-4.7", "argo:claude-4.7-opus"],
-        "claudesonnet4": ["argo:claude-sonnet-4", "argo:claude-4-sonnet"],
-        "claudesonnet37": ["argo:claude-sonnet-3.7", "argo:claude-3.7-sonnet"],
-        "claudesonnet35v2": ["argo:claude-sonnet-3.5-v2", "argo:claude-3.5-sonnet-v2"],
+        "gemini35flash": "argo:gemini-3.5-flash",
+        "gemini31flashlite": "argo:gemini-3.1-flash-lite",
+        # claude – opus
+        "claudeopus47": ["argo:claude-4.7-opus", "argo:claude-opus-4.7"],
+        "claudeopus46": ["argo:claude-4.6-opus", "argo:claude-opus-4.6"],
+        "claudeopus45": ["argo:claude-4.5-opus", "argo:claude-opus-4.5"],
+        "claudeopus41": ["argo:claude-4.1-opus", "argo:claude-opus-4.1"],
+        # claude – sonnet
+        "claudesonnet46": ["argo:claude-4.6-sonnet", "argo:claude-sonnet-4.6"],
+        "claudesonnet45": ["argo:claude-4.5-sonnet", "argo:claude-sonnet-4.5"],
+        # claude – haiku
+        "claudehaiku45": ["argo:claude-4.5-haiku", "argo:claude-haiku-4.5"],
     }
 )
 
@@ -84,11 +92,8 @@ def filter_model_by_patterns(
     return sorted(matching)
 
 
-# any models that unable to handle system prompt
-NO_SYS_MSG_PATTERNS: set[str] = {
-    "*o1preview",  # Explicitly matches gpto1preview
-    "*o1mini",  # Explicitly matches gpto1mini
-}
+# any models that unable to handle system prompt (o1-mini / o1-preview retired)
+NO_SYS_MSG_PATTERNS: set[str] = set()
 
 NO_SYS_MSG_MODELS = filter_model_by_patterns(
     _DEFAULT_CHAT_MODELS,
@@ -123,11 +128,12 @@ NATIVE_TOOL_CALL_MODELS = filter_model_by_patterns(
 )
 
 TIKTOKEN_ENCODING_PREFIX_MAPPING = {
+    "gpt5": "o200k_base",  # gpt-5 family
     "gpto": "o200k_base",  # o-series
     "gpt4o": "o200k_base",  # gpt-4o
+    "gpt41": "o200k_base",  # gpt-4.1 family
     # this order need to be preserved to correctly parse mapping
-    "gpt4": "cl100k_base",  # gpt-4 series
-    "gpt3": "cl100k_base",  # gpt-3 series
+    "gpt4": "cl100k_base",  # gpt-4 series (legacy fallback)
     "ada002": "cl100k_base",  # embedding
     "v3": "cl100k_base",  # embedding
 }
@@ -474,7 +480,7 @@ def _categorize_results(
             unavailable.clear()
         else:
             log_error(
-                "Proceeding without unavailable models. Subsequent calls to these models will be replaced with argo:gpt-4o",
+                "Proceeding without unavailable models. Subsequent calls to these models will be replaced with argo:gpt-5-nano",
                 context="models",
             )
 
@@ -756,9 +762,13 @@ class ModelRegistry:
             return model_name
 
         if model_type == "chat":
-            default_model = "argo:gpt-4o"
+            default_model = "argo:gpt-5-nano"
         elif model_type == "embed":
             default_model = "argo:text-embedding-3-small"
+        log_warning(
+            f"Model '{model_name}' not found in registry, falling back to {default_model}",
+            context="ModelRegistry",
+        )
         return self.available_models[default_model]
 
     def as_openai_list(self) -> dict[str, Any]:
