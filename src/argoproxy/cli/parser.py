@@ -40,6 +40,17 @@ def _add_serve_arguments(parser: argparse.ArgumentParser) -> None:
         type=int,
         help="Port number to bind the server to",
     )
+    parser.add_argument(
+        "--socket",
+        "-S",
+        type=str,
+        default=None,
+        help=(
+            "Unix socket path to listen on (overrides --host/--port).\n"
+            "Permissions are set to 0700 (owner-only) for security on\n"
+            "shared hosts. Example: /run/user/$(id -u)/argo-proxy.sock"
+        ),
+    )
 
     verbosity = parser.add_mutually_exclusive_group()
     verbosity.add_argument(

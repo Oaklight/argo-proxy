@@ -366,7 +366,7 @@ def create_app():
     return app
 
 
-def run(*, host: str = "0.0.0.0", port: int = 8080):
+def run(*, host: str = "0.0.0.0", port: int = 8080, socket: str = ""):
     app = create_app()
 
     # Add this to ensure signal handlers trigger a full shutdown
@@ -378,7 +378,70 @@ def run(*, host: str = "0.0.0.0", port: int = 8080):
         signal.signal(sig, _force_exit)
 
     try:
-        web.run_app(app, host=host, port=port)
+        if socket:
+            _run_unix_socket(app, socket)
+        else:
+            web.run_app(app, host=host, port=port)
     except Exception as e:
         log_error(f"An error occurred while starting the server: {e}", context="app")
         sys.exit(1)
+
+
+def _run_unix_socket(app: web.Application, socket_path: str):
+    """Start the server listening on a Unix domain socket.
+
+    Removes any stale socket file, starts the app, then restricts
+    permissions to owner-only (0o700) so other users on a shared
+    host cannot connect.
+    """
+    import stat
+
+    path = os.path.realpath(socket_path)
+
+    # Remove stale socket if present
+    if os.path.exists(path):
+        try:
+            st = os.stat(path)
+            if stat.S_ISSOCK(st.st_mode):
+                os.unlink(path)
+                log_info(f"Removed stale socket: {path}", context="app")
+            else:
+                log_error(
+                    f"Socket path exists and is not a socket: {path}", context="app"
+                )
+                sys.exit(1)
+        except OSError as e:
+            log_error(f"Cannot remove stale socket {path}: {e}", context="app")
+            sys.exit(1)
+
+    # Ensure parent directory exists
+    parent = os.path.dirname(path)
+    if not os.path.isdir(parent):
+        log_error(
+            f"Socket parent directory does not exist: {parent}", context="app"
+        )
+        sys.exit(1)
+
+    async def _set_socket_permissions(app_inner: web.Application):
+        """Set restrictive permissions on the socket after it is created."""
+        if os.path.exists(path):
+            os.chmod(path, 0o700)
+            log_info(
+                f"Socket permissions set to 0700 (owner-only): {path}",
+                context="app",
+            )
+
+    async def _cleanup_socket(app_inner: web.Application):
+        """Remove socket file on shutdown."""
+        if os.path.exists(path):
+            try:
+                os.unlink(path)
+                log_info(f"Removed socket: {path}", context="app")
+            except OSError:
+                pass
+
+    app.on_startup.append(_set_socket_permissions)
+    app.on_shutdown.append(_cleanup_socket)
+
+    log_info(f"Starting server on unix socket: {path}", context="app")
+    web.run_app(app, path=path)

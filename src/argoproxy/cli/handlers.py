@@ -27,6 +27,8 @@ def set_config_envs(args: argparse.Namespace):
         os.environ["CONFIG_PATH"] = args.config
     if args.port:
         os.environ["PORT"] = str(args.port)
+    if getattr(args, "socket", None):
+        os.environ["SOCKET"] = args.socket
     if args.verbose:
         os.environ["VERBOSE"] = str(True)
     if args.quiet:
@@ -73,7 +75,11 @@ def handle_serve(args: argparse.Namespace):
         if config_path is not None:
             get_attack_logger().set_config_path(config_path)
 
-        run(host=config_instance.host, port=config_instance.port)
+        run(
+            host=config_instance.host,
+            port=config_instance.port,
+            socket=config_instance.socket,
+        )
     except KeyError:
         log_error("Port not specified in configuration file.", context="cli")
         sys.exit(1)
