@@ -34,7 +34,15 @@ def _format_config_yaml(data: dict) -> str:
     groups: list[tuple[str, list[str]]] = [
         (
             "# Core settings",
-            ["config_version", "user", "host", "port", "verbose", "log_to_file"],
+            [
+                "config_version",
+                "user",
+                "host",
+                "port",
+                "socket",
+                "verbose",
+                "log_to_file",
+            ],
         ),
         (
             "# Upstream",
@@ -120,6 +128,9 @@ def _apply_env_overrides(config_data: ArgoConfig) -> ArgoConfig:
     """Apply environment variable overrides to the config."""
     if env_host := os.getenv("HOST"):
         config_data.host = env_host
+
+    if env_socket := os.getenv("SOCKET"):
+        config_data.socket = env_socket
 
     if env_port := os.getenv("PORT"):
         config_data.port = int(env_port)

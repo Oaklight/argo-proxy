@@ -30,6 +30,7 @@ class ArgoConfig:
     # Configuration fields with default values
     host: str = "0.0.0.0"  # Default to 0.0.0.0
     port: int = 44497
+    socket: str = ""  # Unix socket path; overrides host:port when set
     user: str = ""
     verbose: bool = True
 
@@ -247,6 +248,10 @@ class ArgoConfig:
         serialized = asdict(self)
         # Drop private fields
         serialized = {k: v for k, v in serialized.items() if not k.startswith("_")}
+
+        # Only persist socket when explicitly set
+        if not self.socket:
+            serialized.pop("socket", None)
 
         # Add the user-configurable base URL (stored as private field)
         if self._argo_base_url:

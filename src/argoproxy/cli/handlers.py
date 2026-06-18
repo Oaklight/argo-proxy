@@ -29,6 +29,8 @@ def set_config_envs(args: argparse.Namespace):
         os.environ["HOST"] = args.host
     if args.port:
         os.environ["PORT"] = str(args.port)
+    if getattr(args, "socket", None):
+        os.environ["SOCKET"] = args.socket
     if args.verbose:
         os.environ["VERBOSE"] = str(True)
     if args.quiet:
@@ -75,12 +77,22 @@ def handle_serve(args: argparse.Namespace):
         if config_path is not None:
             get_attack_logger().set_config_path(config_path)
 
-        log_info(
-            f"🌐 Listening on http://{config_instance.host}:{config_instance.port}",
-            context="cli",
-        )
+        if config_instance.socket:
+            log_info(
+                f"🌐 Listening on unix://{config_instance.socket}",
+                context="cli",
+            )
+        else:
+            log_info(
+                f"🌐 Listening on http://{config_instance.host}:{config_instance.port}",
+                context="cli",
+            )
 
-        run(host=config_instance.host, port=config_instance.port)
+        run(
+            host=config_instance.host,
+            port=config_instance.port,
+            socket=config_instance.socket,
+        )
     except KeyError:
         log_error("Port not specified in configuration file.", context="cli")
         sys.exit(1)
