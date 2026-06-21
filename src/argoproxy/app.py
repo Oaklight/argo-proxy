@@ -331,9 +331,10 @@ def create_app():
             context="app",
         )
 
-        # Only register health check, version, and dev proxy routes
+        # Register basic utility routes available in dev mode
         app.router.add_get("/health", health_check)
         app.router.add_get("/version", get_version)
+        app.router.add_post("/refresh", refresh_models)
 
         # Register dev proxy routes using a temporary config for URL resolution
         dev_config = ArgoConfig()
