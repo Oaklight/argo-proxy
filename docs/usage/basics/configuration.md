@@ -12,6 +12,9 @@ config_version: '3'
 user: your_username
 host: 0.0.0.0
 port: 44497
+# socket: ''          # Unix socket path; overrides host:port when set.
+                      # Permissions are set to 0600 (owner-only) after creation.
+                      # Example: /run/user/12345/argo-proxy.sock
 verbose: true
 max_log_history: 3
 
@@ -63,6 +66,7 @@ argo-proxy config env test    # switch to test
 | `user` | Your ANL username | (Set during setup) |
 | `host` | Host address to bind the server to | `0.0.0.0` |
 | `port` | Application port | Randomly assigned |
+| `socket` | Unix socket path; overrides `host`/`port` when set. Permissions are set to `0600` (owner-only) | `""` (disabled) |
 | `verbose` | Debug logging | `true` |
 | `max_log_history` | Number of conversation history items kept in verbose request logs | `3` |
 | `argo_base_url` | Base URL for the Argo API (see [Upstream Environments](#upstream-environments)) | Dev URL |
@@ -80,6 +84,7 @@ The following fields are only persisted to the config file when set to non-defau
 
 | Option | Description | Condition |
 |--------|-------------|-----------|
+| `socket` | Unix socket path | Only when non-empty |
 | `use_legacy_argo` | Enable legacy ARGO gateway mode | Only when `true` |
 | `skip_url_validation` | Skip URL connectivity check at startup | Only when `true` |
 | `native_openai_base_url` | Base URL for OpenAI-compatible endpoints | Only when explicitly set and differs from `{argo_base_url}/v1` |

@@ -2,6 +2,25 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v3.1.2 (2026-06-21)
+
+**Unix socket support and CLI fixes.**
+
+### Added
+
+- **Unix socket support**: Listen on a Unix domain socket instead of TCP for secure deployments on shared multi-user hosts (e.g. HPC clusters). Use `--socket /path/to/sock` CLI flag or set `socket:` in `config.yaml`. Socket permissions are set to `0600` (owner-only) after creation. (#133, thanks @ericpershey)
+- **Startup listening address display**: The startup banner now shows `🌐 Listening on http://host:port` (TCP mode) or `🌐 Listening on unix://path` (socket mode)
+- **`/refresh` in dev mode**: The `/refresh` endpoint is now registered in `--dev` transparent proxy mode
+
+### Fixed
+
+- **`--host` CLI flag**: The `--host` / `-H` flag was defined but never wired through environment variables, so it had no effect. Now correctly overrides the config `host` field
+
+**Full Changelog**: https://github.com/Oaklight/argo-proxy/compare/v3.1.1...v3.1.2<br>
+**PyPI**: https://pypi.org/project/argo-proxy/3.1.2/
+
+---
+
 ## v3.1.1 (2026-06-12)
 
 **Model list refresh and modernization.**

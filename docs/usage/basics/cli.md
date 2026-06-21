@@ -51,24 +51,13 @@ argo-proxy config.yaml --port 8080 --verbose
 |--------|-------------|
 | `--host HOST, -H HOST` | Host address to bind the server to (default: from config or `0.0.0.0`) |
 | `--port PORT, -p PORT` | Port number (default: from config or random available port) |
+| `--socket PATH, -S PATH` | Unix socket path to listen on (overrides `--host`/`--port`). Permissions are set to `0600` (owner-only) for security on shared hosts |
 | `--verbose, -v` | Enable verbose logging |
 | `--quiet, -q` | Disable verbose logging |
 | `--show, -s` | Show the current configuration during launch |
 | `--no-banner` | Suppress the ASCII banner on startup |
 | `--username-passthrough` | Use API key from request headers as user field |
 | `--anthropic-stream-mode MODE` | Anthropic non-streaming handling: `force` (default), `retry`, or `passthrough` |
-| `--legacy-argo` | Use legacy ARGO gateway pipeline instead of universal dispatch |
-
-### Legacy-Only Options
-
-These options only apply when `--legacy-argo` is enabled:
-
-| Option | Description |
-|--------|-------------|
-| `--real-stream, -rs` | Enable real streaming (default behavior) |
-| `--pseudo-stream, -ps` | Enable pseudo streaming |
-| `--tool-prompting` | Enable prompting-based tool calls |
-| `--enable-leaked-tool-fix` | Enable AST-based leaked tool call detection |
 
 ### Examples
 
@@ -85,8 +74,8 @@ argo-proxy serve /path/to/config.yaml
 # Show config on startup
 argo-proxy serve --show --verbose
 
-# Start in legacy ARGO gateway mode
-argo-proxy serve --legacy-argo
+# Listen on a Unix socket (secure on shared hosts)
+argo-proxy serve --socket /run/user/$(id -u)/argo-proxy.sock
 ```
 
 ---
@@ -340,10 +329,11 @@ The following environment variables override configuration file settings:
 | Variable | Description |
 |----------|-------------|
 | `CONFIG_PATH` | Path to config file |
+| `HOST` | Server host address |
 | `PORT` | Server port |
+| `SOCKET` | Unix socket path (overrides HOST/PORT) |
 | `VERBOSE` | Enable/disable verbose logging |
 | `ARGO_BASE_URL` | Override the Argo base URL |
-| `USE_LEGACY_ARGO` | Enable legacy ARGO gateway mode |
 | `ANTHROPIC_STREAM_MODE` | Anthropic non-streaming handling: `force`, `retry`, or `passthrough` |
 | `SKIP_URL_VALIDATION` | Skip URL validation at startup |
 
