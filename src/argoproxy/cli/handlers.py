@@ -12,7 +12,7 @@ from .._vendor.semver import version_parse
 from ..__init__ import __version__
 from ..config import PATHS_TO_TRY, validate_config
 from ..utils.attack_logger import get_attack_logger
-from ..utils.logging import log_error
+from ..utils.logging import log_error, log_info
 from .display import CHANGELOG_URL, display_startup_banner
 
 
@@ -25,6 +25,8 @@ def set_config_envs(args: argparse.Namespace):
     """Set environment variables from serve CLI arguments."""
     if args.config:
         os.environ["CONFIG_PATH"] = args.config
+    if args.host:
+        os.environ["HOST"] = args.host
     if args.port:
         os.environ["PORT"] = str(args.port)
     if args.verbose:
@@ -72,6 +74,11 @@ def handle_serve(args: argparse.Namespace):
 
         if config_path is not None:
             get_attack_logger().set_config_path(config_path)
+
+        log_info(
+            f"🌐 Listening on http://{config_instance.host}:{config_instance.port}",
+            context="cli",
+        )
 
         run(host=config_instance.host, port=config_instance.port)
     except KeyError:

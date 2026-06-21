@@ -118,6 +118,9 @@ def save_config(
 
 def _apply_env_overrides(config_data: ArgoConfig) -> ArgoConfig:
     """Apply environment variable overrides to the config."""
+    if env_host := os.getenv("HOST"):
+        config_data.host = env_host
+
     if env_port := os.getenv("PORT"):
         config_data.port = int(env_port)
 
