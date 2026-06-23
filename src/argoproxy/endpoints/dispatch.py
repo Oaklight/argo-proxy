@@ -23,7 +23,7 @@ from aiohttp import web
 from llm_rosetta import get_converter_for_provider
 from llm_rosetta.auto_detect import ProviderType
 from llm_rosetta.converters.base.context import ConversionContext, StreamContext
-from llm_rosetta.converters.base.tools import sanitize_schema
+from llm_rosetta.converters.base import sanitize_schema
 from llm_rosetta.shims.provider_shim import ProviderShim, get_shim
 from llm_rosetta.shims.providers import load_providers
 from llm_rosetta.shims.transforms import apply_transforms
