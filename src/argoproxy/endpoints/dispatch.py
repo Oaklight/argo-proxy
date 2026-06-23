@@ -23,7 +23,6 @@ from aiohttp import web
 from llm_rosetta import get_converter_for_provider
 from llm_rosetta.auto_detect import ProviderType
 from llm_rosetta.converters.base.context import ConversionContext, StreamContext
-from llm_rosetta.converters.base import sanitize_schema
 from llm_rosetta.shims.provider_shim import ProviderShim, get_shim
 from llm_rosetta.shims.providers import load_providers
 from llm_rosetta.shims.transforms import apply_transforms
@@ -328,41 +327,6 @@ def _normalize_null_content(body: dict[str, Any]) -> None:
     for msg in messages:
         if isinstance(msg, dict) and msg.get("content") is None:
             msg["content"] = ""
-
-
-def _sanitize_tool_schemas(body: dict[str, Any]) -> dict[str, Any]:
-    """Sanitize tool parameter schemas for upstream compatibility.
-
-    Strips unsupported JSON Schema keywords and flattens combination keywords
-    (``anyOf``/``oneOf``/``allOf``) that upstreams like Vertex AI reject.
-    Operates on both OpenAI-format (``function.parameters``) and
-    Anthropic-format (``input_schema``) tool definitions.
-
-    Args:
-        body: The request body (modified in-place for tool schemas).
-
-    Returns:
-        The same body dict with sanitized tool schemas.
-    """
-    tools = body.get("tools")
-    if not tools or not isinstance(tools, list):
-        return body
-
-    for tool in tools:
-        # OpenAI Chat format: tools[].function.parameters
-        func = tool.get("function")
-        if isinstance(func, dict):
-            params = func.get("parameters")
-            if isinstance(params, dict):
-                func["parameters"] = sanitize_schema(params)
-            continue
-
-        # Anthropic format: tools[].input_schema
-        schema = tool.get("input_schema")
-        if isinstance(schema, dict):
-            tool["input_schema"] = sanitize_schema(schema)
-
-    return body
 
 
 def _strip_temperature_for_reasoning_models(
