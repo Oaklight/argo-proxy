@@ -1,17 +1,17 @@
-"""Universal dispatch module — core of argo-proxy v3.0.0.
+"""Universal dispatch module — core of argo-proxy.
 
 Routes any client API format (OpenAI Chat, OpenAI Responses, Anthropic Messages,
 Google GenAI) to the optimal upstream (native Anthropic for Claude, OpenAI Chat
 for everything else), using llm-rosetta for cross-format conversion.
 
-When source and target formats match, requests pass through without conversion.
+Conversion is delegated to :class:`~llm_rosetta.pipeline.ConversionPipeline`
+which handles shim reasoning, body transforms, and IR transforms internally.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import re
 import time
 import traceback
 from collections.abc import Callable
@@ -20,12 +20,9 @@ from typing import Any, Union
 import aiohttp
 from aiohttp import web
 
-from llm_rosetta import get_converter_for_provider
 from llm_rosetta.auto_detect import ProviderType
-from llm_rosetta.converters.base.context import ConversionContext, StreamContext
-from llm_rosetta.shims.provider_shim import ProviderShim, get_shim
+from llm_rosetta.pipeline import ConversionError, ConversionPipeline
 from llm_rosetta.shims.providers import load_providers
-from llm_rosetta.shims.transforms import apply_transforms
 
 from ..config import ArgoConfig
 from ..models import ModelRegistry
@@ -48,7 +45,6 @@ from ..utils.misc import (
     contains_argo_auth_warning,
     should_use_username_passthrough,
 )
-from ..utils.tool_calls import reorder_parallel_tool_calls
 
 # ---------------------------------------------------------------------------
 # SSE formatting (IR events → source-format SSE text)
@@ -101,31 +97,12 @@ def _is_openai_done(data: str) -> bool:
 # Load llm-rosetta provider shims on module import
 load_providers()
 
-# Map argo-proxy target_provider to llm-rosetta shim name
+# Map argo-proxy target_provider to llm-rosetta shim name.
+# ConversionPipeline accepts the shim name directly.
 _SHIM_NAME_MAP: dict[str, str] = {
     "anthropic": "argo--anthropic",
     "openai_chat": "argo--openai_chat",
 }
-
-
-def _resolve_shim(target_provider: ProviderType) -> ProviderShim | None:
-    """Look up the llm-rosetta shim for the given target provider."""
-    name = _SHIM_NAME_MAP.get(target_provider)
-    return get_shim(name) if name else None
-
-
-def _inject_shim_reasoning(
-    ctx: ConversionContext,
-    shim: ProviderShim | None,
-    model: str,
-) -> None:
-    """Inject the shim's reasoning capability config into the conversion context."""
-    if shim is None or shim.reasoning is None:
-        return
-    cap = shim.reasoning
-    if shim.model_reasoning and model in shim.model_reasoning:
-        cap = shim.model_reasoning[model]
-    ctx.options["reasoning_cap"] = cap
 
 
 # ---------------------------------------------------------------------------
@@ -189,14 +166,6 @@ def _dump_error_request(
     request body, upstream response status/text, URL, and provider context.
     When the dump directory exceeds 50 MB, existing ``.json`` files are
     automatically gzip-compressed.
-
-    Args:
-        request_body: The request payload sent (or intended) to upstream.
-        error_status: HTTP status code from the upstream response.
-        error_text: Body/text of the upstream error response.
-        upstream_url: The upstream URL the request was sent to.
-        source_provider: Client-side API format (e.g. ``"openai_chat"``).
-        target_provider: Upstream API format (e.g. ``"anthropic"``).
     """
     import gzip
     from datetime import datetime
@@ -260,17 +229,8 @@ def _dump_stream_retry_request(
     error_text: str,
     upstream_url: str,
 ) -> None:
-    """Dump request details when retry mode triggers a forced-streaming retry.
-
-    Thin wrapper around :func:`_dump_error_request` kept for backward
-    compatibility with existing call sites.
-    """
-    _dump_error_request(
-        request_body,
-        error_status,
-        error_text,
-        upstream_url,
-    )
+    """Dump request details when retry mode triggers a forced-streaming retry."""
+    _dump_error_request(request_body, error_status, error_text, upstream_url)
 
 
 # ---------------------------------------------------------------------------
@@ -286,92 +246,10 @@ def _detect_stream(source_provider: ProviderType, body: dict[str, Any]) -> bool:
     return False
 
 
-def _downgrade_developer_role(body: dict[str, Any]) -> None:
-    """Replace ``developer`` role with ``system`` for upstream compatibility.
-
-    The ``developer`` role was introduced in the OpenAI 2024-12-17 API
-    version for reasoning models (o1/o3/o4).  Upstream gateways that use
-    an older API version (e.g. the ANL Argo gateway) reject it with a
-    misleading ``Unknown parameter: 'messages[0].tool_calls'`` error.
-    Mapping back to ``system`` is safe — all OpenAI models still accept it.
-
-    Args:
-        body: The request body (modified in-place).
-    """
-    messages = body.get("messages")
-    if not messages or not isinstance(messages, list):
-        return
-    for msg in messages:
-        if isinstance(msg, dict) and msg.get("role") == "developer":
-            msg["role"] = "system"
-
-
-def _normalize_null_content(body: dict[str, Any]) -> None:
-    """Replace ``content: null`` with empty string in messages.
-
-    Some upstream gateways (e.g. the ARGO gateway for Gemini models)
-    iterate over message ``content`` and crash with
-    ``TypeError: 'NoneType' object is not iterable`` when ``content``
-    is ``null``.  This is common for assistant messages that carry only
-    ``tool_calls`` — the OpenAI SDK serialises their content as ``null``.
-
-    Normalizing ``null`` to ``""`` is semantically equivalent for all
-    provider formats and prevents this class of upstream errors.
-
-    Args:
-        body: The request body (modified in-place).
-    """
-    messages = body.get("messages")
-    if not messages or not isinstance(messages, list):
-        return
-    for msg in messages:
-        if isinstance(msg, dict) and msg.get("content") is None:
-            msg["content"] = ""
-
-
-def _strip_temperature_for_reasoning_models(
-    body: dict[str, Any], resolved_model: str
-) -> None:
-    """Strip ``temperature`` for reasoning models that reject it.
-
-    Reasoning-class models such as Claude Opus 4.7 deprecate the
-    ``temperature`` parameter and return ``400 invalid_request_error``
-    when it is present.  Silently remove it to avoid upstream rejections.
-
-    Args:
-        body: The request body (modified in-place).
-        resolved_model: The resolved internal model identifier.
-    """
-    if "temperature" not in body:
-        return
-    # Normalise for matching: strip non-alphanumeric, lowercase
-    normalised = re.sub(r"[^a-z0-9]", "", resolved_model.lower())
-    # Models that reject temperature — extend this set as needed
-    _NO_TEMPERATURE_MODELS = {"claudeopus47"}
-    if normalised in _NO_TEMPERATURE_MODELS:
-        removed = body.pop("temperature")
-        log_debug(
-            f"Stripped temperature={removed} (unsupported by {resolved_model})",
-            context="dispatch",
-        )
-
-
 def _extract_client_credential(
     request: web.Request, target_provider: ProviderType
 ) -> str | None:
-    """Extract auth credential from the client request, prioritised by target.
-
-    When the target is ``anthropic``, ``x-api-key`` is checked first; otherwise
-    ``Authorization`` (Bearer) is checked first.  Google-specific headers and
-    the ``?key=`` query parameter are checked as fallbacks.
-
-    Args:
-        request: The incoming client request.
-        target_provider: The upstream provider we are routing to.
-
-    Returns:
-        The extracted credential string, or ``None`` if none found.
-    """
+    """Extract auth credential from the client request, prioritised by target."""
 
     def _header_value(hdr: str) -> str | None:
         val = request.headers.get(hdr, "")
@@ -407,22 +285,7 @@ def _build_upstream_headers(
     fallback_user: str,
     stream: bool = False,
 ) -> dict[str, str]:
-    """Build HTTP headers for the upstream API request.
-
-    Auth credential logic:
-    - Without ``--username-passthrough``: always use *fallback_user*.
-    - With ``--username-passthrough``: extract from client request first,
-      fall back to *fallback_user*.
-
-    Args:
-        request: The incoming client request.
-        target_provider: The upstream provider (determines header format).
-        fallback_user: Value from ``config.user`` used when no client cred.
-        stream: Whether this is a streaming request.
-
-    Returns:
-        A dict of HTTP headers ready for the upstream request.
-    """
+    """Build HTTP headers for the upstream API request."""
     headers: dict[str, str] = {"Content-Type": "application/json"}
 
     if should_use_username_passthrough():
@@ -482,18 +345,13 @@ _STREAMING_HEADERS: dict[str, str] = {
 
 async def _write_sse_chunks(
     response: web.StreamResponse,
-    source_chunks: dict[str, Any] | list[dict[str, Any]] | None,
+    source_chunks: list[dict[str, Any]],
     format_sse: Callable[[dict[str, Any]], str],
 ) -> None:
     """Write formatted SSE chunks to the streaming response."""
-    if not source_chunks:
-        return
-    if isinstance(source_chunks, list):
-        for sc in source_chunks:
-            if sc:
-                await response.write(format_sse(sc).encode("utf-8"))
-    else:
-        await response.write(format_sse(source_chunks).encode("utf-8"))
+    for sc in source_chunks:
+        if sc:
+            await response.write(format_sse(sc).encode("utf-8"))
 
 
 # ---------------------------------------------------------------------------
@@ -529,9 +387,6 @@ async def _aggregate_anthropic_sse(
     the equivalent Anthropic Messages API non-streaming JSON response.
 
     Supports text, tool_use, thinking, and redacted_thinking content blocks.
-
-    Args:
-        upstream_resp: The aiohttp response containing SSE content.
 
     Returns:
         Aggregated response dict, or ``None`` if an ARGO auth warning is
@@ -640,17 +495,7 @@ async def _aggregate_anthropic_sse(
 
 
 def _debug_dump(stage: str, data: Any, config: ArgoConfig) -> None:
-    """Write a JSON dump to ``config.dump_dir``/<timestamp>_<stage>.json.
-
-    The dump is a no-op when ``config.dump_requests`` is False.
-
-    Args:
-        stage: Short label describing the processing stage (e.g.
-            ``"1_request_received"``).
-        data: Payload to serialize as JSON.
-        config: The current ArgoConfig instance (controls whether
-            dumping is enabled and where files are written).
-    """
+    """Write a JSON dump to ``config.dump_dir``/<timestamp>_<stage>.json."""
     if not config.dump_requests:
         return
     dump_dir = config.dump_dir
@@ -663,107 +508,72 @@ def _debug_dump(stage: str, data: Any, config: ArgoConfig) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Cross-format conversion handlers
+# Pipeline construction helper
 # ---------------------------------------------------------------------------
 
 
-class _PreparedConvert:
-    """Holds the results of the prepare phase so execute can be called
-    multiple times (e.g. retry with force_stream) without re-doing the
-    IR round-trip."""
-
-    __slots__ = (
-        "source_converter",
-        "target_converter",
-        "shim",
-        "ctx",
-        "target_body",
-        "source_provider",
-        "target_provider",
-    )
-
-    def __init__(
-        self,
-        source_converter: Any,
-        target_converter: Any,
-        shim: ProviderShim | None,
-        ctx: ConversionContext,
-        target_body: dict[str, Any],
-        source_provider: ProviderType,
-        target_provider: ProviderType,
-    ):
-        self.source_converter = source_converter
-        self.target_converter = target_converter
-        self.shim = shim
-        self.ctx = ctx
-        self.target_body = target_body
-        self.source_provider = source_provider
-        self.target_provider = target_provider
-
-
-def _prepare_convert(
+def _build_pipeline(
     body: dict[str, Any],
     source_provider: ProviderType,
     target_provider: ProviderType,
     config: ArgoConfig,
-) -> Union[_PreparedConvert, web.Response]:
-    """Source → IR → target + shim transforms.  Returns prepared state or error.
+) -> tuple[ConversionPipeline, dict[str, Any]] | web.Response:
+    """Build a ConversionPipeline and convert the request.
 
-    The expensive IR round-trip is done once here.  The result can be passed
-    to ``_execute_convert`` one or more times with different ``force_stream``
-    settings.
+    Returns ``(pipeline, target_body)`` on success, or a ``web.Response``
+    error on conversion failure.  The pipeline's ``convert_request()`` is
+    called here — body fixups (developer role downgrade, null content,
+    temperature stripping) and IR transforms (image truncation, tool call
+    unwind) are all handled by the shim declared in llm-rosetta.
+
+    Args:
+        body: Source-format request body.
+        source_provider: Client API format.
+        target_provider: Upstream API format.
+        config: ArgoConfig instance.
+
+    Returns:
+        Tuple of ``(pipeline, target_body)`` or an error ``web.Response``.
     """
-    source_converter = get_converter_for_provider(source_provider)
-    target_converter = get_converter_for_provider(target_provider)
-    shim = _resolve_shim(target_provider)
-    ctx = ConversionContext(options={"metadata_mode": "preserve"})
-    _inject_shim_reasoning(ctx, shim, body.get("model", ""))
+    shim_name = _SHIM_NAME_MAP.get(target_provider)
 
-    # 1. Source → IR
+    pipeline = ConversionPipeline(
+        source_provider,
+        target_provider,
+        shim=shim_name,
+        upstream_model=body.get("model"),
+    )
+
     _debug_dump("1_request_received", body, config)
+
     try:
-        ir_request = source_converter.request_from_provider(body, context=ctx)
-    except Exception as exc:
-        return _error_response(source_provider, 400, f"Failed to parse request: {exc}")
+        target_body = pipeline.convert_request(body)
+    except ConversionError as exc:
+        return _error_response(source_provider, 400, str(exc))
 
     if config.verbose:
-        log_debug(f"IR request keys: {list(ir_request.keys())}", context="dispatch")
-
-    # 2. IR → Target
-    try:
-        convert_kwargs: dict[str, str] = {}
-        if target_provider == "google":
-            convert_kwargs["output_format"] = "rest"
-        target_body, warnings = target_converter.request_to_provider(
-            ir_request, context=ctx, **convert_kwargs
+        log_debug(
+            f"IR request keys: {list(pipeline.ir_request.keys())}",
+            context="dispatch",
         )
-    except Exception as exc:
-        return _error_response(source_provider, 400, f"Conversion error: {exc}")
 
-    if warnings:
-        log_info(f"Conversion warnings: {warnings}", context="dispatch")
+    if pipeline.warnings:
+        log_info(f"Conversion warnings: {pipeline.warnings}", context="dispatch")
 
-    # Apply shim to_transforms (e.g. strip unsupported fields, rename fields)
-    if shim and shim.to_transforms:
-        target_body = apply_transforms(shim.to_transforms, target_body)
-
+    # Argo-specific post-conversion fixups (not part of shim transforms)
     _ensure_user_field(target_body, config.user)
-    _downgrade_developer_role(target_body)
-    _normalize_null_content(target_body)
 
-    return _PreparedConvert(
-        source_converter=source_converter,
-        target_converter=target_converter,
-        shim=shim,
-        ctx=ctx,
-        target_body=target_body,
-        source_provider=source_provider,
-        target_provider=target_provider,
-    )
+    return pipeline, target_body
+
+
+# ---------------------------------------------------------------------------
+# Cross-format conversion handlers
+# ---------------------------------------------------------------------------
 
 
 async def _execute_convert(
-    prepared: _PreparedConvert,
+    pipeline: ConversionPipeline,
+    target_body: dict[str, Any],
     session: aiohttp.ClientSession,
     upstream_url: str,
     headers: dict[str, str],
@@ -777,10 +587,10 @@ async def _execute_convert(
     When ``force_stream`` is True the upstream leg uses SSE and the event
     stream is aggregated into a single JSON dict before conversion.
     """
-    target_body = dict(prepared.target_body)  # shallow copy for mutation
+    target_body = dict(target_body)  # shallow copy for mutation
 
     if force_stream:
-        target_body = _inject_stream_flags(target_body, prepared.target_provider)
+        target_body = _inject_stream_flags(target_body, pipeline._target_provider)
         headers = dict(headers)
         headers["Accept"] = "text/event-stream"
         headers["Accept-Encoding"] = "identity"
@@ -805,7 +615,7 @@ async def _execute_convert(
                 log_upstream_error(
                     upstream_resp.status,
                     error_text,
-                    endpoint=str(prepared.target_provider),
+                    endpoint=str(pipeline._target_provider),
                     is_streaming=force_stream,
                 )
                 _dump_error_request(
@@ -813,8 +623,8 @@ async def _execute_convert(
                     upstream_resp.status,
                     error_text,
                     upstream_url,
-                    source_provider=prepared.source_provider,
-                    target_provider=prepared.target_provider,
+                    source_provider=pipeline._source_provider,
+                    target_provider=pipeline._target_provider,
                 )
                 return web.Response(
                     text=error_text,
@@ -823,7 +633,7 @@ async def _execute_convert(
                 )
 
             upstream_fmt = (
-                "anthropic" if prepared.target_provider == "anthropic" else "openai"
+                "anthropic" if pipeline._target_provider == "anthropic" else "openai"
             )
 
             if force_stream:
@@ -831,58 +641,37 @@ async def _execute_convert(
                 if upstream_json is None:
                     log_error(ARGO_AUTH_ERROR_MESSAGE, context="dispatch")
                     return _error_response(
-                        prepared.source_provider, 403, ARGO_AUTH_ERROR_MESSAGE
+                        pipeline._source_provider, 403, ARGO_AUTH_ERROR_MESSAGE
                     )
             else:
                 try:
                     upstream_json = await upstream_resp.json()
                 except (aiohttp.ContentTypeError, json.JSONDecodeError):
                     return _error_response(
-                        prepared.source_provider,
+                        pipeline._source_provider,
                         502,
                         "Upstream returned non-JSON response",
                     )
                 if check_response_for_argo_warning(upstream_json, upstream_fmt):
                     log_error(ARGO_AUTH_ERROR_MESSAGE, context="dispatch")
                     return _error_response(
-                        prepared.source_provider, 403, ARGO_AUTH_ERROR_MESSAGE
+                        pipeline._source_provider, 403, ARGO_AUTH_ERROR_MESSAGE
                     )
 
             _debug_dump("3_response_received", upstream_json, config)
 
-            if prepared.shim and prepared.shim.from_transforms:
-                upstream_json = apply_transforms(
-                    prepared.shim.from_transforms, upstream_json
-                )
-
+            # Phase 4: response conversion via pipeline
             try:
-                ir_response = prepared.target_converter.response_from_provider(
-                    upstream_json, context=prepared.ctx
-                )
-            except Exception as exc:
-                return _error_response(
-                    prepared.source_provider,
-                    502,
-                    f"Failed to parse upstream response: {exc}",
-                )
-
-            try:
-                source_response = prepared.source_converter.response_to_provider(
-                    ir_response, context=prepared.ctx
-                )
-            except Exception as exc:
-                return _error_response(
-                    prepared.source_provider,
-                    500,
-                    f"Failed to convert response: {exc}",
-                )
+                source_response = pipeline.convert_response(upstream_json)
+            except ConversionError as exc:
+                return _error_response(pipeline._source_provider, 502, str(exc))
 
             _debug_dump("4_response_converted", source_response, config)
             return web.json_response(source_response)
 
     except aiohttp.ClientError as exc:
         return _error_response(
-            prepared.source_provider, 502, f"Upstream request failed: {exc}"
+            pipeline._source_provider, 502, f"Upstream request failed: {exc}"
         )
 
 
@@ -897,12 +686,14 @@ async def _convert(
     *,
     force_stream: bool = False,
 ) -> web.Response:
-    """Convenience wrapper: prepare + execute in one call."""
-    prepared = _prepare_convert(body, source_provider, target_provider, config)
-    if isinstance(prepared, web.Response):
-        return prepared
+    """Convenience wrapper: build pipeline + execute in one call."""
+    result = _build_pipeline(body, source_provider, target_provider, config)
+    if isinstance(result, web.Response):
+        return result
+    pipeline, target_body = result
     return await _execute_convert(
-        prepared,
+        pipeline,
+        target_body,
         session,
         upstream_url,
         headers,
@@ -923,26 +714,36 @@ async def _convert_with_retry(
 ) -> web.Response:
     """Try non-streaming, fall back to forced-stream on Anthropic bounce-back.
 
-    Prepares the IR conversion once, then executes twice if needed.
+    Builds the pipeline once, then executes twice if needed.  The request
+    conversion (Phase 1+2) is done once; only the transport + response
+    conversion is retried with ``force_stream=True``.
     """
-    prepared = _prepare_convert(body, source_provider, target_provider, config)
-    if isinstance(prepared, web.Response):
-        return prepared
+    result = _build_pipeline(body, source_provider, target_provider, config)
+    if isinstance(result, web.Response):
+        return result
+    pipeline, target_body = result
 
-    result = await _execute_convert(
-        prepared, session, upstream_url, headers, body, config, force_stream=False
+    resp = await _execute_convert(
+        pipeline,
+        target_body,
+        session,
+        upstream_url,
+        headers,
+        body,
+        config,
+        force_stream=False,
     )
 
-    if result.status != 500 or not result.body:
-        return result
+    if resp.status != 500 or not resp.body:
+        return resp
 
     try:
-        body_text = result.body.decode("utf-8")
+        body_text = resp.body.decode("utf-8")
     except (UnicodeDecodeError, AttributeError):
-        return result
+        return resp
 
     if not _is_anthropic_stream_required_error(500, body_text):
-        return result
+        return resp
 
     log_info(
         "Anthropic returned 'streaming required' error, "
@@ -950,8 +751,22 @@ async def _convert_with_retry(
         context="dispatch",
     )
     _dump_stream_retry_request(body, 500, body_text, upstream_url)
+
+    # Build a fresh pipeline for the retry (ConversionPipeline is one-shot)
+    result2 = _build_pipeline(body, source_provider, target_provider, config)
+    if isinstance(result2, web.Response):
+        return result2
+    pipeline2, target_body2 = result2
+
     return await _execute_convert(
-        prepared, session, upstream_url, headers, body, config, force_stream=True
+        pipeline2,
+        target_body2,
+        session,
+        upstream_url,
+        headers,
+        body,
+        config,
+        force_stream=True,
     )
 
 
@@ -966,38 +781,26 @@ async def _convert_streaming(
     config: ArgoConfig,
 ) -> web.StreamResponse:
     """Streaming: source → IR → target → upstream SSE → IR events → source SSE."""
-    source_converter = get_converter_for_provider(source_provider)
-    target_converter = get_converter_for_provider(target_provider)
-    shim = _resolve_shim(target_provider)
-    ctx = ConversionContext(options={"metadata_mode": "preserve"})
-    _inject_shim_reasoning(ctx, shim, body.get("model", ""))
+    shim_name = _SHIM_NAME_MAP.get(target_provider)
 
-    # 1. Source → IR
+    pipeline = ConversionPipeline(
+        source_provider,
+        target_provider,
+        shim=shim_name,
+        upstream_model=body.get("model"),
+    )
+
+    # Phase 1+2: Source → IR → Target
     _debug_dump("s1_request_received", body, config)
     try:
-        ir_request = source_converter.request_from_provider(body, context=ctx)
-    except Exception as exc:
-        return _error_response(source_provider, 400, f"Failed to parse request: {exc}")
+        target_body = pipeline.convert_request(body)
+    except ConversionError as exc:
+        return _error_response(source_provider, 400, str(exc))
 
-    # 2. IR → Target
-    try:
-        convert_kwargs: dict[str, str] = {}
-        if target_provider == "google":
-            convert_kwargs["output_format"] = "rest"
-        target_body, warnings = target_converter.request_to_provider(
-            ir_request, context=ctx, **convert_kwargs
-        )
-    except Exception as exc:
-        return _error_response(source_provider, 400, f"Conversion error: {exc}")
+    if pipeline.warnings:
+        log_info(f"Conversion warnings: {pipeline.warnings}", context="dispatch")
 
-    if warnings:
-        log_info(f"Conversion warnings: {warnings}", context="dispatch")
-
-    # Apply shim to_transforms
-    if shim and shim.to_transforms:
-        target_body = apply_transforms(shim.to_transforms, target_body)
-
-    # 3. Inject stream flags
+    # Inject stream flags
     target_body = _inject_stream_flags(target_body, target_provider)
     _debug_dump("s2_request_converted", target_body, config)
     if config.verbose:
@@ -1005,11 +808,13 @@ async def _convert_streaming(
             target_body, verbose=True, max_history_items=config.max_log_history
         )
 
+    # Argo-specific post-conversion fixups
     _ensure_user_field(target_body, config.user)
-    _downgrade_developer_role(target_body)
-    _normalize_null_content(target_body)
 
     format_sse = _SSE_FORMATTERS[source_provider]
+
+    # Create stream processor for per-chunk conversion
+    processor = pipeline.create_stream_processor()
 
     try:
         async with session.post(
@@ -1044,12 +849,6 @@ async def _convert_streaming(
             response.enable_chunked_encoding()
             prepared = False
 
-            from_ctx = StreamContext()  # upstream → IR
-            to_ctx = StreamContext()  # IR → source
-            # Bridge preserve-mode metadata from request phase
-            to_ctx.options["metadata_mode"] = "preserve"
-            if "_request_echo" in ctx.metadata:
-                to_ctx.metadata["_request_echo"] = ctx.metadata["_request_echo"]
             chunk_count = 0
             t0 = time.monotonic()
             _auth_checked = False
@@ -1107,7 +906,6 @@ async def _convert_streaming(
                         continue
 
                     chunk_count += 1
-
                     _raw_chunks.append(chunk_data)
 
                     # Log first chunk and error chunks for diagnostics
@@ -1130,45 +928,14 @@ async def _convert_streaming(
                             target_provider=target_provider,
                         )
 
-                    # Upstream chunk → IR events
-                    ir_events = target_converter.stream_response_from_provider(
-                        chunk_data, context=from_ctx
-                    )
-
-                    # IR events → source-format chunks
-                    for ir_event in ir_events:
-                        source_chunks = source_converter.stream_response_to_provider(
-                            ir_event, context=to_ctx
-                        )
-                        _converted_chunks.extend(source_chunks)
-                        await _write_sse_chunks(response, source_chunks, format_sse)
+                    # Convert chunk via StreamProcessor
+                    source_events = processor.process_chunk(chunk_data)
+                    _converted_chunks.extend(source_events)
+                    await _write_sse_chunks(response, source_events, format_sse)
 
             # Ensure response is prepared even if no chunks were received
             if not prepared:
                 await response.prepare(request)
-
-            # ----------------------------------------------------------
-            # Fallback: ensure stream is properly terminated.
-            # If upstream never sent a final empty-choices chunk (e.g.
-            # it ignores stream_options.include_usage), the converter
-            # may not have emitted StreamEndEvent.  Synthesize the
-            # missing termination events so the client sees a valid
-            # end-of-stream sequence.
-            # ----------------------------------------------------------
-            if not from_ctx.is_ended:
-                from llm_rosetta.types.ir.stream import StreamEndEvent
-
-                log_debug(
-                    "Upstream stream ended without StreamEndEvent; "
-                    "synthesizing termination events",
-                    context="dispatch",
-                )
-                from_ctx.mark_ended()
-                end_event = StreamEndEvent(type="stream_end")
-                source_chunks = source_converter.stream_response_to_provider(
-                    end_event, context=to_ctx
-                )
-                await _write_sse_chunks(response, source_chunks, format_sse)
 
             # Emit end-of-stream marker for OpenAI Chat
             if source_provider == "openai_chat":
@@ -1274,9 +1041,6 @@ async def proxy_request(
         if target_provider == "anthropic":
             _apply_anthropic_user_id(body, config.user)
 
-        # Strip temperature for reasoning models that reject it
-        _strip_temperature_for_reasoning_models(body, resolved_model)
-
         # Detect streaming
         stream = force_stream or _detect_stream(source_provider, body)
 
@@ -1284,14 +1048,6 @@ async def proxy_request(
         headers = _build_upstream_headers(
             request, target_provider, fallback_user=config.user, stream=stream
         )
-
-        # Reorder parallel tool calls for Gemini models — the ARGO gateway
-        # rejects requests where a single assistant message contains multiple
-        # tool_calls.  Split them into sequential call-result pairs.
-        if model_registry._classify_model_by_family(resolved_model) == "google":
-            messages = body.get("messages")
-            if messages and isinstance(messages, list):
-                body["messages"] = reorder_parallel_tool_calls(messages)
 
         # All requests go through the full converter + shim pipeline.
         # Same-format (e.g. anthropic → anthropic) still benefits from
