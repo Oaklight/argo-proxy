@@ -168,11 +168,7 @@ cython_debug/
 #.idea/
 
 # Visual Studio Code
-#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
-#  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#  and can be added to the global gitignore or merged into this file. However, if you prefer, 
-#  you could uncomment the following to ignore the enitre vscode folder
-# .vscode/
+.vscode/
 
 # Ruff stuff:
 .ruff_cache/
@@ -196,3 +192,11 @@ error_dumps/
 stream_retry_dumps/
 leaked_tool_calls/
 attack_logs/
+
+# Tool-generated session artifacts
+.antigravitycli/
+.playwright-mcp/
+
+# Documentation worktrees (orphan branches)
+docs_en/
+docs_zh/
