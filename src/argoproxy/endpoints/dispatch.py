@@ -781,24 +781,10 @@ async def _convert_streaming(
     config: ArgoConfig,
 ) -> web.StreamResponse:
     """Streaming: source → IR → target → upstream SSE → IR events → source SSE."""
-    shim_name = _SHIM_NAME_MAP.get(target_provider)
-
-    pipeline = ConversionPipeline(
-        source_provider,
-        target_provider,
-        shim=shim_name,
-        upstream_model=body.get("model"),
-    )
-
-    # Phase 1+2: Source → IR → Target
-    _debug_dump("s1_request_received", body, config)
-    try:
-        target_body = pipeline.convert_request(body)
-    except ConversionError as exc:
-        return _error_response(source_provider, 400, str(exc))
-
-    if pipeline.warnings:
-        log_info(f"Conversion warnings: {pipeline.warnings}", context="dispatch")
+    result = _build_pipeline(body, source_provider, target_provider, config)
+    if isinstance(result, web.Response):
+        return result
+    pipeline, target_body = result
 
     # Inject stream flags
     target_body = _inject_stream_flags(target_body, target_provider)
