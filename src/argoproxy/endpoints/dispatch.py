@@ -574,6 +574,8 @@ def _build_pipeline(
 async def _execute_convert(
     pipeline: ConversionPipeline,
     target_body: dict[str, Any],
+    source_provider: ProviderType,
+    target_provider: ProviderType,
     session: aiohttp.ClientSession,
     upstream_url: str,
     headers: dict[str, str],
@@ -590,7 +592,7 @@ async def _execute_convert(
     target_body = dict(target_body)  # shallow copy for mutation
 
     if force_stream:
-        target_body = _inject_stream_flags(target_body, pipeline._target_provider)
+        target_body = _inject_stream_flags(target_body, target_provider)
         headers = dict(headers)
         headers["Accept"] = "text/event-stream"
         headers["Accept-Encoding"] = "identity"
@@ -615,7 +617,7 @@ async def _execute_convert(
                 log_upstream_error(
                     upstream_resp.status,
                     error_text,
-                    endpoint=str(pipeline._target_provider),
+                    endpoint=str(target_provider),
                     is_streaming=force_stream,
                 )
                 _dump_error_request(
@@ -623,8 +625,8 @@ async def _execute_convert(
                     upstream_resp.status,
                     error_text,
                     upstream_url,
-                    source_provider=pipeline._source_provider,
-                    target_provider=pipeline._target_provider,
+                    source_provider=source_provider,
+                    target_provider=target_provider,
                 )
                 return web.Response(
                     text=error_text,
@@ -632,30 +634,28 @@ async def _execute_convert(
                     content_type="application/json",
                 )
 
-            upstream_fmt = (
-                "anthropic" if pipeline._target_provider == "anthropic" else "openai"
-            )
+            upstream_fmt = "anthropic" if target_provider == "anthropic" else "openai"
 
             if force_stream:
                 upstream_json = await _aggregate_anthropic_sse(upstream_resp)
                 if upstream_json is None:
                     log_error(ARGO_AUTH_ERROR_MESSAGE, context="dispatch")
                     return _error_response(
-                        pipeline._source_provider, 403, ARGO_AUTH_ERROR_MESSAGE
+                        source_provider, 403, ARGO_AUTH_ERROR_MESSAGE
                     )
             else:
                 try:
                     upstream_json = await upstream_resp.json()
                 except (aiohttp.ContentTypeError, json.JSONDecodeError):
                     return _error_response(
-                        pipeline._source_provider,
+                        source_provider,
                         502,
                         "Upstream returned non-JSON response",
                     )
                 if check_response_for_argo_warning(upstream_json, upstream_fmt):
                     log_error(ARGO_AUTH_ERROR_MESSAGE, context="dispatch")
                     return _error_response(
-                        pipeline._source_provider, 403, ARGO_AUTH_ERROR_MESSAGE
+                        source_provider, 403, ARGO_AUTH_ERROR_MESSAGE
                     )
 
             _debug_dump("3_response_received", upstream_json, config)
@@ -664,15 +664,13 @@ async def _execute_convert(
             try:
                 source_response = pipeline.convert_response(upstream_json)
             except ConversionError as exc:
-                return _error_response(pipeline._source_provider, 502, str(exc))
+                return _error_response(source_provider, 502, str(exc))
 
             _debug_dump("4_response_converted", source_response, config)
             return web.json_response(source_response)
 
     except aiohttp.ClientError as exc:
-        return _error_response(
-            pipeline._source_provider, 502, f"Upstream request failed: {exc}"
-        )
+        return _error_response(source_provider, 502, f"Upstream request failed: {exc}")
 
 
 async def _convert(
@@ -694,6 +692,8 @@ async def _convert(
     return await _execute_convert(
         pipeline,
         target_body,
+        source_provider,
+        target_provider,
         session,
         upstream_url,
         headers,
@@ -726,6 +726,8 @@ async def _convert_with_retry(
     resp = await _execute_convert(
         pipeline,
         target_body,
+        source_provider,
+        target_provider,
         session,
         upstream_url,
         headers,
@@ -761,6 +763,8 @@ async def _convert_with_retry(
     return await _execute_convert(
         pipeline2,
         target_body2,
+        source_provider,
+        target_provider,
         session,
         upstream_url,
         headers,
