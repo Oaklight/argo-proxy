@@ -98,10 +98,7 @@ if QUICK_MODE:
     print("=== QUICK MODE: cross-format models only ===\n")
 else:
     ALL_MODELS = (
-        ANTHROPIC_MODELS
-        + GOOGLE_MODELS
-        + OPENAI_MODELS
-        + OPENAI_REASONING_MODELS
+        ANTHROPIC_MODELS + GOOGLE_MODELS + OPENAI_MODELS + OPENAI_REASONING_MODELS
     )
     print(f"=== FULL MODE: {len(ALL_MODELS)} models ===\n")
 
