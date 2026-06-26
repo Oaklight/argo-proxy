@@ -31,9 +31,9 @@ dependencies = [
 dev = [
     "dotenv>=0.9.9",
     "openai>=1.79.0",
-    "ruff>=0.15.0",
-    "ty>=0.0.31",
-    "complexipy>=5.2.0",
+    "ruff==0.15.20",
+    "ty==0.0.54",
+    "complexipy==5.6.1",
     "build>=1.2.2.post1",
     "twine>=6.1.0",
     "httpx>=0.28.1",
