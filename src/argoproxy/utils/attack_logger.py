@@ -4,6 +4,7 @@ This module provides functionality to:
 1. Log attack attempts with concise warning messages
 2. Save detailed attack information to files for analysis
 3. Organize logs by date in a dedicated directory
+4. Block malicious requests at the application level via middleware
 """
 
 import gzip
@@ -13,6 +14,9 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
+
+from aiohttp import web
 
 from .logging import log_warning
 
@@ -65,6 +69,19 @@ class AttackLogger:
             "javascript:",
             "onerror=",
             "onload=",
+        ],
+        "command_injection": [
+            "$(",
+            "/bin/bash",
+            "/bin/sh",
+            "/bin/zsh",
+            "cmd.exe",
+            "powershell",
+            "/dev/tcp/",
+            "/dev/udp/",
+            "nslookup ",
+            "curl ",
+            "wget ",
         ],
     }
 
@@ -219,6 +236,12 @@ class AttackFilter(logging.Filter):
         "${{",
         "${#",
         "%24%7B",
+        # Command injection
+        "$(",
+        "/bin/bash",
+        "/bin/sh",
+        "/dev/tcp/",
+        "/dev/udp/",
     ]
 
     def __init__(self, attack_logger: AttackLogger):
@@ -304,6 +327,126 @@ class AttackFilter(logging.Filter):
             if pattern in text:
                 return pattern
         return "unknown"
+
+
+# ---------------------------------------------------------------------------
+# Request-level security middleware
+# ---------------------------------------------------------------------------
+
+# Patterns checked against URL-decoded path + query string on every request.
+# These are high-confidence indicators — unlikely to appear in legitimate
+# LLM API traffic, so false-positive risk is low.
+_REQUEST_ATTACK_PATTERNS: dict[str, list[str]] = {
+    "command_injection": [
+        "$(",  # bash subshell: $(cmd)
+        "`",  # backtick command substitution
+        "/bin/bash",
+        "/bin/sh",
+        "/bin/zsh",
+        "cmd.exe",
+        "powershell",
+        "/dev/tcp/",
+        "/dev/udp/",
+    ],
+    "struts2_ognl": [
+        "xwork.MethodAccessor",
+        "_memberAccess",
+        "allowStaticMethodAccess",
+        "java.lang.Runtime",
+        "org.apache.struts2",
+    ],
+    "directory_traversal": [
+        "././././",
+        "../../../",
+    ],
+    "ssti_probe": [
+        "${{",
+        "${#",
+    ],
+    "xss_probe": [
+        "<script>",
+        "javascript:",
+    ],
+}
+
+
+def _decode_url(raw: str) -> str:
+    """URL-decode a string, applying up to 2 rounds to catch double-encoding.
+
+    Args:
+        raw: Raw URL string.
+
+    Returns:
+        Decoded string.
+    """
+    decoded = unquote(raw)
+    # Second pass for double-encoded payloads like %2524%2528 -> %24%28 -> $(
+    second = unquote(decoded)
+    return second if second != decoded else decoded
+
+
+def _detect_request_attack(url_decoded: str) -> str | None:
+    """Check a decoded URL string against request-level attack patterns.
+
+    Args:
+        url_decoded: URL-decoded path + query string.
+
+    Returns:
+        Attack type string if matched, None otherwise.
+    """
+    url_lower = url_decoded.lower()
+    for attack_type, patterns in _REQUEST_ATTACK_PATTERNS.items():
+        for pattern in patterns:
+            if pattern.lower() in url_lower:
+                return attack_type
+    return None
+
+
+@web.middleware
+async def security_middleware(
+    request: web.Request,
+    handler,
+) -> web.StreamResponse:
+    """Application-level middleware that blocks requests with malicious payloads.
+
+    This complements the AttackFilter (which catches parser-level errors) by
+    inspecting syntactically valid HTTP requests before they reach handlers.
+    The URL path and query string are URL-decoded before pattern matching.
+
+    Args:
+        request: The incoming aiohttp request.
+        handler: The next handler in the middleware chain.
+
+    Returns:
+        A 403 response if an attack is detected, otherwise the handler response.
+    """
+    # Decode and inspect path + query string
+    raw_url = request.path_qs
+    decoded_url = _decode_url(raw_url)
+    attack_type = _detect_request_attack(decoded_url)
+
+    if attack_type is not None:
+        # Extract remote IP
+        peername = (
+            request.transport.get_extra_info("peername") if request.transport else None
+        )
+        remote_ip = peername[0] if peername else request.remote or "unknown"
+
+        # Log via AttackLogger
+        attack_logger = get_attack_logger()
+        attack_logger.log_attack(
+            remote_ip=remote_ip,
+            raw_request=f"{request.method} {raw_url}",
+            error_type="blocked_by_middleware",
+            error_message=f"Request blocked: {attack_type} pattern in URL",
+        )
+
+        return web.json_response(
+            {"error": "Forbidden"},
+            status=403,
+        )
+
+    return await handler(request)
 
 
 # Global attack logger instance

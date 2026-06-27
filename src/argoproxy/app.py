@@ -19,6 +19,7 @@ from .performance import (
     OptimizedHTTPSession,
     get_performance_config,
 )
+from .utils.attack_logger import security_middleware
 from .utils.logging import log_debug, log_error, log_info, log_warning
 
 
@@ -321,7 +322,10 @@ def create_app():
     # Set client_max_size to 100MB to handle large image payloads from remote clients
     # Users may send images larger than the gateway's 20MB limit; argo-proxy will
     # compress them before forwarding. Default aiohttp limit is 1MB which is too small.
-    app = web.Application(client_max_size=100 * 1024 * 1024)
+    app = web.Application(
+        client_max_size=100 * 1024 * 1024,
+        middlewares=[security_middleware],
+    )
     app.on_startup.append(prepare_app)
     app.on_shutdown.append(cleanup_app)
 
