@@ -2,6 +2,33 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v3.2.0a0 (2026-06-27)
+
+**Pre-release: migrate to llm-rosetta 0.7.x ConversionPipeline.**
+
+### Changed
+
+- **Adopted llm-rosetta ConversionPipeline** (#135): Replaced manual converter instantiation and IR round-trips with the declarative `ConversionPipeline` API from llm-rosetta 0.7.x. Pipeline construction is centralized in `_build_pipeline()` and reused across streaming, non-streaming, and retry paths
+- **Bumped llm-rosetta to >=0.7.0a0**: Breaking change from 0.6.x — the new ConversionPipeline API replaces the previous manual converter + shim workflow
+- **Threaded provider types explicitly**: Pipeline internals are no longer accessed directly; provider types are passed through the dispatch layer
+
+### Fixed
+
+- **Reuse pipeline in retry**: Retry logic now reuses the existing `ConversionPipeline` instance instead of rebuilding it from scratch, avoiding redundant setup
+
+### Added
+
+- **Multi-entry E2E tests**: New `test_multi_entry.py` covering Anthropic Messages, Google GenAI, and OpenAI Responses as input formats, with cross-format and same-format upstream routing (9 test paths)
+- **agentabi E2E tests**: `test_agentabi.py` covering all 29 upstream models via OpenAI Chat entry with codex CLI
+
+### Removed
+
+- **Dead `_sanitize_tool_schemas`**: Removed unused `_sanitize_tool_schemas` function and stale `sanitize_schema` import
+
+**Full Changelog**: https://github.com/Oaklight/argo-proxy/compare/v3.1.2...v3.2.0a0
+
+---
+
 ## v3.1.2 (2026-06-21)
 
 **Unix socket support and CLI fixes.**
