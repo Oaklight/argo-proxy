@@ -714,9 +714,9 @@ async def _convert_with_retry(
 ) -> web.Response:
     """Try non-streaming, fall back to forced-stream on Anthropic bounce-back.
 
-    Builds the pipeline once, then executes twice if needed.  The request
-    conversion (Phase 1+2) is done once; only the transport + response
-    conversion is retried with ``force_stream=True``.
+    Builds the pipeline once and reuses it for the retry.  ``convert_request()``
+    is one-shot, but ``convert_response()`` has no such guard — it was never
+    called on the failed first attempt, so the same pipeline instance works.
     """
     result = _build_pipeline(body, source_provider, target_provider, config)
     if isinstance(result, web.Response):
@@ -754,15 +754,13 @@ async def _convert_with_retry(
     )
     _dump_stream_retry_request(body, 500, body_text, upstream_url)
 
-    # Build a fresh pipeline for the retry (ConversionPipeline is one-shot)
-    result2 = _build_pipeline(body, source_provider, target_provider, config)
-    if isinstance(result2, web.Response):
-        return result2
-    pipeline2, target_body2 = result2
-
+    # Reuse the same pipeline — convert_request() is one-shot but
+    # convert_response() can be called again (it was never called on
+    # the failed first attempt).  target_body is shallow-copied inside
+    # _execute_convert, so the original is safe.
     return await _execute_convert(
-        pipeline2,
-        target_body2,
+        pipeline,
+        target_body,
         source_provider,
         target_provider,
         session,
