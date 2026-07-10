@@ -92,7 +92,6 @@ async def prepare_app(app):
     # Create optimized HTTP session
     resolve_overrides = getattr(app["config"], "resolve_overrides", None)
     http_session_manager = OptimizedHTTPSession(
-        user_agent=f"argo-proxy/{__version__}",
         resolve_overrides=resolve_overrides if resolve_overrides else None,
         **perf_config,
     )
