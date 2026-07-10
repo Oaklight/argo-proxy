@@ -786,6 +786,10 @@ class ModelRegistry:
             default_model = self._config.default_embed_model
         else:
             default_model = self._config.default_chat_model
+            log_warning(
+                f"Unknown model_type '{model_type}', using chat fallback",
+                context="ModelRegistry",
+            )
         log_warning(
             f"Model '{model_name}' not found in registry, falling back to {default_model}",
             context="ModelRegistry",
