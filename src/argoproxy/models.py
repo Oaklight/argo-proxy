@@ -51,6 +51,7 @@ _DEFAULT_CHAT_MODELS = flatten_mapping(
         "gpt51": "argo:gpt-5.1",
         "gpt52": "argo:gpt-5.2",
         "gpt54": "argo:gpt-5.4",
+        "gpt54nano": "argo:gpt-5.4-nano",
         "gpt55": "argo:gpt-5.5",
         # gemini
         "gemini25pro": "argo:gemini-2.5-pro",
@@ -480,7 +481,7 @@ def _categorize_results(
             unavailable.clear()
         else:
             log_error(
-                "Proceeding without unavailable models. Subsequent calls to these models will be replaced with argo:gpt-5-nano",
+                "Proceeding without unavailable models. Subsequent calls to these models will use the configured default fallback",
                 context="models",
             )
 
@@ -781,14 +782,23 @@ class ModelRegistry:
             return model_name
 
         if model_type == "chat":
-            default_model = "argo:gpt-5-nano"
+            default_model = self._config.default_chat_model
         elif model_type == "embed":
-            default_model = "argo:text-embedding-3-small"
+            default_model = self._config.default_embed_model
+        else:
+            default_model = self._config.default_chat_model
         log_warning(
             f"Model '{model_name}' not found in registry, falling back to {default_model}",
             context="ModelRegistry",
         )
-        return self.available_models[default_model]
+        if default_model in self.available_models:
+            return self.available_models[default_model]
+        # Default model itself not in registry — return its name as-is
+        log_warning(
+            f"Default fallback model '{default_model}' not in registry either",
+            context="ModelRegistry",
+        )
+        return default_model
 
     def as_openai_list(self) -> dict[str, Any]:
         # Mock data for available models
