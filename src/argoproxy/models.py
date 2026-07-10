@@ -308,7 +308,6 @@ async def get_upstream_model_list_async(
         async with aiohttp.ClientSession(
             connector=connector,
             timeout=client_timeout,
-            headers={"User-Agent": "argo-proxy/1.0"},
         ) as session:
             log_debug(f"Sending request to: {url}", context="models")
 

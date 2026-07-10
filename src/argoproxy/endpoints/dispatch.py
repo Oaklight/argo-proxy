@@ -288,6 +288,11 @@ def _build_upstream_headers(
     """Build HTTP headers for the upstream API request."""
     headers: dict[str, str] = {"Content-Type": "application/json"}
 
+    # Pass through client's User-Agent to upstream (transparent proxy)
+    client_ua = request.headers.get("User-Agent")
+    if client_ua:
+        headers["User-Agent"] = client_ua
+
     if should_use_username_passthrough():
         api_key = _extract_client_credential(request, target_provider) or fallback_user
     else:

@@ -93,7 +93,6 @@ class OptimizedHTTPSession:
         read_timeout: Socket read timeout in seconds.
         total_timeout: Total request timeout in seconds.
         dns_cache_ttl: DNS cache TTL in seconds.
-        user_agent: User agent string.
         resolve_overrides: Optional dict mapping "host:port" to IP address
             for custom DNS resolution (similar to curl --resolve).
     """
@@ -108,7 +107,6 @@ class OptimizedHTTPSession:
         read_timeout: int = 30,
         total_timeout: int = 60,
         dns_cache_ttl: int = 300,
-        user_agent: str = "argo-proxy",
         resolve_overrides: dict[str, str] | None = None,
     ):
         connector_kwargs: dict = {
@@ -137,7 +135,6 @@ class OptimizedHTTPSession:
         )
 
         self.session: aiohttp.ClientSession | None = None
-        self.user_agent = user_agent
 
     async def create_session(self) -> aiohttp.ClientSession:
         """Create and return the HTTP session."""
@@ -145,7 +142,6 @@ class OptimizedHTTPSession:
             self.session = aiohttp.ClientSession(
                 connector=self.connector,
                 timeout=self.timeout,
-                headers={"User-Agent": self.user_agent},
             )
             log_debug(
                 f"HTTP session created: {self.connector.limit} total, "
