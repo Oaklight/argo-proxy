@@ -2,6 +2,36 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v3.2.1 (2026-07-10)
+
+**Stable release: configurable fallback models, pipeline improvements.**
+
+### Highlights
+
+- **Adopt llm-rosetta ConversionPipeline**: Replaced internal conversion logic with llm-rosetta's `ConversionPipeline` class. Streaming and non-streaming paths now share unified pipeline construction via `_build_pipeline()`, eliminating duplicated code and direct access to pipeline internals. (#135, #137)
+- **Configurable default fallback model**: Fallback models for unrecognized model names are now configurable via `default_chat_model` / `default_embed_model` in the config file. Defaults updated from `argo:gpt-5-nano` to `argo:gpt-5.4-nano`. Includes defensive handling when the fallback model itself isn't in the registry. (#142)
+
+### Added
+
+- `gpt54nano` shorthand alias in model registry
+- Multi-entry E2E tests for Anthropic, Google, and OpenAI Responses inputs
+- AgentABI E2E integration tests for all upstream models
+
+### Fixed
+
+- Reuse pipeline on retry instead of rebuilding
+- Log warning on unknown `model_type` fallback
+
+### Changed
+
+- Bumped llm-rosetta to `>=0.7.0`
+- Pinned dev tool versions (ruff 0.15.20, ty 0.0.54, complexipy 5.6.1)
+
+**Full Changelog**: https://github.com/Oaklight/argo-proxy/compare/v3.1.2...v3.2.1<br>
+**PyPI**: https://pypi.org/project/argo-proxy/3.2.1/
+
+---
+
 ## v3.2.0a0 (2026-06-27)
 
 **Pre-release: migrate to llm-rosetta 0.7.x ConversionPipeline.**
