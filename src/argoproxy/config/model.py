@@ -76,6 +76,10 @@ class ArgoConfig:
     # Model list auto-refresh
     model_refresh_interval_hours: float = 24  # 0 to disable
 
+    # Fallback models — used when an unrecognized model name is requested
+    default_chat_model: str = "argo:gpt-5.4-nano"
+    default_embed_model: str = "argo:text-embedding-3-small"
+
     # Image processing settings
     enable_payload_control: bool = False  # Enable automatic payload size control
     max_payload_size: int = 20  # MB default (total for all images)
