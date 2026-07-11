@@ -70,6 +70,13 @@ async def proxy_embeddings_request(
         if "Authorization" in request.headers:
             headers["Authorization"] = request.headers["Authorization"]
 
+        # Concatenate client UA with argo-proxy identifier
+        from ..__init__ import __version__
+
+        proxy_ua = f"argo-proxy/{__version__}"
+        client_ua = (request.headers.get("User-Agent") or "").strip()
+        headers["User-Agent"] = f"{client_ua} {proxy_ua}".strip()
+
         log_converted_request(
             data, verbose=config.verbose, max_history_items=config.max_log_history
         )
