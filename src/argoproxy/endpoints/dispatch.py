@@ -24,6 +24,7 @@ from llm_rosetta.auto_detect import ProviderType
 from llm_rosetta.pipeline import ConversionError, ConversionPipeline
 from llm_rosetta.shims.providers import load_providers
 
+from ..__init__ import __version__
 from ..config import ArgoConfig
 from ..models import ModelRegistry
 from ..utils.image_processing import process_anthropic_images, process_openai_images
@@ -288,10 +289,13 @@ def _build_upstream_headers(
     """Build HTTP headers for the upstream API request."""
     headers: dict[str, str] = {"Content-Type": "application/json"}
 
-    # Pass through client's User-Agent to upstream (transparent proxy)
+    # Identify argo-proxy in User-Agent, appended after the client's UA
+    proxy_ua = f"argo-proxy/{__version__}"
     client_ua = request.headers.get("User-Agent")
     if client_ua:
-        headers["User-Agent"] = client_ua
+        headers["User-Agent"] = f"{client_ua} {proxy_ua}"
+    else:
+        headers["User-Agent"] = proxy_ua
 
     if should_use_username_passthrough():
         api_key = _extract_client_credential(request, target_provider) or fallback_user

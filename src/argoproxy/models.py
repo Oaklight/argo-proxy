@@ -11,6 +11,7 @@ import aiohttp
 from pydantic import BaseModel
 from tqdm.asyncio import tqdm_asyncio
 
+from .__init__ import __version__
 from .config import ArgoConfig, _get_yes_no_input_with_timeout
 from .utils.logging import log_debug, log_error, log_info, log_warning
 from .utils.transports import validate_api_async
@@ -309,6 +310,7 @@ async def get_upstream_model_list_async(
         async with aiohttp.ClientSession(
             connector=connector,
             timeout=client_timeout,
+            headers={"User-Agent": f"argo-proxy/{__version__}"},
         ) as session:
             log_debug(f"Sending request to: {url}", context="models")
 
