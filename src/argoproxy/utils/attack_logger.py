@@ -339,7 +339,9 @@ class AttackFilter(logging.Filter):
 _REQUEST_ATTACK_PATTERNS: dict[str, list[str]] = {
     "command_injection": [
         "$(",  # bash subshell: $(cmd)
-        "`",  # backtick command substitution
+        # Backtick command substitution — most aggressive single-char pattern.
+        # Extremely rare in legitimate LLM API URLs; check here first on false positives.
+        "`",
         "/bin/bash",
         "/bin/sh",
         "/bin/zsh",
@@ -347,17 +349,19 @@ _REQUEST_ATTACK_PATTERNS: dict[str, list[str]] = {
         "powershell",
         "/dev/tcp/",
         "/dev/udp/",
+        # nslookup/curl/wget are in ATTACK_TYPES for classification but intentionally
+        # excluded here — too generic for URL matching and would cause false positives.
     ],
     "struts2_ognl": [
-        "xwork.MethodAccessor",
-        "_memberAccess",
-        "allowStaticMethodAccess",
-        "java.lang.Runtime",
+        "xwork.methodaccessor",
+        "_memberaccess",
+        "allowstaticmethodaccess",
+        "java.lang.runtime",
         "org.apache.struts2",
     ],
     "directory_traversal": [
         "././././",
-        "../../../",
+        "../../../",  # requires 3+ levels to avoid false positives on relative paths
     ],
     "ssti_probe": [
         "${{",
@@ -379,10 +383,8 @@ def _decode_url(raw: str) -> str:
     Returns:
         Decoded string.
     """
-    decoded = unquote(raw)
-    # Second pass for double-encoded payloads like %2524%2528 -> %24%28 -> $(
-    second = unquote(decoded)
-    return second if second != decoded else decoded
+    # Two passes to catch double-encoded payloads like %2524%2528 -> %24%28 -> $(
+    return unquote(unquote(raw))
 
 
 def _detect_request_attack(url_decoded: str) -> str | None:
@@ -395,9 +397,10 @@ def _detect_request_attack(url_decoded: str) -> str | None:
         Attack type string if matched, None otherwise.
     """
     url_lower = url_decoded.lower()
+    # Patterns are lowercase literals — no need to call .lower() on them.
     for attack_type, patterns in _REQUEST_ATTACK_PATTERNS.items():
         for pattern in patterns:
-            if pattern.lower() in url_lower:
+            if pattern in url_lower:
                 return attack_type
     return None
 
