@@ -11,9 +11,9 @@ from http import HTTPStatus
 import aiohttp
 from aiohttp import web
 
-from ..__init__ import __version__
 from ..config import ArgoConfig
 from ..models import ModelRegistry
+from ..utils.misc import build_user_agent
 from ..utils.logging import (
     log_converted_request,
     log_debug,
@@ -69,13 +69,7 @@ async def proxy_embeddings_request(
 
         headers = {"Content-Type": "application/json"}
 
-        # Identify argo-proxy in User-Agent, appended after the client's UA
-        proxy_ua = f"argo-proxy/{__version__}"
-        client_ua = request.headers.get("User-Agent")
-        if client_ua:
-            headers["User-Agent"] = f"{client_ua} {proxy_ua}"
-        else:
-            headers["User-Agent"] = proxy_ua
+        headers["User-Agent"] = build_user_agent(request.headers.get("User-Agent"))
 
         if "Authorization" in request.headers:
             headers["Authorization"] = request.headers["Authorization"]

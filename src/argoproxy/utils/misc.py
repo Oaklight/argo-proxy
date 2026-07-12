@@ -224,3 +224,13 @@ def check_response_for_argo_warning(
     """
     text = extract_text_from_response(response_data, provider)
     return contains_argo_auth_warning(text)
+
+
+def build_user_agent(client_ua: str | None = None) -> str:
+    """Build a User-Agent string identifying argo-proxy, optionally appended to a client UA."""
+    from .. import __version__
+
+    proxy_ua = f"argo-proxy/{__version__}"
+    if client_ua:
+        return f"{client_ua} {proxy_ua}"
+    return proxy_ua
