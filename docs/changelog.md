@@ -2,6 +2,30 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v3.2.2 (2026-07-12)
+
+**Security middleware and User-Agent identification.**
+
+### Added
+
+- **Request-level security middleware** (#139): Block command injection, OGNL, SSTI, XSS, and directory traversal payloads in URL path and query string before they reach handlers. Complements the existing parser-level AttackFilter with double URL-decode to catch encoded bypasses
+- **User-Agent identification** (#145, closes #144): Append `argo-proxy/{version}` to the client User-Agent in upstream requests (dispatch, passthrough, and model list fetching), per upstream maintainer request. Partially reverts #141
+
+### Changed
+
+- **Unified `build_user_agent` helper**: Extracted duplicated UA construction logic into `utils/misc.build_user_agent()`, replacing inline code in dispatch, passthrough, and models
+- **Clarified attack pattern scopes**: Added cross-reference comments explaining why three separate pattern lists exist (classifier, log filter, middleware) and their intentional differences in breadth
+
+### Fixed
+
+- **Redundant `.lower()` on patterns**: Removed unnecessary per-call lowercasing of already-lowercase pattern literals in middleware detection
+- **Simplified `_decode_url`**: Reduced to `unquote(unquote(raw))` — both branches of the original conditional returned the same value
+- **Fixed non-standard import**: Changed `from ..__init__ import __version__` to `from .. import __version__`
+
+**Full Changelog**: https://github.com/Oaklight/argo-proxy/compare/v3.2.1...v3.2.2
+
+---
+
 ## v3.2.1 (2026-07-10)
 
 **Stable release: configurable fallback models, pipeline improvements.**
