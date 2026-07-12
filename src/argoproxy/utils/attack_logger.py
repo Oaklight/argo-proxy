@@ -35,7 +35,11 @@ class AttackLogger:
         enabled: Whether attack logging is enabled.
     """
 
-    # Known attack patterns for classification
+    # Broadest pattern set — used to classify attack type from raw request data.
+    # Includes generic terms (nslookup, curl, wget) that would false-positive in
+    # URL matching but are fine for post-hoc classification of parser-rejected requests.
+    # See also: AttackFilter.ATTACK_PATTERNS (log filter) and _REQUEST_ATTACK_PATTERNS
+    # (middleware) — each has a narrower scope suited to its context.
     ATTACK_TYPES = {
         "struts2_ognl": [
             "xwork.MethodAccessor.denyMethodExecution",
@@ -222,7 +226,10 @@ class AttackFilter(logging.Filter):
         "http_exceptions",
     ]
 
-    # Attack payload patterns
+    # Subset of patterns matched against aiohttp parser exception text.
+    # Narrower than ATTACK_TYPES — only patterns that actually appear in parser
+    # error messages. See also: ATTACK_TYPES (classifier) and
+    # _REQUEST_ATTACK_PATTERNS (middleware).
     ATTACK_PATTERNS = [
         # Struts2 OGNL
         "xwork.MethodAccessor",
@@ -333,9 +340,11 @@ class AttackFilter(logging.Filter):
 # Request-level security middleware
 # ---------------------------------------------------------------------------
 
-# Patterns checked against URL-decoded path + query string on every request.
-# These are high-confidence indicators — unlikely to appear in legitimate
-# LLM API traffic, so false-positive risk is low.
+# Strictest pattern set — checked against URL-decoded path + query string on
+# every inbound request. Only high-confidence indicators that are unlikely to
+# appear in legitimate LLM API URLs. All patterns must be lowercase (the URL
+# is lowercased before matching). See also: ATTACK_TYPES (classifier) and
+# AttackFilter.ATTACK_PATTERNS (log filter) for the broader lists.
 _REQUEST_ATTACK_PATTERNS: dict[str, list[str]] = {
     "command_injection": [
         "$(",  # bash subshell: $(cmd)
