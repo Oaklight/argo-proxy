@@ -700,7 +700,7 @@ def handle_models(args: argparse.Namespace):
     from collections import defaultdict
 
     from ..config import load_config
-    from ..models import ModelRegistry
+    from ..models import ModelRegistry, classify_model_family
 
     config_data, _ = load_config(args.config, verbose=False)
     if not config_data:
@@ -762,7 +762,7 @@ def handle_models(args: argparse.Namespace):
     if args.json:
         output = []
         for internal_id, aliases in sorted(chat_id_to_aliases.items()):
-            family = registry._classify_model_by_family(internal_id)
+            family = classify_model_family(internal_id)
             output.append(
                 {
                     "upstream_id": internal_id,
@@ -807,7 +807,7 @@ def handle_models(args: argparse.Namespace):
     # Classify chat models by family
     chat_families: dict[str, list[tuple[str, list[str]]]] = defaultdict(list)
     for internal_id, aliases in sorted(chat_id_to_aliases.items()):
-        family = registry._classify_model_by_family(internal_id)
+        family = classify_model_family(internal_id)
         chat_families[family].append((internal_id, aliases))
 
     for family in family_order:
