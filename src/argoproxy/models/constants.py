@@ -36,6 +36,7 @@ _DEFAULT_CHAT_MODELS = flatten_mapping(
         "gpt51": "argo:gpt-5.1",
         "gpt52": "argo:gpt-5.2",
         "gpt54": "argo:gpt-5.4",
+        "gpt54mini": "argo:gpt-5.4-mini",
         "gpt54nano": "argo:gpt-5.4-nano",
         "gpt55": "argo:gpt-5.5",
         # gemini
@@ -44,11 +45,13 @@ _DEFAULT_CHAT_MODELS = flatten_mapping(
         "gemini35flash": "argo:gemini-3.5-flash",
         "gemini31flashlite": "argo:gemini-3.1-flash-lite",
         # claude – opus
+        "claudeopus48": ["argo:claude-4.8-opus", "argo:claude-opus-4.8"],
         "claudeopus47": ["argo:claude-4.7-opus", "argo:claude-opus-4.7"],
         "claudeopus46": ["argo:claude-4.6-opus", "argo:claude-opus-4.6"],
         "claudeopus45": ["argo:claude-4.5-opus", "argo:claude-opus-4.5"],
         "claudeopus41": ["argo:claude-4.1-opus", "argo:claude-opus-4.1"],
         # claude – sonnet
+        "claudesonnet5": ["argo:claude-5-sonnet", "argo:claude-sonnet-5"],
         "claudesonnet46": ["argo:claude-4.6-sonnet", "argo:claude-sonnet-4.6"],
         "claudesonnet45": ["argo:claude-4.5-sonnet", "argo:claude-sonnet-4.5"],
         # claude – haiku
