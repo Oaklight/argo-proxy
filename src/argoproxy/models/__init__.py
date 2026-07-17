@@ -1,7 +1,7 @@
 """Model registry, classification, and upstream communication."""
 
 from .constants import (
-    ANTHROPIC_CODENAMES,
+    ANTHROPIC_PATTERNS,
     GEMINI_PATTERN,
     GPT_O_PATTERN,
     NATIVE_TOOL_CALL_MODELS,
@@ -22,7 +22,7 @@ from .registry import ModelRegistry, OpenAIModel
 from .upstream import Model, produce_argo_model_list
 
 __all__ = [
-    "ANTHROPIC_CODENAMES",
+    "ANTHROPIC_PATTERNS",
     "GEMINI_PATTERN",
     "GPT_O_PATTERN",
     "NATIVE_TOOL_CALL_MODELS",
