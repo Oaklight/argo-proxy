@@ -2,7 +2,6 @@
 
 from .constants import (
     ANTHROPIC_CODENAMES,
-    CLAUDE_PATTERN,
     GEMINI_PATTERN,
     GPT_O_PATTERN,
     NATIVE_TOOL_CALL_MODELS,
@@ -14,17 +13,16 @@ from .constants import (
     TIKTOKEN_ENCODING_PREFIX_MAPPING,
     _DEFAULT_CHAT_MODELS,
     _EMBED_MODELS,
-    _is_anthropic_model,
     classify_model_family,
     filter_model_by_patterns,
     flatten_mapping,
+    is_anthropic_model,
 )
 from .registry import ModelRegistry, OpenAIModel
 from .upstream import Model, produce_argo_model_list
 
 __all__ = [
     "ANTHROPIC_CODENAMES",
-    "CLAUDE_PATTERN",
     "GEMINI_PATTERN",
     "GPT_O_PATTERN",
     "NATIVE_TOOL_CALL_MODELS",
@@ -39,9 +37,9 @@ __all__ = [
     "OpenAIModel",
     "_DEFAULT_CHAT_MODELS",
     "_EMBED_MODELS",
-    "_is_anthropic_model",
     "classify_model_family",
     "filter_model_by_patterns",
     "flatten_mapping",
+    "is_anthropic_model",
     "produce_argo_model_list",
 ]

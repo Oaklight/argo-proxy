@@ -14,9 +14,9 @@ from ..utils.misc import build_user_agent
 from ..utils.transports import validate_api_async
 
 from .constants import (
-    CLAUDE_PATTERN,
     GPT_O_PATTERN,
     _DEFAULT_CHAT_MODELS,
+    is_anthropic_model,
 )
 
 DEFAULT_TIMEOUT = 30
@@ -74,14 +74,25 @@ def produce_argo_model_list(upstream_models: list[Model]) -> dict[str, str]:
         if fnmatch.fnmatch(internal_id, GPT_O_PATTERN):
             argo_models[f"argo:gpt-{model_name}"] = internal_id
 
-        elif fnmatch.fnmatch(internal_id, CLAUDE_PATTERN):
-            _, codename, gen_num, *version = model_name.split("-")
-            if version:
-                argo_models[f"argo:claude-{gen_num}-{codename}-{version[0]}"] = (
-                    internal_id
-                )
-            else:
-                argo_models[f"argo:claude-{gen_num}-{codename}"] = internal_id
+        elif is_anthropic_model(internal_id):
+            parts = model_name.split("-")
+            if parts[0] == "claude" and len(parts) >= 3:
+                # "claude-opus-4.7" → argo:claude-4.7-opus
+                _, codename, gen_num, *version = parts
+                if version:
+                    argo_models[f"argo:claude-{gen_num}-{codename}-{version[0]}"] = (
+                        internal_id
+                    )
+                else:
+                    argo_models[f"argo:claude-{gen_num}-{codename}"] = internal_id
+            elif len(parts) >= 2:
+                # "sonnet-5" → argo:sonnet-5 (handled by regular mapping below)
+                # also add swapped alias: argo:5-sonnet
+                codename, gen_num, *version = parts
+                if version:
+                    argo_models[f"argo:{gen_num}-{codename}-{version[0]}"] = internal_id
+                else:
+                    argo_models[f"argo:{gen_num}-{codename}"] = internal_id
 
         argo_models[f"argo:{model_name}"] = internal_id
 

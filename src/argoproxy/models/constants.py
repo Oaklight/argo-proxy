@@ -121,15 +121,19 @@ TIKTOKEN_ENCODING_PREFIX_MAPPING = {
 # --- Provider detection patterns ---
 
 GPT_O_PATTERN = "gpto*"
-CLAUDE_PATTERN = "claude*"
 GEMINI_PATTERN = "gemini*"
 
 ANTHROPIC_CODENAMES = ("claude", "sonnet", "opus", "haiku", "fable")
 
 
-def _is_anthropic_model(model_id: str) -> bool:
+def is_anthropic_model(model_id: str) -> bool:
+    """Check if a model ID belongs to the Anthropic family.
+
+    Uses prefix matching on the lowercased model ID to avoid false positives
+    from arbitrary substrings (e.g. "myopus-v2" won't match).
+    """
     model_lower = model_id.lower()
-    return any(name in model_lower for name in ANTHROPIC_CODENAMES)
+    return any(model_lower.startswith(name) for name in ANTHROPIC_CODENAMES)
 
 
 def classify_model_family(model_id: str) -> str:
@@ -143,7 +147,7 @@ def classify_model_family(model_id: str) -> str:
     ):
         return "openai"
 
-    if _is_anthropic_model(model_id):
+    if is_anthropic_model(model_id):
         return "anthropic"
 
     if fnmatch.fnmatch(model_id, GEMINI_PATTERN):
