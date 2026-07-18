@@ -40,20 +40,6 @@ def setup_logging(
     path = Path(config_path) if config_path else None
     attack_filter = setup_attack_logging(path)
 
-    aiohttp_loggers = [
-        "aiohttp",
-        "aiohttp.access",
-        "aiohttp.client",
-        "aiohttp.internal",
-        "aiohttp.server",
-        "aiohttp.web",
-        "aiohttp.web_protocol",
-    ]
-
-    for logger_name in aiohttp_loggers:
-        logger = logging.getLogger(logger_name)
-        logger.addFilter(attack_filter)
-
     asyncio_logger = logging.getLogger("asyncio")
     asyncio_logger.addFilter(attack_filter)
 

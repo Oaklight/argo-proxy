@@ -4,8 +4,6 @@ import re
 import socket
 from typing import Any
 
-from aiohttp import web
-
 from .logging import log_error
 
 
@@ -108,7 +106,7 @@ def str_to_bool(value: str) -> bool:
     return value.lower() in {"true", "1", "t", "yes", "on"}
 
 
-def extract_api_key_from_request(request: web.Request) -> str | None:
+def extract_api_key_from_request(request: Any) -> str | None:
     """Extract API key from request headers.
 
     Note:
@@ -130,8 +128,10 @@ def extract_api_key_from_request(request: web.Request) -> str | None:
             if api_key:
                 return api_key
 
-    if "key" in request.query:
-        return request.query["key"]
+    params = getattr(request, "query_params", {})
+    if "key" in params:
+        val = params["key"]
+        return val[0] if isinstance(val, list) else val
 
     return None
 
@@ -141,9 +141,7 @@ def should_use_username_passthrough() -> bool:
     return os.getenv("USERNAME_PASSTHROUGH", "False").lower() == "true"
 
 
-def apply_username_passthrough(
-    data: dict, request: web.Request, fallback_user: str
-) -> str:
+def apply_username_passthrough(data: dict, request: Any, fallback_user: str) -> str:
     """Apply username passthrough logic to the request body ``user`` field."""
     if should_use_username_passthrough():
         api_key = extract_api_key_from_request(request)

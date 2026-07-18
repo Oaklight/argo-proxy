@@ -4,14 +4,13 @@ import fnmatch
 import json
 from typing import Any
 
-import aiohttp
+from llm_rosetta._vendor.httpclient import AsyncClient
 from pydantic import BaseModel
 from tqdm.asyncio import tqdm_asyncio
 
 from ..config import _get_yes_no_input_with_timeout
 from ..utils.logging import log_debug, log_error, log_warning
 from ..utils.misc import build_user_agent
-from ..utils.transports import validate_api_async
 
 from .constants import (
     GPT_O_PATTERN,
@@ -107,104 +106,76 @@ async def get_upstream_model_list_async(
 
     Args:
         url: The URL of the upstream server.
-        resolver_overrides: Optional dict mapping "host:port" to IP address
-            for custom DNS resolution.
+        resolver_overrides: Currently unused (kept for API compat).
 
     Returns:
         A dictionary containing the list of available models mapping
         argo model names to internal IDs.
     """
-    from ..performance import StaticOverrideResolver
-
     log_debug(f"Starting model list fetch from: {url}", context="models")
-
-    connector = None
-    if resolver_overrides:
-        resolver = StaticOverrideResolver(resolver_overrides)
-        connector = aiohttp.TCPConnector(resolver=resolver)
-
-    client_timeout = aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT)
     raw_data = ""
 
     try:
-        async with aiohttp.ClientSession(
-            connector=connector,
-            timeout=client_timeout,
-            headers={"User-Agent": build_user_agent()},
-        ) as session:
-            log_debug(f"Sending request to: {url}", context="models")
+        client = AsyncClient(timeout=DEFAULT_TIMEOUT)
+        try:
+            response = await client.get(url, headers={"User-Agent": build_user_agent()})
+        finally:
+            await client.aclose()
 
-            async with session.get(url) as response:
-                status_code = response.status
+        status_code = response.status_code
+        log_debug(
+            f"Received response with status code: {status_code}",
+            context="models",
+        )
+
+        if status_code != 200:
+            log_error(
+                f"HTTP error fetching model list from {url}",
+                context="models",
+            )
+            log_error(f"HTTP status code: {status_code}", context="models")
+            log_warning("Using built-in model list.", context="models")
+            return _DEFAULT_CHAT_MODELS
+
+        raw_data = response.text  # type: ignore[union-attr]
+        log_debug(
+            f"Response data length: {len(raw_data)} characters",
+            context="models",
+        )
+
+        data = json.loads(raw_data)
+        model_count = len(data.get("data", []))
+        log_debug(f"Parsed {model_count} models from API", context="models")
+
+        if data.get("data") and len(data["data"]) > 0:
+            sample_model = data["data"][0]
+            if "model_name" in sample_model:
                 log_debug(
-                    f"Received response with status code: {status_code}",
+                    "Detected old format API (contains model_name field)",
                     context="models",
                 )
-
-                if status_code != 200:
-                    log_error(
-                        f"HTTP error fetching model list from {url}",
-                        context="models",
-                    )
-                    log_error(f"HTTP status code: {status_code}", context="models")
-                    try:
-                        error_body = await response.text()
-                        log_error(
-                            f"HTTP error response body: {error_body}",
-                            context="models",
-                        )
-                    except Exception:
-                        pass
-                    log_warning("Using built-in model list.", context="models")
-                    return _DEFAULT_CHAT_MODELS
-
-                raw_data = await response.text()
+            elif "internal_id" in sample_model:
                 log_debug(
-                    f"Response data length: {len(raw_data)} characters",
+                    "Detected new format API (contains internal_id field)",
                     context="models",
                 )
+            else:
+                log_warning("Detected unknown format API", context="models")
+            log_debug(f"Sample model data: {sample_model}", context="models")
 
-                data = json.loads(raw_data)
-                model_count = len(data.get("data", []))
-                log_debug(f"Parsed {model_count} models from API", context="models")
+        models = (
+            [Model(**model) for model in data.get("data", [])]
+            if data.get("data")
+            else []
+        )
 
-                if data.get("data") and len(data["data"]) > 0:
-                    sample_model = data["data"][0]
-                    if "model_name" in sample_model:
-                        log_debug(
-                            "Detected old format API (contains model_name field)",
-                            context="models",
-                        )
-                    elif "internal_id" in sample_model:
-                        log_debug(
-                            "Detected new format API (contains internal_id field)",
-                            context="models",
-                        )
-                    else:
-                        log_warning("Detected unknown format API", context="models")
-                    log_debug(f"Sample model data: {sample_model}", context="models")
+        argo_models = produce_argo_model_list(models)
 
-                models = (
-                    [Model(**model) for model in data.get("data", [])]
-                    if data.get("data")
-                    else []
-                )
+        if argo_models:
+            sample_mappings = list(argo_models.items())[:3]
+            log_debug(f"Sample model mappings: {sample_mappings}", context="models")
 
-                argo_models = produce_argo_model_list(models)
-
-                if argo_models:
-                    sample_mappings = list(argo_models.items())[:3]
-                    log_debug(
-                        f"Sample model mappings: {sample_mappings}", context="models"
-                    )
-
-                return argo_models
-
-    except aiohttp.ClientError as e:
-        log_error(f"HTTP client error fetching model list from {url}", context="models")
-        log_error(f"Error message: {e}", context="models")
-        log_warning("Using built-in model list.", context="models")
-        return _DEFAULT_CHAT_MODELS
+        return argo_models
 
     except json.JSONDecodeError as e:
         log_error(
@@ -219,13 +190,8 @@ async def get_upstream_model_list_async(
         return _DEFAULT_CHAT_MODELS
 
     except Exception as e:
-        log_error(f"Unknown error fetching model list from {url}", context="models")
-        log_error(f"Error type: {type(e).__name__}", context="models")
-        log_error(f"Error message: {str(e)}", context="models")
-        log_error(f"Detailed error: {e}", context="models")
-        import traceback
-
-        log_error(f"Exception traceback: {traceback.format_exc()}", context="models")
+        log_error(f"Error fetching model list from {url}", context="models")
+        log_error(f"Error: {type(e).__name__}: {e}", context="models")
         log_warning("Using built-in model list.", context="models")
         return _DEFAULT_CHAT_MODELS
 
@@ -240,27 +206,27 @@ async def _check_model_streamability(
     """Check if a model is streamable using model_id."""
     payload_copy = payload.copy()
     payload_copy["model"] = model_id
+    headers = {"Authorization": f"Bearer {user}", "User-Agent": build_user_agent()}
+
+    client = AsyncClient(timeout=DEFAULT_TIMEOUT)
+    try:
+        resp = await client.post(stream_url, json=payload_copy, headers=headers)
+        if resp.status_code < 400:
+            return (model_id, True)
+    except Exception:
+        pass
 
     try:
-        await validate_api_async(
-            stream_url,
-            user,
-            payload_copy,
-            timeout=DEFAULT_TIMEOUT,
-        )
-        return (model_id, True)
-    except Exception:
-        try:
-            await validate_api_async(
-                non_stream_url,
-                user,
-                payload_copy,
-                timeout=DEFAULT_TIMEOUT,
-            )
+        resp = await client.post(non_stream_url, json=payload_copy, headers=headers)
+        if resp.status_code < 400:
             return (model_id, False)
-        except Exception:
-            log_error(f"All attempts failed for model ID: {model_id}", context="models")
-            return (model_id, None)
+    except Exception:
+        pass
+    finally:
+        await client.aclose()
+
+    log_error(f"All attempts failed for model ID: {model_id}", context="models")
+    return (model_id, None)
 
 
 def _categorize_results(

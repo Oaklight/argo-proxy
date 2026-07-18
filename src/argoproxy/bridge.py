@@ -1,0 +1,111 @@
+"""Bridge between ArgoConfig and llm-rosetta GatewayConfig.
+
+Converts the ARGO YAML-based configuration into the raw dict format
+that :class:`GatewayConfig` expects, allowing argo-proxy to use the
+gateway's proxy pipeline while keeping its own config system.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from llm_rosetta.gateway.config import GatewayConfig
+
+from .models.constants import classify_model_family
+
+if TYPE_CHECKING:
+    from .config.model import ArgoConfig
+    from .models.registry import ModelRegistry
+
+
+_SHIM_NAME_MAP: dict[str, str] = {
+    "anthropic": "argo--anthropic",
+    "openai_chat": "argo--openai_chat",
+}
+
+
+def build_gateway_config(
+    argo_config: ArgoConfig,
+    model_registry: ModelRegistry,
+) -> GatewayConfig:
+    """Build a :class:`GatewayConfig` from ARGO's config and model registry.
+
+    The resulting config has two providers ("argo-anthropic" and
+    "argo-openai") backed by the ARGO upstream URLs, and a model table
+    built from the live :class:`ModelRegistry`.
+    """
+    providers = _build_providers(argo_config)
+    models = _build_models(model_registry)
+
+    raw: dict = {
+        "providers": providers,
+        "models": models,
+        "server": {
+            "host": argo_config.host,
+            "port": argo_config.port,
+        },
+        "debug": {
+            "verbose": argo_config.verbose,
+            "log_bodies": False,
+            "error_dumps": argo_config.dump_requests,
+        },
+    }
+    if argo_config.socket:
+        raw["server"]["socket"] = argo_config.socket
+
+    return GatewayConfig(raw)
+
+
+def _build_providers(config: ArgoConfig) -> dict:
+    return {
+        "argo-openai": {
+            "type": "openai_chat",
+            "shim": "argo--openai_chat",
+            "api_key": config.user,
+            "base_url": config.native_openai_base_url,
+        },
+        "argo-anthropic": {
+            "type": "anthropic",
+            "shim": "argo--anthropic",
+            "api_key": config.user,
+            "base_url": config.native_anthropic_base_url,
+        },
+    }
+
+
+def _build_models(registry: ModelRegistry) -> dict:
+    """Map every model alias to a provider based on family classification."""
+    models: dict = {}
+    for alias, model_id in registry.available_models.items():
+        family = classify_model_family(model_id)
+        if family == "anthropic":
+            provider_name = "argo-anthropic"
+        else:
+            provider_name = "argo-openai"
+        models[alias] = {
+            "provider": provider_name,
+            "upstream_model": model_id if model_id != alias else None,
+        }
+        # strip None upstream_model to keep config clean
+        if models[alias]["upstream_model"] is None:
+            del models[alias]["upstream_model"]
+    return models
+
+
+def rebuild_gateway_models(
+    gateway_config: GatewayConfig,
+    model_registry: ModelRegistry,
+) -> None:
+    """Rebuild the model routing table in-place after a model refresh.
+
+    Called by the ``/refresh`` endpoint when the upstream model list
+    changes at runtime.
+    """
+    new_models = _build_models(model_registry)
+    # Re-parse through GatewayConfig's model parser
+    models, capabilities, upstream_names = GatewayConfig._parse_models(
+        new_models, gateway_config._raw_providers
+    )
+    gateway_config.models = models
+    gateway_config.model_capabilities = capabilities
+    gateway_config.model_upstream_names = upstream_names

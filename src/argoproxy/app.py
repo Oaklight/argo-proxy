@@ -1,154 +1,335 @@
+"""argo-proxy application — thin wrapper around llm-rosetta gateway.
+
+Builds an HTTP application using the gateway's vendored httpserver and
+proxy pipeline while layering ARGO-specific auth, model resolution,
+and streaming logic on top.
+"""
+
+from __future__ import annotations
+
 import asyncio
+import logging
 import os
 import signal
 import sys
+import uuid
+from typing import Any
 
-from aiohttp import web
+from llm_rosetta._vendor.httpserver import (
+    App,
+    JSONResponse,
+    Response,
+    StreamingResponse,
+)
+from llm_rosetta.auto_detect import ProviderType
+from llm_rosetta.gateway.proxy import (
+    ProviderMetadataStore,
+    close_resources,
+    detect_stream_request,
+    error_response_for_source,
+    extract_model,
+    handle_non_streaming,
+    handle_streaming,
+)
+from llm_rosetta.gateway.transport.http import HttpTransport
 
 from .__init__ import __version__
-from .config import ArgoConfig, load_config
-from .endpoints import (
-    dispatch,
-    extras,
-    passthrough,
+from .auth import (
+    argo_auth_error_response,
+    check_response_for_argo_warning,
+    contains_argo_auth_warning,
+    create_argo_auth_hook,
+    should_use_username_passthrough,
 )
-from .endpoints.dev_proxy import register_dev_routes
-from .endpoints.extras import get_pypi_versions
+from .bridge import build_gateway_config, rebuild_gateway_models
+from .config import load_config
 from .models import ModelRegistry
-from .performance import (
-    OptimizedHTTPSession,
-    get_performance_config,
-)
-from .utils.attack_logger import security_middleware
+from .transport import ArgoAuthWarning, ArgoTransport
 from .utils.logging import log_debug, log_error, log_info, log_warning
+from .utils.misc import build_user_agent
+
+logger = logging.getLogger("argo-proxy")
 
 
-async def prepare_app(app):
-    """Load configuration without validation for worker processes"""
-    config_path = os.getenv("CONFIG_PATH")
-    app["config"], _ = load_config(config_path, verbose=False)
-    app["model_registry"] = ModelRegistry(config=app["config"])
-    await app["model_registry"].initialize()
+# ---------------------------------------------------------------------------
+# App state helpers
+# ---------------------------------------------------------------------------
 
-    # Display model information with styling
-    model_stats = app["model_registry"].get_model_stats()
-    model_stats["family_counts"]
-    chat_family_counts = model_stats["chat_family_counts"]
-    model_stats["embed_family_counts"]
-    chat_family_alias_counts = model_stats["chat_family_alias_counts"]
-    model_stats["embed_family_alias_counts"]
 
-    log_info("=" * 60, context="app")
-    log_warning(
-        f"🤖 MODEL REGISTRY: [{model_stats['unique_models']} MODELS, {model_stats['total_aliases']} ALIASES]",
-        context="app",
+def _get_config(app: App) -> Any:
+    return app.argo_config  # type: ignore[attr-defined]
+
+
+def _get_registry(app: App) -> ModelRegistry:
+    return app.model_registry  # type: ignore[attr-defined]
+
+
+def _get_gateway_config(app: App) -> Any:
+    return app.gateway_config  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# Proxy handler — ARGO-specific model resolution + gateway pipeline
+# ---------------------------------------------------------------------------
+
+
+async def _argo_proxy_handler(
+    request: Any,
+    source_provider: ProviderType,
+    model_override: str | None = None,
+    force_stream: bool = False,
+) -> Response | StreamingResponse:
+    """Core proxy handler with ARGO model resolution and stream-mode logic."""
+    config = _get_config(request.app)
+    registry = _get_registry(request.app)
+    gateway_config = _get_gateway_config(request.app)
+
+    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
+
+    try:
+        body: dict[str, Any] = request.json()
+    except Exception:
+        resp = error_response_for_source(source_provider, 400, "Invalid JSON body")
+        resp.headers["x-request-id"] = request_id
+        return resp
+
+    model = model_override or extract_model(source_provider, body)
+    if not model:
+        resp = error_response_for_source(
+            source_provider, 400, "Missing 'model' in request body"
+        )
+        resp.headers["x-request-id"] = request_id
+        return resp
+
+    if model_override and "model" not in body:
+        body["model"] = model_override
+
+    # ARGO model resolution (fuzzy matching, argo: prefix, etc.)
+    as_is = source_provider == "anthropic"
+    resolved = registry.resolve_model_name(model, "chat", as_is=as_is)
+    target_provider, _ = registry.resolve_model_target(resolved, config)
+
+    gateway_model = _find_gateway_model(gateway_config, model, resolved, registry)
+    if not gateway_model:
+        configured = ", ".join(sorted(gateway_config.models.keys()))
+        resp = error_response_for_source(
+            source_provider,
+            404,
+            f"Unknown model: '{model}'. Configured models: {configured}",
+        )
+        resp.headers["x-request-id"] = request_id
+        return resp
+
+    try:
+        route, provider_info = gateway_config.resolve(source_provider, gateway_model)
+    except KeyError:
+        resp = error_response_for_source(
+            source_provider, 404, f"Unknown model: '{model}'"
+        )
+        resp.headers["x-request-id"] = request_id
+        return resp
+
+    if route.upstream_model:
+        body["model"] = route.upstream_model
+
+    # Username passthrough
+    if should_use_username_passthrough():
+        api_key = _extract_api_key_from_headers(request)
+        if api_key:
+            body["user"] = api_key
+    else:
+        body["user"] = config.user
+
+    # Anthropic metadata.user_id injection
+    if target_provider == "anthropic":
+        user = body.get("user", config.user)
+        body.setdefault("metadata", {})
+        if isinstance(body["metadata"], dict):
+            body["metadata"]["user_id"] = user
+
+    # Determine streaming with anthropic_stream_mode
+    is_stream = force_stream or detect_stream_request(source_provider, body)
+
+    if not is_stream and target_provider == "anthropic":
+        mode = config.anthropic_stream_mode
+        if mode == "force":
+            is_stream = True
+
+    model_label = (
+        f"{model} (upstream={route.upstream_model})" if route.upstream_model else model
     )
+    logger.info(
+        "[%s] %s -> %s | model=%s stream=%s",
+        request_id,
+        source_provider,
+        route.target_provider,
+        model_label,
+        is_stream,
+    )
+
+    store: ProviderMetadataStore = request.app.metadata_store  # type: ignore[attr-defined]
+    transport: ArgoTransport = request.app.transport  # type: ignore[attr-defined]
+
+    extra_headers: dict[str, str] = {"x-request-id": request_id}
+    ua = build_user_agent(request.headers.get("user-agent"))
+    if ua:
+        extra_headers["User-Agent"] = ua
+
+    try:
+        if is_stream:
+            response, profile = await handle_streaming(
+                route,
+                provider_info,
+                body,
+                transport=transport,
+                metadata_store=store,
+                extra_headers=extra_headers,
+            )
+        elif (
+            not is_stream
+            and target_provider == "anthropic"
+            and config.anthropic_stream_mode == "retry"
+        ):
+            response, profile = await _handle_with_retry(
+                route,
+                provider_info,
+                body,
+                transport=transport,
+                metadata_store=store,
+                extra_headers=extra_headers,
+            )
+        else:
+            response, profile = await handle_non_streaming(
+                route,
+                provider_info,
+                body,
+                transport=transport,
+                metadata_store=store,
+                extra_headers=extra_headers,
+            )
+
+        # Check for ARGO auth warning in non-streaming responses
+        if isinstance(response, Response) and hasattr(response, "body"):
+            try:
+                resp_text = response.body.decode("utf-8", errors="replace")
+                if contains_argo_auth_warning(resp_text):
+                    return argo_auth_error_response(source_provider)
+            except Exception:
+                pass
+
+        response.headers["x-request-id"] = request_id
+        return response
+
+    except ArgoAuthWarning:
+        return argo_auth_error_response(source_provider)
+    except Exception:
+        logger.exception("[%s] Proxy error", request_id)
+        resp = error_response_for_source(source_provider, 502, "Upstream error")
+        resp.headers["x-request-id"] = request_id
+        return resp
+
+
+async def _handle_with_retry(
+    route: Any,
+    provider_info: Any,
+    body: dict[str, Any],
+    *,
+    transport: Any,
+    metadata_store: Any,
+    extra_headers: dict[str, str] | None = None,
+) -> tuple[Response | StreamingResponse, dict[str, Any]]:
+    """Try non-streaming, fall back to streaming on Anthropic bounce-back."""
+    response, profile = await handle_non_streaming(
+        route,
+        provider_info,
+        body,
+        transport=transport,
+        metadata_store=metadata_store,
+        extra_headers=extra_headers,
+    )
+
+    if response.status_code != 500 or not hasattr(response, "body"):
+        return response, profile
+
+    error_text = response.body.decode("utf-8", errors="replace")
+    if "streaming is required" not in error_text.lower():
+        return response, profile
+
     log_info(
-        f"   ├─ Chat models: {model_stats['unique_chat_models']} models ({model_stats['chat_aliases']} aliases)",
-        context="app",
+        "Anthropic returned 'streaming required', retrying with forced streaming",
+        context="dispatch",
+    )
+    return await handle_streaming(
+        route,
+        provider_info,
+        body,
+        transport=transport,
+        metadata_store=metadata_store,
+        extra_headers=extra_headers,
     )
 
-    # Show chat model family breakdown with alias counts
-    chat_families = []
-    if chat_family_counts["openai"] > 0:
-        chat_families.append(
-            f"OpenAI: {chat_family_counts['openai']} models ({chat_family_alias_counts['openai']} aliases)"
-        )
-    if chat_family_counts["anthropic"] > 0:
-        chat_families.append(
-            f"Anthropic: {chat_family_counts['anthropic']} models ({chat_family_alias_counts['anthropic']} aliases)"
-        )
-    if chat_family_counts["google"] > 0:
-        chat_families.append(
-            f"Google: {chat_family_counts['google']} models ({chat_family_alias_counts['google']} aliases)"
-        )
-    if chat_family_counts["unknown"] > 0:
-        chat_families.append(
-            f"Other: {chat_family_counts['unknown']} models ({chat_family_alias_counts['unknown']} aliases)"
-        )
 
-    if chat_families:
-        for i, family_info in enumerate(chat_families):
-            if i == len(chat_families) - 1:
-                log_info(f"   │  └─ {family_info}", context="app")
-            else:
-                log_info(f"   │  ├─ {family_info}", context="app")
+def _find_gateway_model(
+    gateway_config: Any,
+    client_model: str,
+    resolved_model: str,
+    registry: ModelRegistry,
+) -> str | None:
+    """Find the gateway config model key matching the client's request."""
+    if client_model in gateway_config.models:
+        return client_model
+    if resolved_model in gateway_config.models:
+        return resolved_model
 
-    log_info(
-        f"   ├─ Embed models: {model_stats['unique_embed_models']} models ({model_stats['embed_aliases']} aliases)",
-        context="app",
-    )
+    for alias, model_id in registry.available_models.items():
+        if model_id == resolved_model and alias in gateway_config.models:
+            return alias
 
-    log_info(
-        "   ├─ Naming docs: https://argo-proxy.readthedocs.io/en/latest/usage/models/",
-        context="app",
-    )
-    log_info("   └─ Model availability refreshed successfully", context="app")
-    log_info("=" * 60, context="app")
-
-    # Get performance configuration
-    perf_config = get_performance_config()
-    log_debug(f"Performance config: {perf_config}", context="app")
-
-    # Create optimized HTTP session
-    resolve_overrides = getattr(app["config"], "resolve_overrides", None)
-    http_session_manager = OptimizedHTTPSession(
-        resolve_overrides=resolve_overrides if resolve_overrides else None,
-        **perf_config,
-    )
-
-    app["http_session_manager"] = http_session_manager
-    app["http_session"] = await http_session_manager.create_session()
-
-    log_debug("HTTP connection pool initialized", context="app")
+    return None
 
 
-async def cleanup_app(app):
-    """Clean up resources when app shuts down"""
-    if "http_session_manager" in app:
-        await app["http_session_manager"].close()
-        log_debug("HTTP session manager closed", context="app")
-
-    # Cancel all pending tasks (best effort)
-    pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
-    if pending:
-        log_debug("Cancelling pending tasks...", context="app")
-        [task.cancel() for task in pending]
-        await asyncio.gather(*pending, return_exceptions=True)
-
-
-# ================= OpenAI Compatible =================
+def _extract_api_key_from_headers(request: Any) -> str | None:
+    headers = request.headers
+    for name in ("authorization", "x-api-key", "api-key", "x-goog-api-key"):
+        value = headers.get(name, "")
+        if value:
+            if value.lower().startswith("bearer "):
+                return value[7:].strip()
+            return value.strip()
+    params = request.query_params
+    if "key" in params:
+        return params["key"][0]
+    return None
 
 
-async def proxy_openai_chat_compatible(request: web.Request):
+# ---------------------------------------------------------------------------
+# Route handlers
+# ---------------------------------------------------------------------------
+
+
+async def handle_openai_chat(request: Any) -> Response | StreamingResponse:
     log_info("/v1/chat/completions", context="app")
-    return await dispatch.proxy_request(request, source_provider="openai_chat")
+    return await _argo_proxy_handler(request, source_provider="openai_chat")
 
 
-async def proxy_openai_responses_request(request: web.Request):
+async def handle_openai_responses(request: Any) -> Response | StreamingResponse:
     log_info("/v1/responses", context="app")
-    return await dispatch.proxy_request(request, source_provider="openai_responses")
+    return await _argo_proxy_handler(request, source_provider="openai_responses")
 
 
-async def proxy_openai_embedding_request(request: web.Request):
-    log_info("/v1/embeddings", context="app")
-    return await passthrough.proxy_embeddings_request(request)
-
-
-async def proxy_anthropic_messages(request: web.Request):
-    """Handle Anthropic /v1/messages endpoint."""
+async def handle_anthropic_messages(request: Any) -> Response | StreamingResponse:
     log_info("/v1/messages", context="app")
-    return await dispatch.proxy_request(request, source_provider="anthropic")
+    return await _argo_proxy_handler(request, source_provider="anthropic")
 
 
-async def proxy_google_genai(request: web.Request):
-    """Handle Google GenAI /v1beta/models/{model}:{method} endpoints."""
-    model_path = request.match_info["model_path"]
+async def handle_google_genai(
+    request: Any, model_path: str = ""
+) -> Response | StreamingResponse:
     log_info(f"/v1beta/models/{model_path}", context="app")
 
     if model_path.endswith(":streamGenerateContent"):
         model = model_path.removesuffix(":streamGenerateContent")
-        return await dispatch.proxy_request(
+        return await _argo_proxy_handler(
             request,
             source_provider="google",
             model_override=model,
@@ -156,225 +337,258 @@ async def proxy_google_genai(request: web.Request):
         )
     elif model_path.endswith(":generateContent"):
         model = model_path.removesuffix(":generateContent")
-        return await dispatch.proxy_request(
+        return await _argo_proxy_handler(
             request,
             source_provider="google",
             model_override=model,
         )
     else:
-        return web.json_response(
+        return JSONResponse(
             {"error": {"code": 400, "message": f"Unknown method in: {model_path}"}},
-            status=400,
+            status_code=400,
         )
 
 
-async def get_models(request: web.Request):
+async def handle_embeddings(request: Any) -> Response:
+    log_info("/v1/embeddings", context="app")
+    config = _get_config(request.app)
+    registry = _get_registry(request.app)
+    gateway_config = _get_gateway_config(request.app)
+
+    try:
+        body: dict[str, Any] = request.json()
+    except Exception:
+        return JSONResponse(
+            {
+                "error": {
+                    "message": "Invalid JSON body",
+                    "type": "invalid_request_error",
+                }
+            },
+            status_code=400,
+        )
+
+    model = body.get("model", "")
+    resolved = registry.resolve_model_name(model, model_type="embed")
+    body["model"] = resolved
+
+    if should_use_username_passthrough():
+        api_key = _extract_api_key_from_headers(request)
+        if api_key:
+            body["user"] = api_key
+    else:
+        body["user"] = config.user
+
+    provider_info = gateway_config.providers.get("argo-openai")
+    if not provider_info:
+        return JSONResponse(
+            {"error": {"message": "No OpenAI provider configured"}},
+            status_code=500,
+        )
+
+    transport: ArgoTransport = request.app.transport  # type: ignore[attr-defined]
+    url = f"{config.native_openai_base_url}/embeddings"
+
+    try:
+        response = await transport.send_passthrough(
+            provider_info,
+            url,
+            body,
+            extra_headers={
+                "User-Agent": build_user_agent(request.headers.get("user-agent"))
+            },
+        )
+    except ArgoAuthWarning:
+        return argo_auth_error_response("openai_chat")
+    except Exception:
+        logger.exception("Embeddings upstream error")
+        return JSONResponse(
+            {"error": {"message": "Upstream error", "type": "server_error"}},
+            status_code=502,
+        )
+
+    if response.is_error:
+        error_text = response.error_text
+        if contains_argo_auth_warning(error_text):
+            return argo_auth_error_response("openai_chat")
+        return Response(
+            body=response.raw_content,
+            status_code=response.status_code,
+            content_type="application/json",
+        )
+
+    if response.body and check_response_for_argo_warning(response.body, "openai"):
+        return argo_auth_error_response("openai_chat")
+
+    return JSONResponse(response.body, status_code=response.status_code)
+
+
+async def handle_list_models(request: Any) -> Response:
     log_info("/v1/models", context="app")
-    return extras.get_models(request)
+    registry = _get_registry(request.app)
+    return JSONResponse(registry.as_openai_list())
 
 
-async def refresh_models(request: web.Request):
+async def handle_refresh_models(request: Any) -> Response:
     log_info("/refresh", context="app")
-    return await extras.refresh_models(request)
+    registry = _get_registry(request.app)
+    gateway_config = _get_gateway_config(request.app)
 
+    old_stats = registry.get_model_stats()
+    await registry.refresh_availability()
+    rebuild_gateway_models(gateway_config, registry)
+    new_stats = registry.get_model_stats()
 
-# ================= Extras =================
-
-
-async def root_endpoint(request: web.Request):
-    """Root endpoint mimicking OpenAI's welcome message"""
-    return web.json_response(
+    return JSONResponse(
         {
-            "message": "Welcome to the Argo-Proxy API! Documentation is available at https://argo-proxy.readthedocs.io/en/latest/"
+            "status": "refreshed",
+            "before": {
+                "unique_models": old_stats["unique_models"],
+                "total_aliases": old_stats["total_aliases"],
+            },
+            "after": {
+                "unique_models": new_stats["unique_models"],
+                "total_aliases": new_stats["total_aliases"],
+            },
         }
     )
 
 
-async def v1_endpoint(request: web.Request):
-    """V1 endpoint mimicking OpenAI's 404 behavior"""
-    html_content = """<html>
-<head><title>404 Not Found</title></head>
-<body>
-<center><h1>404 Not Found</h1></center>
-<hr><center>argo-proxy</center>
-</body>
-</html>"""
-    return web.Response(text=html_content, status=404, content_type="text/html")
+async def handle_health(request: Any) -> Response:
+    return JSONResponse({"status": "healthy"})
 
 
-async def docs(request: web.Request):
-    msg = "<html><body>Documentation access: Please visit <a href='https://argo-proxy.readthedocs.io/en/latest/'>https://argo-proxy.readthedocs.io/en/latest/</a> for full documentation.</body></html>"
-    return web.Response(text=msg, status=200, content_type="text/html")
-
-
-async def health_check(request: web.Request):
-    log_info("/health", context="app")
-    return web.json_response({"status": "healthy"}, status=200)
-
-
-async def get_version(request: web.Request):
+async def handle_version(request: Any) -> Response:
     log_info("/version", context="app")
-    from ._vendor.semver import version_parse
-
-    versions = await get_pypi_versions()
-    stable = versions.get("stable")
-    pre = versions.get("pre")
-    cur = version_parse(__version__)
-
-    # Determine if any upgrade is available
-    stable_upgrade = False
-    pre_upgrade = False
-    if stable:
-        try:
-            stable_upgrade = version_parse(stable) > cur
-        except Exception:
-            pass
-    if pre:
-        try:
-            pre_upgrade = version_parse(pre) > cur
-        except Exception:
-            pass
-
-    up_to_date = not stable_upgrade and not pre_upgrade
-
-    # Build update commands
-    update_commands = {}
-    if stable_upgrade:
-        update_commands["cli"] = "argo-proxy update install"
-        update_commands["pip"] = "pip install --upgrade argo-proxy"
-    if pre_upgrade:
-        update_commands["cli_pre"] = "argo-proxy update install --pre"
-        update_commands["pip_pre"] = "pip install --upgrade --pre argo-proxy"
-
-    # Build message
-    if stable_upgrade and pre_upgrade:
-        message = f"New stable ({stable}) and pre-release ({pre}) available"
-    elif stable_upgrade:
-        message = f"New stable version {stable} available"
-    elif pre_upgrade:
-        message = f"New pre-release {pre} available"
-    else:
-        message = "You're using the latest version"
-
-    # Check critical dependencies
-    import importlib.metadata
-
-    from .cli.display import _CRITICAL_DEPS
-
-    dependencies = {}
-    for dep_name in _CRITICAL_DEPS:
-        try:
-            dep_installed = importlib.metadata.version(dep_name)
-        except importlib.metadata.PackageNotFoundError:
-            continue
-        dep_versions = await get_pypi_versions(dep_name)
-        dep_stable = dep_versions.get("stable")
-        dep_pre = dep_versions.get("pre")
-        dep_cur = version_parse(dep_installed)
-
-        dep_up_to_date = True
-        if dep_stable:
-            try:
-                if version_parse(dep_stable) > dep_cur:
-                    dep_up_to_date = False
-            except Exception:
-                pass
-        if dep_up_to_date and dep_pre:
-            try:
-                if version_parse(dep_pre) > dep_cur:
-                    dep_up_to_date = False
-            except Exception:
-                pass
-
-        dependencies[dep_name] = {
-            "installed": dep_installed,
-            "latest_stable": dep_stable,
-            "latest_pre": dep_pre,
-            "up_to_date": dep_up_to_date,
-            "update_command": f"pip install --upgrade {dep_name}",
-        }
-
-    response = {
-        "version": __version__,
-        "latest_stable": stable,
-        "latest_pre": pre,
-        "up_to_date": up_to_date,
-        "message": message,
-        "update_commands": update_commands if update_commands else None,
-        "dependencies": dependencies if dependencies else None,
-        "pypi": "https://pypi.org/project/argo-proxy/",
-        "changelog": "https://argo-proxy.readthedocs.io/en/latest/changelog/",
-    }
-
-    return web.json_response(response)
+    return JSONResponse({"version": __version__})
 
 
-def create_app():
-    """Factory function to create a new application instance"""
-    # Check dev mode from environment (set by CLI before app creation)
-    import os
+# ---------------------------------------------------------------------------
+# App factory
+# ---------------------------------------------------------------------------
 
+
+async def _startup(app: App) -> None:
+    """Initialize ARGO config, model registry, and transport."""
+    config_path = os.getenv("CONFIG_PATH")
+    config, _ = load_config(config_path, verbose=False)
+    if config is None:
+        log_error("Failed to load configuration", context="app")
+        sys.exit(1)
+
+    registry = ModelRegistry(config=config)
+    await registry.initialize()
+
+    stats = registry.get_model_stats()
+    log_info("=" * 60, context="app")
+    log_warning(
+        f"MODEL REGISTRY: [{stats['unique_models']} MODELS, "
+        f"{stats['total_aliases']} ALIASES]",
+        context="app",
+    )
+    log_info(
+        f"   Chat: {stats['unique_chat_models']} models "
+        f"({stats['chat_aliases']} aliases)",
+        context="app",
+    )
+    log_info(
+        f"   Embed: {stats['unique_embed_models']} models "
+        f"({stats['embed_aliases']} aliases)",
+        context="app",
+    )
+    log_info("=" * 60, context="app")
+
+    gateway_config = build_gateway_config(config, registry)
+
+    inner_transport = HttpTransport()
+    transport = ArgoTransport(
+        inner_transport,
+        anthropic_stream_mode=config.anthropic_stream_mode,
+    )
+
+    app.argo_config = config  # type: ignore[attr-defined]
+    app.model_registry = registry  # type: ignore[attr-defined]
+    app.gateway_config = gateway_config  # type: ignore[attr-defined]
+    app.transport = transport  # type: ignore[attr-defined]
+    app.metadata_store = ProviderMetadataStore()  # type: ignore[attr-defined]
+
+    log_debug("Gateway transport initialized", context="app")
+
+
+def create_app() -> App:
+    """Create the argo-proxy application."""
     from .utils.misc import str_to_bool
 
     dev_mode = str_to_bool(os.environ.get("DEV_MODE", "false"))
 
-    # Set client_max_size to 100MB to handle large image payloads from remote clients
-    # Users may send images larger than the gateway's 20MB limit; argo-proxy will
-    # compress them before forwarding. Default aiohttp limit is 1MB which is too small.
-    app = web.Application(
-        client_max_size=100 * 1024 * 1024,
-        middlewares=[security_middleware],
-    )
-    app.on_startup.append(prepare_app)
-    app.on_shutdown.append(cleanup_app)
+    app = App(max_body_size=100 * 1024 * 1024, read_timeout=300.0)
+
+    # Auth
+    app.before_request(create_argo_auth_hook())
+
+    # Security middleware
+    from .utils.attack_logger import create_security_hook
+
+    app.before_request(create_security_hook())
+
+    # CORS
+    @app.after_request
+    async def add_cors_headers(request: Any, response: Any) -> Any:
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+        return response
+
+    @app.route("/<path:_path>", methods=["OPTIONS"])
+    async def cors_preflight(request: Any, _path: str = "") -> Response:
+        resp = Response(body=b"", status_code=204)
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        resp.headers["Access-Control-Allow-Methods"] = "*"
+        resp.headers["Access-Control-Allow-Headers"] = "*"
+        return resp
 
     if dev_mode:
         log_warning(
-            "🔧 Transparent proxy — all requests forwarded without conversion",
+            "Transparent proxy — all requests forwarded without conversion",
             context="app",
         )
-
-        # Register basic utility routes available in dev mode
-        app.router.add_get("/health", health_check)
-        app.router.add_get("/version", get_version)
-        app.router.add_post("/refresh", refresh_models)
-
-        # Register dev proxy routes using a temporary config for URL resolution
-        dev_config = ArgoConfig()
-        register_dev_routes(app, dev_config)
-
+        app.route("/health", methods=["GET"])(handle_health)
+        app.route("/version", methods=["GET"])(handle_version)
+        app.route("/refresh", methods=["POST"])(handle_refresh_models)
         return app
 
-    # root endpoints
-    app.router.add_get("/", root_endpoint)
-    app.router.add_get("/v1", v1_endpoint)
-
-    # Universal endpoints (all 4 client formats)
-    app.router.add_post("/v1/chat/completions", proxy_openai_chat_compatible)
-    app.router.add_post("/v1/responses", proxy_openai_responses_request)
-    app.router.add_post("/v1/messages", proxy_anthropic_messages)
-    app.router.add_post("/v1beta/models/{model_path}", proxy_google_genai)
-
-    # Embeddings (passthrough)
-    app.router.add_post("/v1/embeddings", proxy_openai_embedding_request)
+    # Proxy routes
+    app.route("/v1/chat/completions", methods=["POST"])(handle_openai_chat)
+    app.route("/v1/responses", methods=["POST"])(handle_openai_responses)
+    app.route("/v1/messages", methods=["POST"])(handle_anthropic_messages)
+    app.route("/v1beta/models/<path:model_path>", methods=["POST"])(handle_google_genai)
+    app.route("/v1/embeddings", methods=["POST"])(handle_embeddings)
 
     # Model listing
-    app.router.add_get("/v1/models", get_models)
+    app.route("/v1/models", methods=["GET"])(handle_list_models)
 
-    # extras
-    app.router.add_post("/refresh", refresh_models)
-    app.router.add_get("/v1/docs", docs)
-    app.router.add_get("/health", health_check)
-    app.router.add_get("/version", get_version)
+    # Extras
+    app.route("/refresh", methods=["POST"])(handle_refresh_models)
+    app.route("/health", methods=["GET"])(handle_health)
+    app.route("/version", methods=["GET"])(handle_version)
 
     return app
+
+
+async def _run_server(app: App, *, host: str, port: int, socket: str = "") -> None:
+    await _startup(app)
+    try:
+        await app._serve(host, port, socket=socket or None)
+    finally:
+        transport = getattr(app, "transport", None)
+        metadata_store = getattr(app, "metadata_store", None)
+        await close_resources(transport=transport, metadata_store=metadata_store)
 
 
 def run(*, host: str = "0.0.0.0", port: int = 8080, socket: str = ""):
     app = create_app()
 
-    # Add this to ensure signal handlers trigger a full shutdown
-    def _force_exit(*_):
+    def _force_exit(*_: Any) -> None:
         log_info("Force exiting on signal", context="app")
         sys.exit(0)
 
@@ -382,68 +596,7 @@ def run(*, host: str = "0.0.0.0", port: int = 8080, socket: str = ""):
         signal.signal(sig, _force_exit)
 
     try:
-        if socket:
-            _run_unix_socket(app, socket)
-        else:
-            web.run_app(app, host=host, port=port)
+        asyncio.run(_run_server(app, host=host, port=port, socket=socket))
     except Exception as e:
         log_error(f"An error occurred while starting the server: {e}", context="app")
         sys.exit(1)
-
-
-def _run_unix_socket(app: web.Application, socket_path: str):
-    """Start the server listening on a Unix domain socket.
-
-    Removes any stale socket file, starts the app, then restricts
-    permissions to owner-only (0o600) so other users on a shared
-    host cannot connect.
-    """
-    import stat
-
-    path = os.path.realpath(socket_path)
-
-    # Remove stale socket if present
-    if os.path.exists(path):
-        try:
-            st = os.stat(path)
-            if stat.S_ISSOCK(st.st_mode):
-                os.unlink(path)
-                log_info(f"Removed stale socket: {path}", context="app")
-            else:
-                log_error(
-                    f"Socket path exists and is not a socket: {path}", context="app"
-                )
-                sys.exit(1)
-        except OSError as e:
-            log_error(f"Cannot remove stale socket {path}: {e}", context="app")
-            sys.exit(1)
-
-    # Ensure parent directory exists
-    parent = os.path.dirname(path)
-    if not os.path.isdir(parent):
-        log_error(f"Socket parent directory does not exist: {parent}", context="app")
-        sys.exit(1)
-
-    async def _set_socket_permissions(app_inner: web.Application):
-        """Set restrictive permissions on the socket after it is created."""
-        if os.path.exists(path):
-            os.chmod(path, 0o600)
-            log_info(
-                f"Socket permissions set to 0700 (owner-only): {path}",
-                context="app",
-            )
-
-    async def _cleanup_socket(app_inner: web.Application):
-        """Remove socket file on shutdown."""
-        if os.path.exists(path):
-            try:
-                os.unlink(path)
-                log_info(f"Removed socket: {path}", context="app")
-            except OSError:
-                pass
-
-    app.on_startup.append(_set_socket_permissions)
-    app.on_shutdown.append(_cleanup_socket)
-
-    log_info(f"Starting server on unix socket: {path}", context="app")
-    web.run_app(app, path=path)
