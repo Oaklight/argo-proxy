@@ -16,8 +16,6 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote
 
-from aiohttp import web
-
 from .logging import log_warning
 
 # Module-level logger
@@ -414,51 +412,39 @@ def _detect_request_attack(url_decoded: str) -> str | None:
     return None
 
 
-@web.middleware
-async def security_middleware(
-    request: web.Request,
-    handler,
-) -> web.StreamResponse:
-    """Application-level middleware that blocks requests with malicious payloads.
+def create_security_hook() -> Any:
+    """Return a before-request hook for the gateway httpserver.
 
-    This complements the AttackFilter (which catches parser-level errors) by
-    inspecting syntactically valid HTTP requests before they reach handlers.
-    The URL path and query string are URL-decoded before pattern matching.
-
-    Args:
-        request: The incoming aiohttp request.
-        handler: The next handler in the middleware chain.
-
-    Returns:
-        A 403 response if an attack is detected, otherwise the handler response.
+    The hook inspects URL-decoded path + query string for attack patterns
+    and returns a 403 JSONResponse if a match is found, or ``None`` to
+    allow the request through.
     """
-    # Decode and inspect path + query string
-    raw_url = request.path_qs
-    decoded_url = _decode_url(raw_url)
-    attack_type = _detect_request_attack(decoded_url)
+    from llm_rosetta._vendor.httpserver import JSONResponse as GatewayJSONResponse
 
-    if attack_type is not None:
-        # Extract remote IP
-        peername = (
-            request.transport.get_extra_info("peername") if request.transport else None
-        )
-        remote_ip = peername[0] if peername else request.remote or "unknown"
+    async def security_hook(request: Any) -> Any:
+        path = request.path
+        qs = request.query_string
+        raw_url = f"{path}?{qs}" if qs else path
+        decoded_url = _decode_url(raw_url)
+        attack_type = _detect_request_attack(decoded_url)
 
-        # Log via AttackLogger
-        attack_logger = get_attack_logger()
-        attack_logger.log_attack(
-            remote_ip=remote_ip,
-            raw_request=f"{request.method} {raw_url}",
-            error_type="blocked_by_middleware",
-            error_message=f"Request blocked: {attack_type} pattern in URL",
-        )
+        if attack_type is not None:
+            addr = getattr(request, "client_addr", None)
+            remote_ip = addr[0] if addr else "unknown"
 
-        return web.json_response(
-            {"error": "Forbidden"},
-            status=403,
-        )
+            attack_logger = get_attack_logger()
+            attack_logger.log_attack(
+                remote_ip=remote_ip,
+                raw_request=f"{request.method} {raw_url}",
+                error_type="blocked_by_middleware",
+                error_message=f"Request blocked: {attack_type} pattern in URL",
+            )
 
-    return await handler(request)
+            return GatewayJSONResponse({"error": "Forbidden"}, status_code=403)
+
+        return None
+
+    return security_hook
 
 
 # Global attack logger instance
