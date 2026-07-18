@@ -632,6 +632,12 @@ async def _startup(app: App) -> None:
     app.transport = transport  # type: ignore[attr-defined]
     app.metadata_store = ProviderMetadataStore()  # type: ignore[attr-defined]
 
+    # Admin panel state (metrics, request log, persistence, profiling)
+    from llm_rosetta.gateway.admin import setup_admin
+
+    config_path_resolved = config_path if isinstance(config_path, str) else None
+    setup_admin(app, gateway_config, config_path_resolved)
+
     log_debug("Gateway transport initialized", context="app")
 
 
@@ -643,29 +649,54 @@ def create_app() -> App:
 
     app = App(max_body_size=100 * 1024 * 1024, read_timeout=300.0)
 
-    # Auth
+    import secrets
+
+    from llm_rosetta.gateway.admin.routes import register_admin_routes
+    from llm_rosetta.gateway.auth import AuthState, create_auth_hook
+
+    # Admin auth state (gateway API key auth is handled by our own hook,
+    # but admin panel needs AuthState for token-based /admin/* auth)
+    internal_token = f"rsk-internal-{secrets.token_hex(16)}"
+    admin_password = os.environ.get("ADMIN_PASSWORD")
+    auth_state = AuthState(
+        frozenset(),  # no gateway-level API keys — ARGO validates upstream
+        {},
+        internal_token,
+        admin_password=admin_password,
+    )
+    app.auth_state = auth_state  # type: ignore[attr-defined]
+    app.internal_token = internal_token  # type: ignore[attr-defined]
+
+    # Auth hooks: ARGO credential passthrough + admin panel auth
     app.before_request(create_argo_auth_hook())
+    if admin_password:
+        app.before_request(create_auth_hook(auth_state))
 
     # Security middleware
     from .utils.attack_logger import create_security_hook
 
     app.before_request(create_security_hook())
 
-    # CORS
+    # CORS — open for /v1/*, restricted for /admin/*
     @app.after_request
     async def add_cors_headers(request: Any, response: Any) -> Any:
-        response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Methods"] = "*"
-        response.headers["Access-Control-Allow-Headers"] = "*"
+        if not request.path.startswith("/admin"):
+            response.headers["Access-Control-Allow-Origin"] = "*"
+            response.headers["Access-Control-Allow-Methods"] = "*"
+            response.headers["Access-Control-Allow-Headers"] = "*"
         return response
 
     @app.route("/<path:_path>", methods=["OPTIONS"])
     async def cors_preflight(request: Any, _path: str = "") -> Response:
         resp = Response(body=b"", status_code=204)
-        resp.headers["Access-Control-Allow-Origin"] = "*"
-        resp.headers["Access-Control-Allow-Methods"] = "*"
-        resp.headers["Access-Control-Allow-Headers"] = "*"
+        if not request.path.startswith("/admin"):
+            resp.headers["Access-Control-Allow-Origin"] = "*"
+            resp.headers["Access-Control-Allow-Methods"] = "*"
+            resp.headers["Access-Control-Allow-Headers"] = "*"
         return resp
+
+    # Admin panel routes
+    register_admin_routes(app)
 
     if dev_mode:
         log_warning(
