@@ -155,6 +155,14 @@ class ArgoTransport:
         _check_response_for_warning(response)
         return response
 
+    def raw_client(self, proxy_url: str | None = None) -> Any:
+        """Return a raw :class:`AsyncClient` from the inner transport's pool.
+
+        Intended for dev-proxy passthrough where the full transport
+        pipeline (URL templating, provider-info auth, etc.) is not needed.
+        """
+        return self._inner._pool.get(proxy_url)
+
     async def close(self) -> None:
         await self._inner.close()
 
