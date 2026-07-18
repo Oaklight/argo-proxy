@@ -86,8 +86,7 @@ async def _raw_passthrough(
     from .transport import ArgoTransport
 
     transport: ArgoTransport = request.app.transport  # type: ignore[attr-defined]
-    inner = transport._inner  # HttpTransport
-    client = inner._pool.get()
+    client = transport.raw_client()
 
     extra_headers: dict[str, str] = {
         "Content-Type": "application/json",
@@ -306,7 +305,8 @@ async def handle_dev_google(
         )
 
     is_stream = model_path.endswith(":streamGenerateContent")
-    url = f"{config.native_openai_base_url.rsplit('/v1', 1)[0]}/v1beta/models/{model_path}"
+    # Google GenAI lives under argo_base_url, not the OpenAI-compatible /v1 tree
+    url = f"{config.argo_base_url}/v1beta/models/{model_path}"
     log_debug(f"[dev] -> {url} stream={is_stream}", context="app")
     return await _raw_passthrough(
         request, url, body, is_stream=is_stream, request_id=rid, source="google"
@@ -346,7 +346,7 @@ async def handle_dev_models(request: Any) -> Response | StreamingResponse:
     from .transport import ArgoTransport
 
     transport: ArgoTransport = request.app.transport  # type: ignore[attr-defined]
-    client = transport._inner._pool.get()
+    client = transport.raw_client()
 
     headers: dict[str, str] = {
         "Authorization": f"Bearer {config.user}",

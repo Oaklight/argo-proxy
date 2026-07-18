@@ -14,6 +14,7 @@ from argoproxy.dev_proxy import (
     _parse_and_inject,
     handle_dev_anthropic,
     handle_dev_embeddings,
+    handle_dev_google,
     handle_dev_models,
     handle_dev_openai_chat,
     handle_dev_openai_responses,
@@ -27,6 +28,7 @@ from argoproxy.dev_proxy import (
 
 class FakeConfig:
     user = "test-user"
+    argo_base_url = "https://example.com"
     native_openai_base_url = "https://example.com/v1"
     native_anthropic_base_url = "https://example.com"
 
@@ -167,12 +169,8 @@ class TestParseAndInject:
 def _setup_transport_mock(request: FakeRequest) -> AsyncMock:
     """Wire up a mock transport on the request's app."""
     mock_client = AsyncMock()
-    mock_pool = MagicMock()
-    mock_pool.get.return_value = mock_client
-    mock_inner = MagicMock()
-    mock_inner._pool = mock_pool
     mock_transport = MagicMock()
-    mock_transport._inner = mock_inner
+    mock_transport.raw_client.return_value = mock_client
     request.app.transport = mock_transport
     return mock_client
 
@@ -275,12 +273,8 @@ async def test_handle_dev_openai_responses(mock_passthrough):
 async def test_handle_dev_models():
     req = FakeRequest()
     mock_client = AsyncMock()
-    mock_pool = MagicMock()
-    mock_pool.get.return_value = mock_client
-    mock_inner = MagicMock()
-    mock_inner._pool = mock_pool
     mock_transport = MagicMock()
-    mock_transport._inner = mock_inner
+    mock_transport.raw_client.return_value = mock_client
     req.app.transport = mock_transport
     mock_client.get.return_value = FakeHttpResponse(200, {"data": [{"id": "gpt-4o"}]})
 
@@ -292,6 +286,71 @@ async def test_handle_dev_models():
 
 
 # ---------------------------------------------------------------------------
+# Google handler tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@patch("argoproxy.dev_proxy.should_use_username_passthrough", return_value=False)
+async def test_handle_dev_google_generate_content(mock_passthrough):
+    req = FakeRequest(
+        body={"contents": [{"parts": [{"text": "hi"}]}]},
+    )
+    mock_client = _setup_transport_mock(req)
+    mock_client.post.return_value = FakeHttpResponse(
+        200, {"candidates": [{"content": {"parts": [{"text": "hello"}]}}]}
+    )
+
+    resp = await handle_dev_google(req, model_path="gemini-2.5-pro:generateContent")
+    assert resp.status_code == 200
+
+    url = mock_client.post.call_args[0][0]
+    assert url == "https://example.com/v1beta/models/gemini-2.5-pro:generateContent"
+
+
+@pytest.mark.asyncio
+@patch("argoproxy.dev_proxy.should_use_username_passthrough", return_value=False)
+async def test_handle_dev_google_stream_generate_content(mock_passthrough):
+    req = FakeRequest(
+        body={"contents": [{"parts": [{"text": "hi"}]}]},
+    )
+    mock_client = _setup_transport_mock(req)
+
+    # Streaming returns an httpclient.StreamingResponse-like object
+    mock_stream_resp = AsyncMock()
+    mock_stream_resp.status_code = 200
+    mock_stream_resp.headers = {"content-type": "text/event-stream"}
+
+    async def fake_lines():
+        yield 'data: {"candidates":[]}'
+        yield ""
+
+    mock_stream_resp.aiter_lines = fake_lines
+    mock_client.post.return_value = mock_stream_resp
+
+    resp = await handle_dev_google(
+        req, model_path="gemini-2.5-pro:streamGenerateContent"
+    )
+    # Streaming requests return a StreamingResponse
+    assert resp.status_code == 200
+
+    url = mock_client.post.call_args[0][0]
+    assert (
+        url == "https://example.com/v1beta/models/gemini-2.5-pro:streamGenerateContent"
+    )
+
+
+@pytest.mark.asyncio
+@patch("argoproxy.dev_proxy.should_use_username_passthrough", return_value=False)
+async def test_handle_dev_google_invalid_json(mock_passthrough):
+    req = FakeRequest(body=None)
+    _setup_transport_mock(req)
+
+    resp = await handle_dev_google(req, model_path="gemini-2.5-pro:generateContent")
+    assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
 # Auth warning detection
 # ---------------------------------------------------------------------------
 
@@ -299,7 +358,7 @@ async def test_handle_dev_models():
 @pytest.mark.asyncio
 @patch("argoproxy.dev_proxy.should_use_username_passthrough", return_value=False)
 @patch("argoproxy.dev_proxy.contains_argo_auth_warning", return_value=True)
-async def test_auth_warning_returns_error(mock_warning, mock_passthrough):
+async def test_auth_warning_returns_403(mock_warning, mock_passthrough):
     req = FakeRequest(body={"model": "gpt-4o", "messages": []})
     mock_client = _setup_transport_mock(req)
     mock_client.post.return_value = FakeHttpResponse(
@@ -307,8 +366,7 @@ async def test_auth_warning_returns_error(mock_warning, mock_passthrough):
     )
 
     resp = await handle_dev_openai_chat(req)
-    # Should return the auth error response, not 200
-    assert resp.status_code != 200 or b"auth" in resp.body.lower()
+    assert resp.status_code == 403
 
 
 # ---------------------------------------------------------------------------
