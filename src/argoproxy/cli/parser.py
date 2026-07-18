@@ -116,7 +116,11 @@ def _add_serve_arguments(parser: argparse.ArgumentParser) -> None:
         "--dev",
         action="store_true",
         default=False,
-        help=argparse.SUPPRESS,
+        help=(
+            "Run in dev-proxy mode: forward all requests to the ARGO\n"
+            "upstream without model resolution or format conversion.\n"
+            "Useful for debugging and testing upstream API compatibility."
+        ),
     )
 
 
