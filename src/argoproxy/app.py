@@ -454,13 +454,133 @@ async def handle_refresh_models(request: Any) -> Response:
     )
 
 
+async def handle_root(request: Any) -> Response:
+    return JSONResponse(
+        {
+            "message": (
+                "Welcome to the Argo-Proxy API! "
+                "Documentation is available at "
+                "https://argo-proxy.readthedocs.io/en/latest/"
+            )
+        }
+    )
+
+
+async def handle_v1(request: Any) -> Response:
+    html = (
+        "<html><head><title>404 Not Found</title></head><body>"
+        "<center><h1>404 Not Found</h1></center>"
+        "<hr><center>argo-proxy</center></body></html>"
+    )
+    return Response(body=html.encode(), status_code=404, content_type="text/html")
+
+
+async def handle_docs(request: Any) -> Response:
+    html = (
+        "<html><body>Documentation access: Please visit "
+        '<a href="https://argo-proxy.readthedocs.io/en/latest/">'
+        "https://argo-proxy.readthedocs.io/en/latest/</a>"
+        " for full documentation.</body></html>"
+    )
+    return Response(body=html.encode(), status_code=200, content_type="text/html")
+
+
 async def handle_health(request: Any) -> Response:
     return JSONResponse({"status": "healthy"})
 
 
 async def handle_version(request: Any) -> Response:
     log_info("/version", context="app")
-    return JSONResponse({"version": __version__})
+    from ._vendor.semver import version_parse
+    from .endpoints.extras import get_pypi_versions
+
+    versions = await get_pypi_versions()
+    stable = versions.get("stable")
+    pre = versions.get("pre")
+    cur = version_parse(__version__)
+
+    stable_upgrade = False
+    pre_upgrade = False
+    if stable:
+        try:
+            stable_upgrade = version_parse(stable) > cur
+        except Exception:
+            pass
+    if pre:
+        try:
+            pre_upgrade = version_parse(pre) > cur
+        except Exception:
+            pass
+
+    up_to_date = not stable_upgrade and not pre_upgrade
+
+    update_commands: dict[str, str] = {}
+    if stable_upgrade:
+        update_commands["cli"] = "argo-proxy update install"
+        update_commands["pip"] = "pip install --upgrade argo-proxy"
+    if pre_upgrade:
+        update_commands["cli_pre"] = "argo-proxy update install --pre"
+        update_commands["pip_pre"] = "pip install --upgrade --pre argo-proxy"
+
+    if stable_upgrade and pre_upgrade:
+        message = f"New stable ({stable}) and pre-release ({pre}) available"
+    elif stable_upgrade:
+        message = f"New stable version {stable} available"
+    elif pre_upgrade:
+        message = f"New pre-release {pre} available"
+    else:
+        message = "You're using the latest version"
+
+    import importlib.metadata
+
+    from .cli.display import _CRITICAL_DEPS
+
+    dependencies: dict[str, Any] = {}
+    for dep_name in _CRITICAL_DEPS:
+        try:
+            dep_installed = importlib.metadata.version(dep_name)
+        except importlib.metadata.PackageNotFoundError:
+            continue
+        dep_versions = await get_pypi_versions(dep_name)
+        dep_stable = dep_versions.get("stable")
+        dep_pre = dep_versions.get("pre")
+        dep_cur = version_parse(dep_installed)
+
+        dep_up_to_date = True
+        if dep_stable:
+            try:
+                if version_parse(dep_stable) > dep_cur:
+                    dep_up_to_date = False
+            except Exception:
+                pass
+        if dep_up_to_date and dep_pre:
+            try:
+                if version_parse(dep_pre) > dep_cur:
+                    dep_up_to_date = False
+            except Exception:
+                pass
+
+        dependencies[dep_name] = {
+            "installed": dep_installed,
+            "latest_stable": dep_stable,
+            "latest_pre": dep_pre,
+            "up_to_date": dep_up_to_date,
+            "update_command": f"pip install --upgrade {dep_name}",
+        }
+
+    return JSONResponse(
+        {
+            "version": __version__,
+            "latest_stable": stable,
+            "latest_pre": pre,
+            "up_to_date": up_to_date,
+            "message": message,
+            "update_commands": update_commands or None,
+            "dependencies": dependencies or None,
+            "pypi": "https://pypi.org/project/argo-proxy/",
+            "changelog": "https://argo-proxy.readthedocs.io/en/latest/changelog/",
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -470,29 +590,11 @@ async def handle_version(request: Any) -> Response:
 
 async def _startup(app: App) -> None:
     """Initialize ARGO config, model registry, and transport."""
-    from .utils.misc import str_to_bool
-
     config_path = os.getenv("CONFIG_PATH")
     config, _ = load_config(config_path, verbose=False)
     if config is None:
         log_error("Failed to load configuration", context="app")
         sys.exit(1)
-
-    dev_mode = str_to_bool(os.environ.get("DEV_MODE", "false"))
-
-    inner_transport = HttpTransport()
-    transport = ArgoTransport(
-        inner_transport,
-        anthropic_stream_mode=config.anthropic_stream_mode,
-    )
-
-    app.argo_config = config  # type: ignore[attr-defined]
-    app.transport = transport  # type: ignore[attr-defined]
-
-    if dev_mode:
-        log_info("Dev-proxy mode: skipping model registry", context="app")
-        log_debug("Gateway transport initialized (dev)", context="app")
-        return
 
     registry = ModelRegistry(config=config)
     await registry.initialize()
@@ -518,8 +620,16 @@ async def _startup(app: App) -> None:
 
     gateway_config = build_gateway_config(config, registry)
 
+    inner_transport = HttpTransport()
+    transport = ArgoTransport(
+        inner_transport,
+        anthropic_stream_mode=config.anthropic_stream_mode,
+    )
+
+    app.argo_config = config  # type: ignore[attr-defined]
     app.model_registry = registry  # type: ignore[attr-defined]
     app.gateway_config = gateway_config  # type: ignore[attr-defined]
+    app.transport = transport  # type: ignore[attr-defined]
     app.metadata_store = ProviderMetadataStore()  # type: ignore[attr-defined]
 
     log_debug("Gateway transport initialized", context="app")
@@ -558,32 +668,19 @@ def create_app() -> App:
         return resp
 
     if dev_mode:
-        from .dev_proxy import (
-            handle_dev_anthropic,
-            handle_dev_embeddings,
-            handle_dev_google,
-            handle_dev_models,
-            handle_dev_openai_chat,
-            handle_dev_openai_responses,
-        )
-
         log_warning(
-            "Dev-proxy mode — requests forwarded without model resolution or conversion",
+            "Transparent proxy — all requests forwarded without conversion",
             context="app",
         )
-        # Proxy routes (passthrough)
-        app.route("/v1/chat/completions", methods=["POST"])(handle_dev_openai_chat)
-        app.route("/v1/responses", methods=["POST"])(handle_dev_openai_responses)
-        app.route("/v1/messages", methods=["POST"])(handle_dev_anthropic)
-        app.route("/v1beta/models/<path:model_path>", methods=["POST"])(
-            handle_dev_google
-        )
-        app.route("/v1/embeddings", methods=["POST"])(handle_dev_embeddings)
-        app.route("/v1/models", methods=["GET"])(handle_dev_models)
-        # Utility routes
         app.route("/health", methods=["GET"])(handle_health)
         app.route("/version", methods=["GET"])(handle_version)
+        app.route("/refresh", methods=["POST"])(handle_refresh_models)
         return app
+
+    # Info routes
+    app.route("/", methods=["GET"])(handle_root)
+    app.route("/v1", methods=["GET"])(handle_v1)
+    app.route("/v1/docs", methods=["GET"])(handle_docs)
 
     # Proxy routes
     app.route("/v1/chat/completions", methods=["POST"])(handle_openai_chat)
