@@ -470,11 +470,29 @@ async def handle_version(request: Any) -> Response:
 
 async def _startup(app: App) -> None:
     """Initialize ARGO config, model registry, and transport."""
+    from .utils.misc import str_to_bool
+
     config_path = os.getenv("CONFIG_PATH")
     config, _ = load_config(config_path, verbose=False)
     if config is None:
         log_error("Failed to load configuration", context="app")
         sys.exit(1)
+
+    dev_mode = str_to_bool(os.environ.get("DEV_MODE", "false"))
+
+    inner_transport = HttpTransport()
+    transport = ArgoTransport(
+        inner_transport,
+        anthropic_stream_mode=config.anthropic_stream_mode,
+    )
+
+    app.argo_config = config  # type: ignore[attr-defined]
+    app.transport = transport  # type: ignore[attr-defined]
+
+    if dev_mode:
+        log_info("Dev-proxy mode: skipping model registry", context="app")
+        log_debug("Gateway transport initialized (dev)", context="app")
+        return
 
     registry = ModelRegistry(config=config)
     await registry.initialize()
@@ -500,16 +518,8 @@ async def _startup(app: App) -> None:
 
     gateway_config = build_gateway_config(config, registry)
 
-    inner_transport = HttpTransport()
-    transport = ArgoTransport(
-        inner_transport,
-        anthropic_stream_mode=config.anthropic_stream_mode,
-    )
-
-    app.argo_config = config  # type: ignore[attr-defined]
     app.model_registry = registry  # type: ignore[attr-defined]
     app.gateway_config = gateway_config  # type: ignore[attr-defined]
-    app.transport = transport  # type: ignore[attr-defined]
     app.metadata_store = ProviderMetadataStore()  # type: ignore[attr-defined]
 
     log_debug("Gateway transport initialized", context="app")
@@ -548,13 +558,31 @@ def create_app() -> App:
         return resp
 
     if dev_mode:
+        from .dev_proxy import (
+            handle_dev_anthropic,
+            handle_dev_embeddings,
+            handle_dev_google,
+            handle_dev_models,
+            handle_dev_openai_chat,
+            handle_dev_openai_responses,
+        )
+
         log_warning(
-            "Transparent proxy — all requests forwarded without conversion",
+            "Dev-proxy mode — requests forwarded without model resolution or conversion",
             context="app",
         )
+        # Proxy routes (passthrough)
+        app.route("/v1/chat/completions", methods=["POST"])(handle_dev_openai_chat)
+        app.route("/v1/responses", methods=["POST"])(handle_dev_openai_responses)
+        app.route("/v1/messages", methods=["POST"])(handle_dev_anthropic)
+        app.route("/v1beta/models/<path:model_path>", methods=["POST"])(
+            handle_dev_google
+        )
+        app.route("/v1/embeddings", methods=["POST"])(handle_dev_embeddings)
+        app.route("/v1/models", methods=["GET"])(handle_dev_models)
+        # Utility routes
         app.route("/health", methods=["GET"])(handle_health)
         app.route("/version", methods=["GET"])(handle_version)
-        app.route("/refresh", methods=["POST"])(handle_refresh_models)
         return app
 
     # Proxy routes

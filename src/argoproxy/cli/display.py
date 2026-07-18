@@ -201,7 +201,7 @@ def display_startup_banner(no_banner: bool = False):
 
     if dev_mode:
         log_warning(
-            "\u2699\ufe0f  MODE: Transparent Proxy (no conversion)", context="cli"
+            "\u2699\ufe0f  MODE: Dev-Proxy (passthrough, no conversion)", context="cli"
         )
     else:
         log_info("\u2699\ufe0f  MODE: Universal (llm-rosetta)", context="cli")
