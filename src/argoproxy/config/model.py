@@ -57,7 +57,7 @@ class ArgoConfig:
     _dev_mode: bool = False
 
     # Anthropic non-streaming request handling mode
-    _anthropic_stream_mode: str = "force"  # "force", "retry", or "passthrough"
+    _anthropic_stream_mode: str = "retry"  # "force", "retry", or "passthrough"
 
     # Debug request/response dumping
     _dump_requests: bool = False
@@ -175,15 +175,15 @@ class ArgoConfig:
         Returns:
             One of ``"force"``, ``"retry"``, or ``"passthrough"``.
 
-            - ``force``: Always force streaming upstream, aggregate back (default).
+            - ``force``: Always force streaming upstream, aggregate back.
             - ``retry``: Try non-streaming first, retry with streaming on
-              Anthropic's "streaming is required" bounce-back error.
+              Anthropic's "streaming is required" bounce-back error (default).
             - ``passthrough``: Never force streaming, pass through as-is.
         """
         valid = ("force", "retry", "passthrough")
         if self._anthropic_stream_mode in valid:
             return self._anthropic_stream_mode
-        return "force"
+        return "retry"
 
     @property
     def dump_requests(self) -> bool:
@@ -264,7 +264,7 @@ class ArgoConfig:
         # Persist optional flags only when set to non-default values
         if self._skip_url_validation:
             serialized["skip_url_validation"] = True
-        if self._anthropic_stream_mode != "force":
+        if self._anthropic_stream_mode != "retry":
             serialized["anthropic_stream_mode"] = self._anthropic_stream_mode
         if self._dump_requests:
             serialized["dump_requests"] = True
