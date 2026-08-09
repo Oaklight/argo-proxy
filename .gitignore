@@ -200,3 +200,6 @@ attack_logs/
 # Documentation worktrees (orphan branches)
 docs_en/
 docs_zh/
+# SQLite persistence (llm-rosetta gateway admin)
+data/
+gateway.db*

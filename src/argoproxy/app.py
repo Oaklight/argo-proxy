@@ -12,6 +12,7 @@ import logging
 import os
 import signal
 import sys
+import time
 import uuid
 from typing import Any
 
@@ -50,6 +51,57 @@ from .utils.misc import build_user_agent
 
 logger = logging.getLogger("argo-proxy")
 
+_ADMIN_CUSTOM_HEAD = """\
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  var _managed = {'argo-openai':1, 'argo-anthropic':1};
+  new MutationObserver(function(){
+    var cards = document.querySelectorAll('.provider-card');
+    if (!cards.length) return;
+    cards.forEach(function(card){
+      var nm = card.querySelector('.name');
+      if (!nm || nm.querySelector('.managed-badge')) return;
+      var pName = nm.textContent.trim();
+      if (!_managed[pName]) return;
+      var badge = document.createElement('span');
+      badge.className = 'managed-badge';
+      badge.style.cssText = 'font-size:11px;color:var(--text-dim);font-weight:400;margin-left:4px';
+      badge.textContent = '(managed)';
+      nm.appendChild(badge);
+      var toggle = card.querySelector('.toggle');
+      if (toggle) toggle.style.display = 'none';
+      var actions = card.querySelector('.actions');
+      if (actions) actions.style.display = 'none';
+    });
+    var addBtn = document.querySelector('button[onclick*="openProviderModal"]');
+    if (addBtn) addBtn.style.display = 'none';
+    // Inject "Refresh Models" button in Models tab
+    var fetchBtn = document.querySelector('button[onclick*="openFetchModelsModal"]');
+    if (fetchBtn && !document.getElementById('argoRefreshBtn')) {
+      var rb = document.createElement('button');
+      rb.id = 'argoRefreshBtn';
+      rb.className = 'btn btn-sm';
+      rb.style.cssText = 'margin-right:8px';
+      rb.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M21.5 2v6h-6"/><path d="M2.5 22v-6h6"/><path d="M2 11.5a10 10 0 0 1 18.8-4.3"/><path d="M22 12.5a10 10 0 0 1-18.8 4.3"/></svg> Refresh Models';
+      rb.onclick = function(){
+        rb.disabled = true; rb.textContent = 'Refreshing...';
+        fetch('/refresh', {method:'POST'}).then(function(r){return r.json()}).then(function(d){
+          rb.disabled = false;
+          rb.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M21.5 2v6h-6"/><path d="M2.5 22v-6h6"/><path d="M2 11.5a10 10 0 0 1 18.8-4.3"/><path d="M22 12.5a10 10 0 0 1-18.8 4.3"/></svg> Refresh Models';
+          if (typeof showToast==='function') showToast(d.after.total_aliases+' models ('+d.after.unique_models+' unique)','success');
+          if (typeof loadConfig==='function') loadConfig();
+        }).catch(function(){
+          rb.disabled = false;
+          rb.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M21.5 2v6h-6"/><path d="M2.5 22v-6h6"/><path d="M2 11.5a10 10 0 0 1 18.8-4.3"/><path d="M22 12.5a10 10 0 0 1-18.8 4.3"/></svg> Refresh Models';
+          if (typeof showToast==='function') showToast('Refresh failed','error');
+        });
+      };
+      fetchBtn.parentNode.insertBefore(rb, fetchBtn);
+    }
+  }).observe(document.body, {childList: true, subtree: true});
+});
+</script>"""
+
 
 # ---------------------------------------------------------------------------
 # App state helpers
@@ -66,6 +118,68 @@ def _get_registry(app: App) -> ModelRegistry:
 
 def _get_gateway_config(app: App) -> Any:
     return app.gateway_config  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# Telemetry — record metrics + request log for the admin dashboard
+# ---------------------------------------------------------------------------
+
+
+def _record_telemetry(
+    request: Any,
+    *,
+    model: str,
+    source_provider: ProviderType,
+    target_provider: ProviderType,
+    provider_name: str,
+    is_stream: bool,
+    status_code: int,
+    duration_ms: float,
+    error_detail: str | None,
+    profile: dict[str, Any] | None = None,
+) -> None:
+    metrics = getattr(request.app, "metrics", None)
+    if is_stream and metrics:
+        metrics.active_streams -= 1
+    if metrics:
+        metrics.record_request(
+            model=model,
+            source=source_provider,
+            target=target_provider,
+            status_code=status_code,
+            duration_ms=duration_ms,
+            is_stream=is_stream,
+            provider_name=provider_name,
+            error_detail=error_detail,
+        )
+
+    request_log = getattr(request.app, "request_log", None)
+    if request_log is not None:
+        from llm_rosetta.observability import RequestLogEntry
+
+        entry = RequestLogEntry.create(
+            model=model,
+            source_provider=source_provider,
+            target_provider=target_provider,
+            target_provider_name=provider_name,
+            is_stream=is_stream,
+            status_code=status_code,
+            duration_ms=duration_ms,
+            error_detail=error_detail,
+            client_ip=_extract_client_ip(request),
+            profile=profile,
+        )
+        request_log.add(entry)
+
+
+def _extract_client_ip(request: Any) -> str | None:
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff:
+        return xff.split(",")[0].strip()
+    addr = getattr(request, "client_addr", None)
+    if addr:
+        return str(addr[0])
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -175,8 +289,22 @@ async def _argo_proxy_handler(
     if ua:
         extra_headers["User-Agent"] = ua
 
+    if is_stream:
+        metrics = getattr(request.app, "metrics", None)
+        if metrics:
+            metrics.active_streams += 1
+
+    t0 = time.monotonic()
+    status_code = 500
+    error_detail: str | None = None
+    profile: dict[str, Any] | None = None
+    capture_state = getattr(request.app, "capture_state", None)
+    persistence = getattr(request.app, "persistence", None)
+    request_log = getattr(request.app, "request_log", None)
+
     try:
         if is_stream:
+            pre_entry_id = uuid.uuid4().hex
             response, profile = await handle_streaming(
                 route,
                 provider_info,
@@ -184,12 +312,16 @@ async def _argo_proxy_handler(
                 transport=transport,
                 metadata_store=store,
                 extra_headers=extra_headers,
+                capture_state=capture_state,
+                entry_id=pre_entry_id,
+                request_log=request_log,
             )
         elif (
             not is_stream
             and target_provider == "anthropic"
             and config.anthropic_stream_mode == "retry"
         ):
+            pre_entry_id = None
             response, profile = await _handle_with_retry(
                 route,
                 provider_info,
@@ -197,8 +329,11 @@ async def _argo_proxy_handler(
                 transport=transport,
                 metadata_store=store,
                 extra_headers=extra_headers,
+                capture_state=capture_state,
+                persistence=persistence,
             )
         else:
+            pre_entry_id = None
             response, profile = await handle_non_streaming(
                 route,
                 provider_info,
@@ -206,27 +341,54 @@ async def _argo_proxy_handler(
                 transport=transport,
                 metadata_store=store,
                 extra_headers=extra_headers,
+                capture_state=capture_state,
+                persistence=persistence,
             )
+
+        status_code = response.status_code
 
         # Check for ARGO auth warning in non-streaming responses
         if isinstance(response, Response) and hasattr(response, "body"):
             try:
                 resp_text = response.body.decode("utf-8", errors="replace")
                 if contains_argo_auth_warning(resp_text):
+                    status_code = 403
+                    error_detail = "ARGO authentication warning"
                     return argo_auth_error_response(source_provider)
             except Exception:
                 pass
+
+        if status_code >= 400 and hasattr(response, "body"):
+            error_detail = response.body.decode("utf-8", errors="replace")
 
         response.headers["x-request-id"] = request_id
         return response
 
     except ArgoAuthWarning:
+        status_code = 403
+        error_detail = "ARGO authentication warning"
         return argo_auth_error_response(source_provider)
-    except Exception:
+    except Exception as exc:
+        error_detail = str(exc)
         logger.exception("[%s] Proxy error", request_id)
+        status_code = 502
         resp = error_response_for_source(source_provider, 502, "Upstream error")
         resp.headers["x-request-id"] = request_id
         return resp
+    finally:
+        duration_ms = (time.monotonic() - t0) * 1000
+        _record_telemetry(
+            request,
+            model=model,
+            source_provider=source_provider,
+            target_provider=route.target_provider,
+            provider_name=route.provider_name,
+            is_stream=is_stream,
+            status_code=status_code,
+            duration_ms=duration_ms,
+            error_detail=error_detail,
+            profile=profile,
+        )
 
 
 async def _handle_with_retry(
@@ -237,6 +399,8 @@ async def _handle_with_retry(
     transport: Any,
     metadata_store: Any,
     extra_headers: dict[str, str] | None = None,
+    capture_state: Any | None = None,
+    persistence: Any | None = None,
 ) -> tuple[Response | StreamingResponse, dict[str, Any]]:
     """Try non-streaming, fall back to streaming on Anthropic bounce-back."""
     response, profile = await handle_non_streaming(
@@ -246,6 +410,8 @@ async def _handle_with_retry(
         transport=transport,
         metadata_store=metadata_store,
         extra_headers=extra_headers,
+        capture_state=capture_state,
+        persistence=persistence,
     )
 
     if response.status_code != 500 or not hasattr(response, "body"):
@@ -266,6 +432,7 @@ async def _handle_with_retry(
         transport=transport,
         metadata_store=metadata_store,
         extra_headers=extra_headers,
+        capture_state=capture_state,
     )
 
 
@@ -590,8 +757,8 @@ async def handle_version(request: Any) -> Response:
 
 async def _startup(app: App) -> None:
     """Initialize ARGO config, model registry, and transport."""
-    config_path = os.getenv("CONFIG_PATH")
-    config, _ = load_config(config_path, verbose=False)
+    config_path_env = os.getenv("CONFIG_PATH")
+    config, config_path = load_config(config_path_env, verbose=False)
     if config is None:
         log_error("Failed to load configuration", context="app")
         sys.exit(1)
@@ -635,8 +802,39 @@ async def _startup(app: App) -> None:
     # Admin panel state (metrics, request log, persistence, profiling)
     from llm_rosetta.gateway.admin import setup_admin
 
-    config_path_resolved = config_path if isinstance(config_path, str) else None
-    setup_admin(app, gateway_config, config_path_resolved)
+    from .config import ArgoConfigIO
+
+    config_io = ArgoConfigIO(config, registry)
+    setup_admin(
+        app,
+        gateway_config,
+        str(config_path) if config_path else None,
+        config_io=config_io,
+        custom_head=_ADMIN_CUSTOM_HEAD,
+        branding={
+            "title": "Argo Proxy",
+            "subtitle": "gateway admin",
+            "version": __version__,
+            "links": [
+                {
+                    "label": "GitHub",
+                    "url": "https://github.com/Oaklight/argo-proxy",
+                    "icon": "github",
+                },
+                {
+                    "label": "PyPI",
+                    "url": "https://pypi.org/project/argo-proxy/",
+                    "icon": "pypi",
+                },
+                {
+                    "label": "Docs",
+                    "url": "https://argo-proxy.readthedocs.io",
+                    "icon": "docs",
+                },
+            ],
+            "attribution": "Powered by llm-rosetta gateway",
+        },
+    )
 
     log_debug("Gateway transport initialized", context="app")
 
@@ -659,10 +857,11 @@ def create_app() -> App:
     internal_token = f"rsk-internal-{secrets.token_hex(16)}"
     admin_password = os.environ.get("ADMIN_PASSWORD")
     auth_state = AuthState(
-        frozenset(),  # no gateway-level API keys — ARGO validates upstream
+        None,  # no gateway-level keystore — ARGO validates upstream
         {},
         internal_token,
         admin_password=admin_password,
+        open_on_no_keys=True,  # ARGO validates upstream
     )
     app.auth_state = auth_state  # type: ignore[attr-defined]
     app.internal_token = internal_token  # type: ignore[attr-defined]
@@ -733,6 +932,8 @@ def create_app() -> App:
 
 async def _run_server(app: App, *, host: str, port: int, socket: str = "") -> None:
     await _startup(app)
+    app._bind_host = host  # type: ignore[attr-defined]
+    app._bind_port = port  # type: ignore[attr-defined]
     try:
         await app._serve(host, port, socket=socket or None)
     finally:

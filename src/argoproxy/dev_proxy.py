@@ -109,9 +109,14 @@ async def _raw_passthrough(
 
             if resp.status_code >= 400:
                 # Read error body and return as regular response
-                chunks: list[bytes] = []
-                async for chunk in resp.aiter_bytes():
-                    chunks.append(chunk if isinstance(chunk, bytes) else chunk.encode())
+                try:
+                    chunks: list[bytes] = []
+                    async for chunk in resp.aiter_bytes():
+                        chunks.append(
+                            chunk if isinstance(chunk, bytes) else chunk.encode()
+                        )
+                finally:
+                    await resp.aclose()
                 error_body = b"".join(chunks)
                 if contains_argo_auth_warning(
                     error_body.decode("utf-8", errors="replace")
@@ -137,6 +142,8 @@ async def _raw_passthrough(
                             yield chunk if isinstance(chunk, bytes) else chunk.encode()
                 except Exception:
                     logger.exception("[%s] Stream relay error", request_id)
+                finally:
+                    await resp.aclose()
 
             return StreamingResponse(
                 _relay(),
