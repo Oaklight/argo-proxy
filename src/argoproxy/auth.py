@@ -13,7 +13,8 @@ import re
 from typing import Any
 
 from llm_rosetta._vendor.httpserver import JSONResponse, Response
-from llm_rosetta.gateway.auth import api_key_label_var
+from llm_rosetta.gateway.auth import api_key_context_var
+from llm_rosetta.gateway.keystore import KeyContext
 
 _ARGO_AUTH_WARNING_PATTERN = re.compile(
     r"AUTHENTICATION NOTICE FROM ARGO", re.IGNORECASE
@@ -61,14 +62,16 @@ def create_argo_auth_hook() -> Any:
     """
 
     async def argo_auth_hook(request: Any) -> Response | None:
-        api_key_label_var.set(None)
+        api_key_context_var.set(None)
 
         if request.path in _PUBLIC_PATHS:
             return None
 
         key = _extract_api_key(request)
         if key:
-            api_key_label_var.set(key[:8] + "...")
+            api_key_context_var.set(
+                KeyContext(label=key[:8] + "...", allowed_shims=frozenset({"*"}))
+            )
         return None
 
     return argo_auth_hook
