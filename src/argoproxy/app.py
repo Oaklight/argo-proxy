@@ -52,10 +52,16 @@ from .utils.misc import build_user_agent
 logger = logging.getLogger("argo-proxy")
 
 _ADMIN_CUSTOM_HEAD = """\
+<style>.tab[data-tab="keys"], #tab-keys { display: none !important; }</style>
 <script>
 document.addEventListener('DOMContentLoaded', function(){
   var _managed = {'argo-openai':1, 'argo-anthropic':1};
   new MutationObserver(function(){
+    // Disable API key fetching — argo-proxy has no gateway keystore
+    if (typeof loadKeys === 'function' && !loadKeys._disabled) {
+      loadKeys = function(){};
+      loadKeys._disabled = true;
+    }
     var cards = document.querySelectorAll('.provider-card');
     if (!cards.length) return;
     cards.forEach(function(card){
