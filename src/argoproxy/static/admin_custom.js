@@ -196,9 +196,18 @@
     _refreshInjected = true;
   }
 
+  // --- Page title ---
+
+  function patchPageTitle() {
+    if (document.title.indexOf("llm-rosetta") !== -1) {
+      document.title = document.title.replace("llm-rosetta Gateway", "Argo Proxy");
+    }
+  }
+
   // --- Main observer ---
 
   document.addEventListener("DOMContentLoaded", function () {
+    patchPageTitle();
     new MutationObserver(function () {
       patchProviderCards();
       patchAddProviderButton();
