@@ -59,14 +59,12 @@ def build_gateway_config(
 def _build_providers(config: ArgoConfig) -> dict:
     return {
         "argo-openai": {
-            "type": "argo-openai",
             "shim": "argo--openai_chat",
             "api_key": config.user,
             "base_url": config.native_openai_base_url,
             "readonly": True,
         },
         "argo-anthropic": {
-            "type": "argo-anthropic",
             "shim": "argo--anthropic",
             "api_key": config.user,
             "base_url": config.native_anthropic_base_url,

@@ -57,7 +57,7 @@ argo-proxy = "argoproxy.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"argoproxy" = ["py.typed"]
+"argoproxy" = ["py.typed", "static/*.js", "static/*.css"]
 
 [tool.setuptools.dynamic]
 version = { attr = "argoproxy.__version__" }
