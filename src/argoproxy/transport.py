@@ -17,7 +17,6 @@ import re
 from collections.abc import AsyncIterator
 from typing import Any
 
-from llm_rosetta.auto_detect import ProviderType
 from llm_rosetta.gateway.transport._base import (
     UpstreamResponse,
     UpstreamStream,
@@ -101,20 +100,18 @@ class ArgoTransport:
         self._inner = inner
         self._anthropic_stream_mode = anthropic_stream_mode
 
-    async def send_request(
+    async def send(
         self,
         provider_info: ProviderInfo,
-        target_provider: ProviderType,
+        url: str,
         body: dict[str, Any],
-        model: str,
         *,
         extra_headers: dict[str, str] | None = None,
     ) -> UpstreamResponse:
-        response = await self._inner.send_request(
+        response = await self._inner.send(
             provider_info,
-            target_provider,
+            url,
             body,
-            model,
             extra_headers=extra_headers,
         )
         _check_response_for_warning(response)
@@ -123,37 +120,18 @@ class ArgoTransport:
     async def send_streaming(
         self,
         provider_info: ProviderInfo,
-        target_provider: ProviderType,
+        url: str,
         body: dict[str, Any],
-        model: str,
         *,
         extra_headers: dict[str, str] | None = None,
     ) -> UpstreamStream:
         stream = await self._inner.send_streaming(
             provider_info,
-            target_provider,
-            body,
-            model,
-            extra_headers=extra_headers,
-        )
-        return ArgoUpstreamStream(stream)
-
-    async def send_passthrough(
-        self,
-        provider_info: ProviderInfo,
-        url: str,
-        body: dict[str, Any],
-        *,
-        extra_headers: dict[str, str] | None = None,
-    ) -> UpstreamResponse:
-        response = await self._inner.send_passthrough(
-            provider_info,
             url,
             body,
             extra_headers=extra_headers,
         )
-        _check_response_for_warning(response)
-        return response
+        return ArgoUpstreamStream(stream)
 
     def raw_client(self, proxy_url: str | None = None) -> Any:
         """Return a raw :class:`AsyncClient` from the inner transport's pool.
@@ -171,9 +149,8 @@ class ArgoTransport:
     async def send_with_anthropic_retry(
         self,
         provider_info: ProviderInfo,
-        target_provider: ProviderType,
+        url: str,
         body: dict[str, Any],
-        model: str,
         *,
         extra_headers: dict[str, str] | None = None,
     ) -> UpstreamResponse | UpstreamStream:
@@ -192,18 +169,16 @@ class ArgoTransport:
         if mode == "force":
             return await self.send_streaming(
                 provider_info,
-                target_provider,
+                url,
                 body,
-                model,
                 extra_headers=extra_headers,
             )
 
         # "passthrough" or "retry" — try non-streaming first
-        response = await self._inner.send_request(
+        response = await self._inner.send(
             provider_info,
-            target_provider,
+            url,
             body,
-            model,
             extra_headers=extra_headers,
         )
 
@@ -221,9 +196,8 @@ class ArgoTransport:
                 )
                 return await self.send_streaming(
                     provider_info,
-                    target_provider,
+                    url,
                     body,
-                    model,
                     extra_headers=extra_headers,
                 )
 

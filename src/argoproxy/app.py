@@ -557,7 +557,7 @@ async def handle_embeddings(request: Any) -> Response:
     url = f"{config.native_openai_base_url}/embeddings"
 
     try:
-        response = await transport.send_passthrough(
+        response = await transport.send(
             provider_info,
             url,
             body,
