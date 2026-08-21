@@ -1,0 +1,37 @@
+.managed-badge {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-weight: 400;
+  margin-left: 4px;
+}
+
+.argo-info-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-dim);
+  font-size: 13px;
+  cursor: default;
+  position: relative;
+}
+
+.argo-info-icon .hint-popup {
+  width: 320px;
+  white-space: normal;
+  pointer-events: auto;
+}
+
+/* Hover bridge: transparent hitbox between icon and popup (prevents hover gap) */
+.argo-info-icon .hint-popup::before {
+  content: "";
+  position: absolute;
+  bottom: -10px;
+  left: 0;
+  right: 0;
+  height: 10px;
+}
+
+.argo-info-icon .hint-popup a {
+  color: var(--accent);
+  text-decoration: underline;
+}

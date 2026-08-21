@@ -51,56 +51,19 @@ from .utils.misc import build_user_agent
 
 logger = logging.getLogger("argo-proxy")
 
-_ADMIN_CUSTOM_HEAD = """\
-<script>
-document.addEventListener('DOMContentLoaded', function(){
-  var _managed = {'argo-openai':1, 'argo-anthropic':1};
-  new MutationObserver(function(){
-    var cards = document.querySelectorAll('.provider-card');
-    if (!cards.length) return;
-    cards.forEach(function(card){
-      var nm = card.querySelector('.name');
-      if (!nm || nm.querySelector('.managed-badge')) return;
-      var pName = nm.textContent.trim();
-      if (!_managed[pName]) return;
-      var badge = document.createElement('span');
-      badge.className = 'managed-badge';
-      badge.style.cssText = 'font-size:11px;color:var(--text-dim);font-weight:400;margin-left:4px';
-      badge.textContent = '(managed)';
-      nm.appendChild(badge);
-      var toggle = card.querySelector('.toggle');
-      if (toggle) toggle.style.display = 'none';
-      var actions = card.querySelector('.actions');
-      if (actions) actions.style.display = 'none';
-    });
-    var addBtn = document.querySelector('button[onclick*="openProviderModal"]');
-    if (addBtn) addBtn.style.display = 'none';
-    // Inject "Refresh Models" button in Models tab
-    var fetchBtn = document.querySelector('button[onclick*="openFetchModelsModal"]');
-    if (fetchBtn && !document.getElementById('argoRefreshBtn')) {
-      var rb = document.createElement('button');
-      rb.id = 'argoRefreshBtn';
-      rb.className = 'btn btn-sm';
-      rb.style.cssText = 'margin-right:8px';
-      rb.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M21.5 2v6h-6"/><path d="M2.5 22v-6h6"/><path d="M2 11.5a10 10 0 0 1 18.8-4.3"/><path d="M22 12.5a10 10 0 0 1-18.8 4.3"/></svg> Refresh Models';
-      rb.onclick = function(){
-        rb.disabled = true; rb.textContent = 'Refreshing...';
-        fetch('/refresh', {method:'POST'}).then(function(r){return r.json()}).then(function(d){
-          rb.disabled = false;
-          rb.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M21.5 2v6h-6"/><path d="M2.5 22v-6h6"/><path d="M2 11.5a10 10 0 0 1 18.8-4.3"/><path d="M22 12.5a10 10 0 0 1-18.8 4.3"/></svg> Refresh Models';
-          if (typeof showToast==='function') showToast(d.after.total_aliases+' models ('+d.after.unique_models+' unique)','success');
-          if (typeof loadConfig==='function') loadConfig();
-        }).catch(function(){
-          rb.disabled = false;
-          rb.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M21.5 2v6h-6"/><path d="M2.5 22v-6h6"/><path d="M2 11.5a10 10 0 0 1 18.8-4.3"/><path d="M22 12.5a10 10 0 0 1-18.8 4.3"/></svg> Refresh Models';
-          if (typeof showToast==='function') showToast('Refresh failed','error');
-        });
-      };
-      fetchBtn.parentNode.insertBefore(rb, fetchBtn);
-    }
-  }).observe(document.body, {childList: true, subtree: true});
-});
-</script>"""
+def _load_admin_custom_head() -> str:
+    """Load admin panel customization from static resource files."""
+    from pathlib import Path
+
+    static_dir = Path(__file__).parent / "static"
+    parts: list[str] = []
+    css_path = static_dir / "admin_custom.css"
+    if css_path.exists():
+        parts.append(f"<style>{css_path.read_text()}</style>")
+    js_path = static_dir / "admin_custom.js"
+    if js_path.exists():
+        parts.append(f"<script>{js_path.read_text()}</script>")
+    return "\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -811,7 +774,7 @@ async def _startup(app: App) -> None:
         str(config_path) if config_path else None,
         config_io=config_io,
         disabled_tabs=["keys"],
-        custom_head=_ADMIN_CUSTOM_HEAD,
+        custom_head=_load_admin_custom_head(),
         branding={
             "title": "Argo Proxy",
             "subtitle": "gateway admin",
