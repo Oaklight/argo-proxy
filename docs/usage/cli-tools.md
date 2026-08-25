@@ -109,20 +109,23 @@ Argo Proxy v3 serves all major LLM API formats, which means it works out of the 
 
 ---
 
-## Gemini CLI
+## Gemini CLI (Discontinued)
 
-[Gemini CLI](https://github.com/google-gemini/gemini-cli) (tested with v0.34.0) connects via the **Google GenAI API** (`/v1beta/models/{model}:generateContent`).
+!!! warning "Discontinued"
+    Gemini CLI stopped serving on 2026-06-18 and has been replaced by [Google Antigravity CLI (agy)](#google-antigravity-cli-agy). The section below is kept for reference only.
 
-=== "Config Files (Recommended)"
+[Gemini CLI](https://github.com/google-gemini/gemini-cli) connected via the **Google GenAI API** (`/v1beta/models/{model}:generateContent`).
 
-    **1. `~/.gemini/.env`** — Gemini CLI auto-reads this file on startup:
+=== "Config Files"
+
+    **1. `~/.gemini/.env`**:
 
     ```bash
     GEMINI_API_KEY=your-anl-username
     GOOGLE_GEMINI_BASE_URL=http://localhost:44497
     ```
 
-    **2. `~/.gemini/settings.json`** — set auth mode and default model:
+    **2. `~/.gemini/settings.json`**:
 
     ```json
     {
@@ -137,8 +140,6 @@ Argo Proxy v3 serves all major LLM API formats, which means it works out of the 
     }
     ```
 
-    With both files configured, just run `gemini` — no extra flags needed.
-
 === "Environment Variables"
 
     ```bash
@@ -147,35 +148,49 @@ Argo Proxy v3 serves all major LLM API formats, which means it works out of the 
     gemini -m argo:gpt-4.1
     ```
 
-!!! important
-    - Set `GOOGLE_GEMINI_BASE_URL` to the proxy root (e.g., `http://localhost:44497`), **not** including any API path — Gemini CLI appends the path automatically
-    - The `selectedType: "gemini-api-key"` setting tells Gemini CLI to use the API key auth flow instead of Google OAuth
-    - The `model.name` field in `settings.json` sets the default model, so you don't need `-m` every time
-
-!!! tip "Using with other proxies (e.g., OneAPI)"
-    If your proxy expects Bearer token authentication, add this to `~/.gemini/.env`:
-
-    ```bash
-    GEMINI_API_KEY_AUTH_MECHANISM=bearer
-    ```
-
-    This tells the Google GenAI SDK to send the API key as a `Bearer` token in the `Authorization` header instead of as a query parameter.
-
 ---
 
 ## Google Antigravity CLI (agy)
 
-[Google Antigravity](https://developers.google.com/gemini/agy) (`agy`) is Google's standalone AI coding assistant binary. It uses the **cloudcode-pa protocol** internally, which argo-proxy supports via llm-rosetta's protocol shim.
+[Google Antigravity CLI](https://developers.google.com/gemini/agy) (`agy`, tested with v1.1.20) is the successor to Gemini CLI. It connects via the **Google GenAI API** (`/v1beta/models/{model}:generateContent`), the same protocol as the former Gemini CLI.
 
-```bash
-export CLOUD_CODE_URL="http://localhost:44497"
-agy
-```
+=== "Config Files (Recommended)"
 
-!!! important
-    - `CLOUD_CODE_URL` overrides agy's default endpoint (`cloudcode-pa.googleapis.com`)
-    - agy requires a Google OAuth token to start — the auth flow must succeed before any request reaches the proxy
-    - Unlike Gemini CLI, agy does **not** honor `GOOGLE_GEMINI_BASE_URL` or `~/.gemini/.env`
+    **1. `~/.gemini/antigravity-cli/settings.json`**:
+
+    ```json
+    {
+        "modelProvider": "gemini",
+        "model": {
+            "name": "argo:gpt-5"
+        }
+    }
+    ```
+
+    **2. Environment variables** (add to shell profile):
+
+    ```bash
+    export GEMINI_API_KEY="your-anl-username"
+    export GOOGLE_GEMINI_BASE_URL="http://localhost:44497"
+    ```
+
+    Then just run `agy`.
+
+=== "Environment Variables"
+
+    ```bash
+    GOOGLE_GEMINI_BASE_URL=http://localhost:44497 \
+    GEMINI_API_KEY=your-anl-username \
+    agy
+    ```
+
+!!! important "Planner model requirement"
+    agy uses a hardcoded internal planner model (`gemini-3.1-pro-preview`) alongside your chosen model. This model must be available on the upstream — argo-proxy maps it automatically if the upstream provides it.
+
+!!! note
+    - Config path changed from Gemini CLI's `~/.gemini/settings.json` to `~/.gemini/antigravity-cli/settings.json`
+    - `modelProvider` must be set to `"gemini"` in the settings file
+    - agy sends `x-goog-api-key` header for auth, which argo-proxy supports natively
 
 ---
 
@@ -278,8 +293,8 @@ print(message.content[0].text)
 | Codex CLI | OpenAI Responses | `OPENAI_BASE_URL` | `http://localhost:44497/v1` |
 | Aider (OpenAI) | OpenAI | `OPENAI_API_BASE` | `http://localhost:44497/v1` |
 | Aider (Anthropic) | Anthropic | `ANTHROPIC_BASE_URL` | `http://localhost:44497` |
-| Gemini CLI | Google GenAI | `GOOGLE_GEMINI_BASE_URL` | `http://localhost:44497` (+ `~/.gemini/.env`) |
-| agy | cloudcode-pa | `CLOUD_CODE_URL` | `http://localhost:44497` |
+| Gemini CLI (discontinued) | Google GenAI | `GOOGLE_GEMINI_BASE_URL` | `http://localhost:44497` |
+| agy | Google GenAI | `GOOGLE_GEMINI_BASE_URL` | `http://localhost:44497` |
 | OpenCode | OpenAI | `OPENAI_BASE_URL` | `http://localhost:44497/v1` |
 | OpenAI SDK | OpenAI | `OPENAI_BASE_URL` | `http://localhost:44497/v1` |
 | Anthropic SDK | Anthropic | `ANTHROPIC_BASE_URL` | `http://localhost:44497` |
