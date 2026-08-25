@@ -44,17 +44,15 @@ class ArgoConfigIO:
         )
         return data
 
-    def load(self, path: str) -> dict[str, Any]:
-        from .io import load_config
-
-        raw, _ = load_config(path, as_is=True, verbose=False)
-        return self._inject_runtime_state(raw or {})
-
     def load_raw(self, path: str) -> dict[str, Any]:
         from .io import load_config
 
         raw, _ = load_config(path, as_is=True, verbose=False)
         return self._inject_runtime_state(raw or {})
+
+    # Gateway uses load_raw for admin API reads and load for hot-reload
+    # (_reload_gateway_config). In argo-proxy both behave the same.
+    load = load_raw
 
     def save(self, path: str, data: dict[str, Any]) -> None:
         data.pop("providers", None)
