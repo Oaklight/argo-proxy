@@ -185,7 +185,7 @@ Argo Proxy v3 serves all major LLM API formats, which means it works out of the 
     ```
 
 !!! important "Planner model requirement"
-    agy uses a hardcoded internal planner model (`gemini-3.1-pro-preview`) alongside your chosen model. This model must be available on the upstream — argo-proxy maps it automatically if the upstream provides it.
+    agy uses a hardcoded internal planner model (`gemini-3.1-pro-preview`) alongside your chosen model. This **cannot be overridden** via `settings.json` or CLI flags — there is no user-facing configuration for it. The model must be available on the upstream — argo-proxy maps it automatically if the upstream provides it.
 
 !!! note
     - Config path changed from Gemini CLI's `~/.gemini/settings.json` to `~/.gemini/antigravity-cli/settings.json`
