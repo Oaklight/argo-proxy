@@ -51,6 +51,7 @@ from .utils.misc import build_user_agent
 
 logger = logging.getLogger("argo-proxy")
 
+
 def _load_admin_custom_head() -> str:
     """Load admin panel customization from static resource files."""
     from pathlib import Path
