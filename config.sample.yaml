@@ -18,12 +18,12 @@ max_log_history: 3    # keep last N messages in verbose request logs
 #   - native_anthropic_base_url = {argo_base_url}
 #
 # Available environments:
-#   Production : https://apps.inside.anl.gov/argoapi
-#   Development: https://apps-dev.inside.anl.gov/argoapi   (default)
+#   Production : https://apps.inside.anl.gov/argoapi        (default)
+#   Development: https://apps-dev.inside.anl.gov/argoapi
 #   Test       : https://apps-test.inside.anl.gov/argoapi
 #
 # Switch with: argo-proxy config env prod|dev|test
-argo_base_url: https://apps-dev.inside.anl.gov/argoapi
+argo_base_url: https://apps.inside.anl.gov/argoapi
 
 # Network & validation
 connection_test_timeout: 5    # seconds per URL connectivity test at startup

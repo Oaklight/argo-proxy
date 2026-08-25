@@ -862,10 +862,27 @@ def create_app() -> App:
     register_admin_routes(app)
 
     if dev_mode:
+        from .dev_proxy import (
+            handle_dev_anthropic,
+            handle_dev_embeddings,
+            handle_dev_google,
+            handle_dev_models,
+            handle_dev_openai_chat,
+            handle_dev_openai_responses,
+        )
+
         log_warning(
             "Transparent proxy — all requests forwarded without conversion",
             context="app",
         )
+        app.route("/v1/chat/completions", methods=["POST"])(handle_dev_openai_chat)
+        app.route("/v1/responses", methods=["POST"])(handle_dev_openai_responses)
+        app.route("/v1/messages", methods=["POST"])(handle_dev_anthropic)
+        app.route("/v1beta/models/<path:model_path>", methods=["POST"])(
+            handle_dev_google
+        )
+        app.route("/v1/embeddings", methods=["POST"])(handle_dev_embeddings)
+        app.route("/v1/models", methods=["GET"])(handle_dev_models)
         app.route("/health", methods=["GET"])(handle_health)
         app.route("/version", methods=["GET"])(handle_version)
         app.route("/refresh", methods=["POST"])(handle_refresh_models)
