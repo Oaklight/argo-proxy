@@ -163,6 +163,22 @@ Argo Proxy v3 serves all major LLM API formats, which means it works out of the 
 
 ---
 
+## Google Antigravity CLI (agy)
+
+[Google Antigravity](https://developers.google.com/gemini/agy) (`agy`) is Google's standalone AI coding assistant binary. It uses the **cloudcode-pa protocol** internally, which argo-proxy supports via llm-rosetta's protocol shim.
+
+```bash
+export CLOUD_CODE_URL="http://localhost:44497"
+agy
+```
+
+!!! important
+    - `CLOUD_CODE_URL` overrides agy's default endpoint (`cloudcode-pa.googleapis.com`)
+    - agy requires a Google OAuth token to start — the auth flow must succeed before any request reaches the proxy
+    - Unlike Gemini CLI, agy does **not** honor `GOOGLE_GEMINI_BASE_URL` or `~/.gemini/.env`
+
+---
+
 ## OpenCode
 
 [OpenCode](https://github.com/opencode-ai/opencode) (tested with v1.2.27) supports OpenAI-compatible endpoints.
@@ -263,6 +279,7 @@ print(message.content[0].text)
 | Aider (OpenAI) | OpenAI | `OPENAI_API_BASE` | `http://localhost:44497/v1` |
 | Aider (Anthropic) | Anthropic | `ANTHROPIC_BASE_URL` | `http://localhost:44497` |
 | Gemini CLI | Google GenAI | `GOOGLE_GEMINI_BASE_URL` | `http://localhost:44497` (+ `~/.gemini/.env`) |
+| agy | cloudcode-pa | `CLOUD_CODE_URL` | `http://localhost:44497` |
 | OpenCode | OpenAI | `OPENAI_BASE_URL` | `http://localhost:44497/v1` |
 | OpenAI SDK | OpenAI | `OPENAI_BASE_URL` | `http://localhost:44497/v1` |
 | Anthropic SDK | Anthropic | `ANTHROPIC_BASE_URL` | `http://localhost:44497` |
