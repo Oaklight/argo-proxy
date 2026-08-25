@@ -193,7 +193,7 @@ def create_config(config_path: str | None = None) -> ArgoConfig:
 
     log_info("Creating new configuration...", context="config")
 
-    default_base = ArgoConfig._argo_dev_base
+    default_base = ArgoConfig._argo_prod_base
     while True:
         base_url = _get_base_url_input(default_base)
         log_info("Validating upstream connectivity...", context="config")

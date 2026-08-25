@@ -34,8 +34,7 @@ class ArgoConfig:
     user: str = ""
     verbose: bool = True
 
-    _argo_base_url: str = ""  # User-configurable base URL, overrides _argo_dev_base
-    _argo_dev_base: str = ENVIRONMENTS["dev"]
+    _argo_base_url: str = ""  # User-configurable base URL
     _argo_prod_base: str = ENVIRONMENTS["prod"]
 
     # Derived fields (to be constructed from base URL if not provided)
@@ -91,7 +90,7 @@ class ArgoConfig:
         """Get the effective Argo base URL (without trailing path segments)."""
         if self._argo_base_url:
             return self._argo_base_url.rstrip("/")
-        return self._argo_dev_base.rstrip("/")
+        return self._argo_prod_base.rstrip("/")
 
     # chat endpoint
     @property
