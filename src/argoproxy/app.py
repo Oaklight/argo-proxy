@@ -616,6 +616,79 @@ async def handle_docs(request: Any) -> Response:
     return Response(body=html.encode(), status_code=200, content_type="text/html")
 
 
+async def handle_argo_env_get(request: Any) -> Response:
+    """Return the current ARGO environment and available options."""
+    from .config.model import ArgoConfig
+
+    config = _get_config(request.app)
+    current_url = config.argo_base_url
+    envs = ArgoConfig.ENVIRONMENTS
+    current_env = next((k for k, v in envs.items() if v == current_url), "custom")
+    return JSONResponse(
+        {"current": current_env, "url": current_url, "environments": envs}
+    )
+
+
+async def handle_argo_env_put(request: Any) -> Response:
+    """Switch the ARGO upstream environment with hot-reload."""
+    from .config.model import ArgoConfig
+
+    try:
+        body: dict[str, Any] = request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+
+    env_name = body.get("env", "").strip().lower()
+    custom_url = body.get("url", "").strip().rstrip("/")
+    envs = ArgoConfig.ENVIRONMENTS
+
+    if env_name == "custom":
+        if not custom_url or not custom_url.startswith(("http://", "https://")):
+            return JSONResponse(
+                {"error": "Custom environment requires a valid http(s) URL"},
+                status_code=400,
+            )
+        target_url = custom_url
+    elif env_name in envs:
+        target_url = envs[env_name]
+    else:
+        return JSONResponse(
+            {
+                "error": f"Unknown environment: '{env_name}'. "
+                f"Valid: {[*envs.keys(), 'custom']}"
+            },
+            status_code=400,
+        )
+
+    config = _get_config(request.app)
+
+    if config.argo_base_url == target_url:
+        return JSONResponse(
+            {"ok": True, "env": env_name, "url": target_url, "changed": False}
+        )
+
+    config_path = getattr(request.app, "config_path", None)
+    if not config_path:
+        return JSONResponse({"error": "No config path available"}, status_code=500)
+
+    config._argo_base_url = target_url
+    config._native_openai_base_url = ""
+    config._native_anthropic_base_url = ""
+
+    from .config.io import save_config as _save_config
+
+    _save_config(config, config_path)
+
+    registry = _get_registry(request.app)
+    request.app.gateway_config = build_gateway_config(config, registry)
+
+    log_info(f"Switched to '{env_name}' environment: {target_url}", context="app")
+
+    return JSONResponse(
+        {"ok": True, "env": env_name, "url": target_url, "changed": True}
+    )
+
+
 async def handle_health(request: Any) -> Response:
     return JSONResponse({"status": "healthy"})
 
@@ -861,6 +934,10 @@ def create_app() -> App:
 
     # Admin panel routes
     register_admin_routes(app)
+
+    # Argo-specific admin API
+    app.route("/admin/api/argo/env", methods=["GET"])(handle_argo_env_get)
+    app.route("/admin/api/argo/env", methods=["PUT"])(handle_argo_env_put)
 
     if dev_mode:
         from .dev_proxy import (

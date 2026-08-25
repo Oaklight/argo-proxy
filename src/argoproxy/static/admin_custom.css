@@ -35,3 +35,58 @@
   color: var(--accent);
   text-decoration: underline;
 }
+
+/* Environment switcher (inside Server Settings card) */
+.argo-env-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.env-btn-group {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.argo-env-btn {
+  padding: 4px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  border: none;
+  background: var(--bg);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  border-right: 1px solid var(--border);
+}
+
+.argo-env-btn:last-child {
+  border-right: none;
+}
+
+.argo-env-btn:hover:not(.active):not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.argo-env-btn.active {
+  background: var(--accent, #3b82f6);
+  color: #fff;
+  font-weight: 600;
+}
+
+.argo-env-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.argo-env-url {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -5,6 +5,7 @@
  * Uses MutationObserver to modify the DOM after the SPA renders.
  *
  * Features:
+ * - ARGO environment switcher in Server Settings
  * - Managed provider badges and read-only enforcement
  * - Info popup replacing "Add Provider" button
  * - Read-only provider modal for managed providers
@@ -20,9 +21,136 @@
   var GATEWAY_DOCS =
     "https://llm-rosetta.readthedocs.io/en/latest/gateway/";
 
-  // Track whether we've already injected the info icon and refresh button
+  // Track whether we've already injected widgets
+  var _envInjected = false;
   var _infoInjected = false;
   var _refreshInjected = false;
+
+  // --- ARGO environment switcher in Server Settings ---
+
+  function _getAdminHeaders() {
+    var h = { "Content-Type": "application/json" };
+    var token = sessionStorage.getItem("adminToken");
+    if (token) h["Authorization"] = "Bearer " + token;
+    return h;
+  }
+
+  function patchEnvSwitcher() {
+    if (_envInjected) return;
+    var serverCard = document.querySelector(
+      '#tab-providers .section .provider-card'
+    );
+    if (!serverCard) return;
+    if (document.getElementById("argoEnvSwitcher")) return;
+
+    var group = document.createElement("div");
+    group.className = "form-group";
+    group.id = "argoEnvSwitcher";
+    group.innerHTML =
+      '<label>ARGO Environment</label>' +
+      '<div class="argo-env-group">' +
+      '<div class="env-btn-group">' +
+      '<button class="argo-env-btn" data-env="prod">prod</button>' +
+      '<button class="argo-env-btn" data-env="dev">dev</button>' +
+      '<button class="argo-env-btn" data-env="test">test</button>' +
+      '<button class="argo-env-btn" data-env="custom">custom</button>' +
+      '</div>' +
+      '<span class="argo-env-url" id="argoEnvUrl"></span>' +
+      '</div>' +
+      '<div class="argo-env-custom" id="argoEnvCustom" style="display:none;margin-top:8px">' +
+      '<div style="display:flex;gap:8px">' +
+      '<input id="argoEnvCustomUrl" ' +
+      'style="flex:1;padding:6px 10px;background:var(--bg);border:1px solid var(--border);' +
+      'border-radius:6px;color:var(--text);font-size:12px">' +
+      '<button class="btn btn-primary btn-sm" id="argoEnvCustomSave">Apply</button>' +
+      '</div>' +
+      '</div>';
+
+    serverCard.insertBefore(group, serverCard.firstChild);
+    _envInjected = true;
+
+    _loadEnvState();
+
+    group.querySelectorAll(".argo-env-btn").forEach(function (btn) {
+      btn.onclick = function () {
+        if (btn.dataset.env === "custom") {
+          _showCustomInput(true);
+        } else {
+          _showCustomInput(false);
+          _switchEnv(btn.dataset.env);
+        }
+      };
+    });
+
+    document.getElementById("argoEnvCustomSave").onclick = function () {
+      var url = document.getElementById("argoEnvCustomUrl").value.trim();
+      if (!url) return;
+      _switchEnv("custom", url);
+    };
+  }
+
+  function _loadEnvState() {
+    fetch("/admin/api/argo/env", { headers: _getAdminHeaders() })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { _updateEnvUI(d.current, d.url); })
+      .catch(function () { /* silent */ });
+  }
+
+  function _showCustomInput(show) {
+    var el = document.getElementById("argoEnvCustom");
+    if (el) el.style.display = show ? "block" : "none";
+  }
+
+  function _updateEnvUI(envName, envUrl) {
+    document.querySelectorAll(".argo-env-btn").forEach(function (b) {
+      b.classList.toggle("active", b.dataset.env === envName);
+      b.disabled = false;
+    });
+    var urlEl = document.getElementById("argoEnvUrl");
+    if (urlEl) urlEl.textContent = envUrl || "";
+    var isCustom = envName === "custom";
+    _showCustomInput(isCustom);
+    if (isCustom) {
+      var input = document.getElementById("argoEnvCustomUrl");
+      if (input) input.value = envUrl || "";
+    }
+  }
+
+  function _switchEnv(envName, customUrl) {
+    var btns = document.querySelectorAll(".argo-env-btn");
+    btns.forEach(function (b) { b.disabled = true; });
+
+    var payload = { env: envName };
+    if (customUrl) payload.url = customUrl;
+
+    fetch("/admin/api/argo/env", {
+      method: "PUT",
+      headers: _getAdminHeaders(),
+      body: JSON.stringify(payload),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.ok) {
+          _updateEnvUI(d.env, d.url);
+          if (typeof showToast === "function") {
+            showToast(
+              "Switched to " + d.env + (d.changed ? "" : " (already active)"),
+              "success"
+            );
+          }
+          if (d.changed && typeof loadConfig === "function") loadConfig();
+        } else {
+          btns.forEach(function (b) { b.disabled = false; });
+          if (typeof showToast === "function")
+            showToast(d.error || "Switch failed", "error");
+        }
+      })
+      .catch(function () {
+        btns.forEach(function (b) { b.disabled = false; });
+        if (typeof showToast === "function")
+          showToast("Environment switch failed", "error");
+      });
+  }
 
   // --- Provider cards: managed badges + read-only actions ---
 
@@ -204,6 +332,7 @@
 
   document.addEventListener("DOMContentLoaded", function () {
     new MutationObserver(function () {
+      patchEnvSwitcher();
       patchProviderCards();
       patchAddProviderButton();
       patchProviderModal();
