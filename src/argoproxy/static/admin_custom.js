@@ -23,6 +23,7 @@
 
   // Track whether we've already injected widgets
   var _envInjected = false;
+  var _envLoaded = false;
   var _infoInjected = false;
   var _refreshInjected = false;
 
@@ -30,13 +31,19 @@
 
   function _getAdminHeaders() {
     var h = { "Content-Type": "application/json" };
-    var token = sessionStorage.getItem("adminToken");
-    if (token) h["Authorization"] = "Bearer " + token;
+    var token = localStorage.getItem("admin_token");
+    if (token) h["X-Admin-Token"] = token;
     return h;
   }
 
   function patchEnvSwitcher() {
-    if (_envInjected) return;
+    if (_envInjected) {
+      if (!_envLoaded && localStorage.getItem("admin_token")) {
+        _envLoaded = true;
+        _loadEnvState();
+      }
+      return;
+    }
     var serverCard = document.querySelector(
       '#tab-providers .section .provider-card'
     );
@@ -69,7 +76,10 @@
     serverCard.insertBefore(group, serverCard.firstChild);
     _envInjected = true;
 
-    _loadEnvState();
+    if (localStorage.getItem("admin_token")) {
+      _envLoaded = true;
+      _loadEnvState();
+    }
 
     group.querySelectorAll(".argo-env-btn").forEach(function (btn) {
       btn.onclick = function () {

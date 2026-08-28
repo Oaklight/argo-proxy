@@ -32,7 +32,7 @@
 }
 
 .argo-info-icon .hint-popup a {
-  color: var(--accent);
+  color: var(--blue);
   text-decoration: underline;
 }
 
@@ -47,7 +47,7 @@
   display: flex;
   gap: 0;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius);
   overflow: hidden;
 }
 
@@ -73,8 +73,8 @@
 }
 
 .argo-env-btn.active {
-  background: var(--accent, #3b82f6);
-  color: #fff;
+  background: var(--accent);
+  color: var(--accent-on);
   font-weight: 600;
 }
 
