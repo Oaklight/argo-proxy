@@ -32,6 +32,7 @@ from llm_rosetta.gateway.proxy import (
     handle_non_streaming,
     handle_streaming,
 )
+from llm_rosetta.gateway.headers import get_preflight_tokens_override
 from llm_rosetta.gateway.transport.http import HttpTransport
 
 from .__init__ import __version__
@@ -269,6 +270,14 @@ async def _argo_proxy_handler(
     try:
         if is_stream:
             pre_entry_id = uuid.uuid4().hex
+
+            preflight_override = get_preflight_tokens_override(request)
+            preflight = (
+                preflight_override
+                if preflight_override is not None
+                else route.preflight_token_count
+            )
+
             response, profile = await handle_streaming(
                 route,
                 provider_info,
@@ -279,6 +288,7 @@ async def _argo_proxy_handler(
                 capture_state=capture_state,
                 entry_id=pre_entry_id,
                 request_log=request_log,
+                preflight_token_count=preflight,
             )
         elif (
             not is_stream
@@ -908,6 +918,10 @@ def create_app() -> App:
     app.before_request(create_argo_auth_hook())
     if admin_password:
         app.before_request(create_auth_hook(auth_state))
+
+    # NOTE: llm-rosetta gateway provides rate limiting middleware
+    # (RateLimitState) but argo-proxy does not enable it — ARGO's upstream
+    # already enforces rate limits per-user.
 
     # Security middleware
     from .utils.attack_logger import create_security_hook
