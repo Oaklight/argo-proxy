@@ -234,7 +234,6 @@
     modal.dataset.argoPatched = provName;
 
     // Lock provider name (identity — cannot be renamed)
-    nameInput.readOnly = true;
     nameInput.disabled = true;
 
     // Lock provider type dropdown and set to the shim name
