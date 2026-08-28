@@ -1,12 +1,12 @@
 """Upstream model list fetching and availability checks."""
 
+import asyncio
 import fnmatch
 import json
 from typing import Any
 
 from llm_rosetta._vendor.httpclient import AsyncClient
-from pydantic import BaseModel
-from tqdm.asyncio import tqdm_asyncio
+from dataclasses import dataclass, fields
 
 from ..config import _get_yes_no_input_with_timeout
 from ..utils.logging import log_debug, log_error, log_warning
@@ -21,7 +21,8 @@ from .constants import (
 DEFAULT_TIMEOUT = 30
 
 
-class Model(BaseModel):
+@dataclass
+class Model:
     """Model representation supporting both old and new API formats.
 
     This class provides backward compatibility for API format changes:
@@ -36,21 +37,21 @@ class Model(BaseModel):
     owned_by: str | None = None
     model_name: str | None = None
 
+    @classmethod
+    def from_dict(cls, data: dict) -> "Model":
+        """Create from API dict, ignoring unknown fields."""
+        known = {f.name for f in fields(cls)}
+        return cls(**{k: v for k, v in data.items() if k in known})
+
     @property
     def display_name(self) -> str:
         """Gets the display name, compatible with both old and new formats."""
-        if self.model_name:
-            return self.model_name
-        else:
-            return self.id
+        return self.model_name or self.id
 
     @property
     def internal_identifier(self) -> str:
         """Gets the internal identifier, compatible with both old and new formats."""
-        if self.internal_id:
-            return self.internal_id
-        else:
-            return self.id
+        return self.internal_id or self.id
 
 
 def produce_argo_model_list(upstream_models: list[Model]) -> dict[str, str]:
@@ -164,7 +165,7 @@ async def get_upstream_model_list_async(
             log_debug(f"Sample model data: {sample_model}", context="models")
 
         models = (
-            [Model(**model) for model in data.get("data", [])]
+            [Model.from_dict(model) for model in data.get("data", [])]
             if data.get("data")
             else []
         )
@@ -300,10 +301,10 @@ async def determine_models_availability(
     ]
 
     results = []
-    for coro in tqdm_asyncio.as_completed(
-        tasks, total=len(tasks), desc="Checking models"
-    ):
+    total = len(tasks)
+    for i, coro in enumerate(asyncio.as_completed(tasks), 1):
         result = await coro
         results.append(result)
+        log_debug(f"Checked {i}/{total} models", context="models")
 
     return _categorize_results(results, model_list)

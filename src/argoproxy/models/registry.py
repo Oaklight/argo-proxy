@@ -6,7 +6,7 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from dataclasses import asdict, dataclass
 
 from ..config import ArgoConfig
 from ..utils.logging import log_debug, log_error, log_info, log_warning
@@ -29,17 +29,19 @@ from .upstream import (
 )
 
 
-class OpenAIModel(BaseModel):
+@dataclass
+class OpenAIModel:
     """OpenAI-compatible model representation for /v1/models responses."""
 
     id: str
     internal_name: str
-    object: Literal["model"] = "model"
-    created: int = int(datetime.now().timestamp())
+    object: str = "model"
+    created: int = 0
     owned_by: str = "argo"
 
-    def __init__(self, **data):
-        super().__init__(**data)
+    def __post_init__(self):
+        if not self.created:
+            self.created = int(datetime.now().timestamp())
         if self.owned_by == "argo":
             family = classify_model_family(self.internal_name)
             if family != "unknown":
@@ -292,7 +294,7 @@ class ModelRegistry:
 
         for model_name, model_id in self.available_models.items():
             model_data["data"].append(
-                OpenAIModel(id=model_name, internal_name=model_id).model_dump()
+                asdict(OpenAIModel(id=model_name, internal_name=model_id))
             )
 
         return model_data
