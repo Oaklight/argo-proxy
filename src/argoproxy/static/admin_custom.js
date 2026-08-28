@@ -161,7 +161,9 @@
     cards.forEach(function (card) {
       var nm = card.querySelector(".name");
       if (!nm) return;
-      var pName = nm.textContent.replace(/\(managed\)/, "").trim();
+      var pName = (nm.firstChild && nm.firstChild.nodeType === 3)
+        ? nm.firstChild.textContent.trim()
+        : nm.textContent.replace(/\(managed\)/, "").trim();
       if (!MANAGED[pName]) return;
 
       // Add "(managed)" badge once
@@ -176,16 +178,13 @@
       var toggle = card.querySelector(".toggle");
       if (toggle) toggle.style.display = "none";
 
-      // Actions: hide clone/delete, change Edit→View
+      // Actions: hide clone/delete (Edit stays — settings are adjustable)
       var btns = card.querySelectorAll(".actions .btn");
       btns.forEach(function (btn) {
         var text = btn.textContent.trim();
         if (text === "Clone" || text === "Delete" ||
             text === "克隆" || text === "删除") {
           btn.style.display = "none";
-        }
-        if (text === "Edit" || text === "编辑") {
-          btn.textContent = "View";
         }
       });
     });
@@ -217,7 +216,7 @@
     _infoInjected = true;
   }
 
-  // --- Provider modal: read-only for managed providers ---
+  // --- Provider modal: lock identity fields for managed providers ---
 
   function patchProviderModal() {
     var modal = document.getElementById("providerModal");
@@ -234,31 +233,17 @@
     if (modal.dataset.argoPatched === provName) return;
     modal.dataset.argoPatched = provName;
 
-    // Change title
-    var title = document.getElementById("providerModalTitle");
-    if (title) title.textContent = "View Provider";
+    // Lock provider name (identity — cannot be renamed)
+    nameInput.readOnly = true;
+    nameInput.disabled = true;
 
-    // Fix Provider Type dropdown — set to the shim name
+    // Lock provider type dropdown and set to the shim name
     var typeSel = document.getElementById("provType");
     var shimName = MANAGED[provName];
     if (typeSel && shimName) {
       typeSel.value = shimName;
+      typeSel.disabled = true;
     }
-
-    // Make all inputs/selects read-only
-    modal.querySelectorAll("input, select, textarea").forEach(function (el) {
-      if (el.type === "checkbox") {
-        el.disabled = true;
-      } else {
-        el.readOnly = true;
-        el.disabled = true;
-      }
-    });
-
-    // Hide Save button (keep Cancel)
-    modal.querySelectorAll(".btn-primary").forEach(function (btn) {
-      btn.style.display = "none";
-    });
   }
 
   // Reset patched state when modal closes

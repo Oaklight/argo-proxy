@@ -19,6 +19,11 @@ class ArgoConfigIO:
 
     References are held (not copies), so model-registry refreshes are
     reflected immediately.
+
+    NOTE: This class does NOT inherit from
+    :class:`llm_rosetta.gateway.config.JsoncConfigIO`, so the gateway's
+    automatic config migration framework is not applied.  argo-proxy
+    manages its own YAML config format separately.
     """
 
     def __init__(self, config: ArgoConfig, registry: ModelRegistry) -> None:
