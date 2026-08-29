@@ -63,6 +63,8 @@ def _build_providers(config: ArgoConfig) -> dict:
             "api_key": config.user,
             "base_url": config.native_openai_base_url,
             "readonly": True,
+            "embedding_format": "openai",
+            "embedding_path": "/embeddings",
         },
         "argo-anthropic": {
             "shim": "argo--anthropic",
@@ -91,6 +93,8 @@ def _build_models(registry: ModelRegistry) -> dict:
             "provider": provider_name,
             "capabilities": capabilities,
         }
+        if alias in embed_models:
+            entry["type"] = "embedding"
         if model_id != alias:
             entry["upstream_model"] = model_id
         models[alias] = entry
