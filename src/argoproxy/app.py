@@ -38,7 +38,6 @@ from llm_rosetta.gateway.transport.http import HttpTransport
 from .__init__ import __version__
 from .auth import (
     argo_auth_error_response,
-    check_response_for_argo_warning,
     contains_argo_auth_warning,
     create_argo_auth_hook,
     should_use_username_passthrough,
@@ -491,77 +490,10 @@ async def handle_google_genai(
 
 
 async def handle_embeddings(request: Any) -> Response:
-    log_info("/v1/embeddings", context="app")
-    config = _get_config(request.app)
-    registry = _get_registry(request.app)
-    gateway_config = _get_gateway_config(request.app)
+    """Delegate to llm-rosetta's built-in embedding handler."""
+    from llm_rosetta.gateway.embeddings import handle_embeddings as _gw_embeddings
 
-    try:
-        body: dict[str, Any] = request.json()
-    except Exception:
-        return JSONResponse(
-            {
-                "error": {
-                    "message": "Invalid JSON body",
-                    "type": "invalid_request_error",
-                }
-            },
-            status_code=400,
-        )
-
-    model = body.get("model", "")
-    resolved = registry.resolve_model_name(model, model_type="embed")
-    body["model"] = resolved
-
-    if should_use_username_passthrough():
-        api_key = _extract_api_key_from_headers(request)
-        if api_key:
-            body["user"] = api_key
-    else:
-        body["user"] = config.user
-
-    provider_info = gateway_config.providers.get("argo-openai")
-    if not provider_info:
-        return JSONResponse(
-            {"error": {"message": "No OpenAI provider configured"}},
-            status_code=500,
-        )
-
-    transport: ArgoTransport = request.app.transport  # type: ignore[attr-defined]
-    url = f"{config.native_openai_base_url}/embeddings"
-
-    try:
-        response = await transport.send(
-            provider_info,
-            url,
-            body,
-            extra_headers={
-                "User-Agent": build_user_agent(request.headers.get("user-agent"))
-            },
-        )
-    except ArgoAuthWarning:
-        return argo_auth_error_response("openai_chat")
-    except Exception:
-        logger.exception("Embeddings upstream error")
-        return JSONResponse(
-            {"error": {"message": "Upstream error", "type": "server_error"}},
-            status_code=502,
-        )
-
-    if response.is_error:
-        error_text = response.error_text
-        if contains_argo_auth_warning(error_text):
-            return argo_auth_error_response("openai_chat")
-        return Response(
-            body=response.raw_content,
-            status_code=response.status_code,
-            content_type="application/json",
-        )
-
-    if response.body and check_response_for_argo_warning(response.body, "openai"):
-        return argo_auth_error_response("openai_chat")
-
-    return JSONResponse(response.body, status_code=response.status_code)
+    return await _gw_embeddings(request, _get_gateway_config(request.app))
 
 
 async def handle_list_models(request: Any) -> Response:
