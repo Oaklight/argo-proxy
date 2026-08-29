@@ -64,7 +64,6 @@ def _build_providers(config: ArgoConfig) -> dict:
             "base_url": config.native_openai_base_url,
             "readonly": True,
             "embedding_format": "openai",
-            "embedding_path": "/embeddings",
         },
         "argo-anthropic": {
             "shim": "argo--anthropic",
