@@ -888,71 +888,45 @@ async def _startup(app: App) -> None:
 
 
 def create_app() -> App:
-    """Create the argo-proxy application."""
+    """Create the argo-proxy application.
+
+    Uses llm-rosetta's composable :func:`~llm_rosetta.gateway.app.create_app`
+    for shared infrastructure (admin panel, CORS, error handlers, auth) and
+    layers ARGO-specific routes and middleware on top.
+    """
+    from .utils.attack_logger import create_security_hook
     from .utils.misc import str_to_bool
 
     dev_mode = str_to_bool(os.environ.get("DEV_MODE", "false"))
-
-    app = App(max_body_size=100 * 1024 * 1024, read_timeout=300.0)
-
-    import secrets
-
-    from llm_rosetta.gateway.admin.routes import register_admin_routes
-    from llm_rosetta.gateway.auth import AuthState, create_auth_hook
-
-    # Admin auth state (gateway API key auth is handled by our own hook,
-    # but admin panel needs AuthState for token-based /admin/* auth)
-    internal_token = f"rsk-internal-{secrets.token_hex(16)}"
     admin_password = os.environ.get("ADMIN_PASSWORD")
-    auth_state = AuthState(
-        None,  # no gateway-level keystore — ARGO validates upstream
-        {},
-        internal_token,
-        admin_password=admin_password,
-        open_on_no_keys=True,  # ARGO validates upstream
+
+    from llm_rosetta.gateway import GatewayConfig, GatewayExtensions
+    from llm_rosetta.gateway.app import create_app as gateway_create_app
+
+    gateway_config = GatewayConfig(
+        {
+            "providers": {},
+            "server": {"open_on_no_keys": True, "read_timeout": 300},
+            "admin": {"password": admin_password} if admin_password else {},
+        }
     )
-    app.auth_state = auth_state  # type: ignore[attr-defined]
-    app.internal_token = internal_token  # type: ignore[attr-defined]
 
-    # Auth hooks: ARGO credential passthrough + admin panel auth
-    app.before_request(create_argo_auth_hook())
-    if admin_password:
-        app.before_request(create_auth_hook(auth_state))
+    extensions = GatewayExtensions(
+        max_body_size=100 * 1024 * 1024,
+        skip_default_routes=True,
+        skip_builtin_auth=False,
+        enable_rate_limiting=False,
+        skip_admin_setup=True,
+        before_hooks=[create_argo_auth_hook(), create_security_hook()],
+        extra_routes=[
+            ("/admin/api/argo/env", ["GET"], handle_argo_env_get),
+            ("/admin/api/argo/env", ["PUT"], handle_argo_env_put),
+        ],
+    )
 
-    # NOTE: llm-rosetta gateway provides rate limiting middleware
-    # (RateLimitState) but argo-proxy does not enable it — ARGO's upstream
-    # already enforces rate limits per-user.
+    app = gateway_create_app(gateway_config, extensions=extensions)
 
-    # Security middleware
-    from .utils.attack_logger import create_security_hook
-
-    app.before_request(create_security_hook())
-
-    # CORS — open for /v1/*, restricted for /admin/*
-    @app.after_request
-    async def add_cors_headers(request: Any, response: Any) -> Any:
-        if not request.path.startswith("/admin"):
-            response.headers["Access-Control-Allow-Origin"] = "*"
-            response.headers["Access-Control-Allow-Methods"] = "*"
-            response.headers["Access-Control-Allow-Headers"] = "*"
-        return response
-
-    @app.route("/<path:_path>", methods=["OPTIONS"])
-    async def cors_preflight(request: Any, _path: str = "") -> Response:
-        resp = Response(body=b"", status_code=204)
-        if not request.path.startswith("/admin"):
-            resp.headers["Access-Control-Allow-Origin"] = "*"
-            resp.headers["Access-Control-Allow-Methods"] = "*"
-            resp.headers["Access-Control-Allow-Headers"] = "*"
-        return resp
-
-    # Admin panel routes
-    register_admin_routes(app)
-
-    # Argo-specific admin API
-    app.route("/admin/api/argo/env", methods=["GET"])(handle_argo_env_get)
-    app.route("/admin/api/argo/env", methods=["PUT"])(handle_argo_env_put)
-
+    # --- Argo routes ---
     if dev_mode:
         from .dev_proxy import (
             handle_dev_anthropic,
@@ -980,22 +954,15 @@ def create_app() -> App:
         app.route("/refresh", methods=["POST"])(handle_refresh_models)
         return app
 
-    # Info routes
     app.route("/", methods=["GET"])(handle_root)
     app.route("/v1", methods=["GET"])(handle_v1)
     app.route("/v1/docs", methods=["GET"])(handle_docs)
-
-    # Proxy routes
     app.route("/v1/chat/completions", methods=["POST"])(handle_openai_chat)
     app.route("/v1/responses", methods=["POST"])(handle_openai_responses)
     app.route("/v1/messages", methods=["POST"])(handle_anthropic_messages)
     app.route("/v1beta/models/<path:model_path>", methods=["POST"])(handle_google_genai)
     app.route("/v1/embeddings", methods=["POST"])(handle_embeddings)
-
-    # Model listing
     app.route("/v1/models", methods=["GET"])(handle_list_models)
-
-    # Extras
     app.route("/refresh", methods=["POST"])(handle_refresh_models)
     app.route("/health", methods=["GET"])(handle_health)
     app.route("/version", methods=["GET"])(handle_version)
