@@ -19,7 +19,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "llm-rosetta[gateway]>=0.11.1",
+    "llm-rosetta[gateway]>=0.11.2",
 ]
 
 [project.optional-dependencies]
