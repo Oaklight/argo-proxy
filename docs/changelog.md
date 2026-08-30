@@ -2,6 +2,53 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v3.3.0 (2026-08-30)
+
+**Architecture overhaul: llm-rosetta gateway integration, built-in admin panel, dev-proxy mode.**
+
+### Highlights
+
+- Complete rewrite of the HTTP layer — replaced aiohttp with the llm-rosetta gateway module, inheriting its streaming engine, SSE handling, and format conversion pipeline.
+- Integrated llm-rosetta's admin panel with Argo-specific customizations (managed provider UX, environment switcher, hidden API Keys tab).
+- New **dev-proxy mode** for full passthrough development workflows.
+
+### Added
+
+- **Dev-proxy mode** (#149): full passthrough proxy for development, with dedicated routes.
+- **Admin panel integration** (#153): wire up llm-rosetta's gateway admin panel with Argo-specific overrides — managed provider read-only cards, info popup, view modal, page title, and hidden API Keys tab.
+- **ARGO environment switcher** (#153): switch between prod/dev environments from the admin Server Settings panel.
+- **Preflight token count support** (#154): upgrade to llm-rosetta 0.10.0 with token counting before dispatch.
+- **Built-in embedding handler** (#156): use llm-rosetta's built-in embedding route instead of custom implementation.
+
+### Changed
+
+- **Replaced aiohttp with llm-rosetta gateway** (#148): `create_app` now extends llm-rosetta's composable gateway factory via `GatewayExtensions`.
+- **Composable `create_app`** (#155): refactored to use llm-rosetta's `GatewayExtensions` pattern for clean extensibility.
+- **Removed unused dependencies** (#155): replaced pydantic/tqdm with stdlib equivalents.
+- **Bumped llm-rosetta to >=0.11.2**: requires embedding route `upstream_model` remapping fix and `base_url` normalization.
+
+### Fixed
+
+- **Default `argo_base_url` fallback** (#153): correctly falls back to prod URL and restores dev-proxy routes.
+- **Admin page title flicker** (#153): run title replacement synchronously to avoid visible flash.
+- **Embedding path double prefix** (#157): removed `embedding_path` hack — llm-rosetta now normalizes `base_url` automatically.
+
+**Full Changelog**: https://github.com/Oaklight/argo-proxy/compare/v3.2.3...v3.3.0
+
+---
+
+## v3.2.3 (2026-07-14)
+
+**Patch: polyfill.io CDN removal.**
+
+### Fixed
+
+- **Removed compromised polyfill.io CDN script** (#150): replaced with safe alternatives.
+
+**Full Changelog**: https://github.com/Oaklight/argo-proxy/compare/v3.2.2...v3.2.3
+
+---
+
 ## v3.2.2 (2026-07-12)
 
 **Security middleware and User-Agent identification.**
