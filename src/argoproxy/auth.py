@@ -69,8 +69,15 @@ def create_argo_auth_hook() -> Any:
 
         key = _extract_api_key(request)
         if key:
+            if should_use_username_passthrough():
+                # Key IS the ANL username; show it in full.
+                label = key
+            else:
+                # Use the configured ARGO username when available.
+                argo_cfg = getattr(request.app, "argo_config", None)
+                label = getattr(argo_cfg, "user", None) or key[:8] + "..."
             api_key_context_var.set(
-                KeyContext(label=key[:8] + "...", allowed_shims=frozenset({"*"}))
+                KeyContext(label=label, allowed_shims=frozenset({"*"}))
             )
         return None
 
