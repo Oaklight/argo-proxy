@@ -338,36 +338,42 @@ async def _argo_proxy_handler(
         response.headers["x-request-id"] = request_id
         return response
 
-    except ArgoAuthWarning:
+    except ArgoAuthWarning as warn:
         status_code = 403
-        error_detail = "ARGO authentication warning"
-        dump_error(
-            persistence,
-            request_body=body,
-            response_text=error_detail,
-            model=model,
-            source_provider=source_provider,
-            target_provider=route.target_provider,
-            provider_name=route.provider_name,
-            status_code=403,
-            error_phase="transport",
-        )
+        error_detail = str(warn)
+        try:
+            dump_error(
+                persistence,
+                request_body=body,
+                response_text=error_detail,
+                model=model,
+                source_provider=source_provider,
+                target_provider=route.target_provider,
+                provider_name=route.provider_name,
+                status_code=403,
+                error_phase="transport",
+            )
+        except Exception as e:
+            logger.debug("dump_error failed: %s", e)
         return argo_auth_error_response(source_provider)
     except Exception as exc:
         error_detail = str(exc)
         logger.exception("[%s] Proxy error", request_id)
         status_code = 502
-        dump_error(
-            persistence,
-            request_body=body,
-            response_text=error_detail,
-            model=model,
-            source_provider=source_provider,
-            target_provider=route.target_provider,
-            provider_name=route.provider_name,
-            status_code=502,
-            error_phase="transport",
-        )
+        try:
+            dump_error(
+                persistence,
+                request_body=body,
+                response_text=error_detail,
+                model=model,
+                source_provider=source_provider,
+                target_provider=route.target_provider,
+                provider_name=route.provider_name,
+                status_code=502,
+                error_phase="transport",
+            )
+        except Exception as e:
+            logger.debug("dump_error failed: %s", e)
         resp = error_response_for_source(source_provider, 502, "Upstream error")
         resp.headers["x-request-id"] = request_id
         return resp
