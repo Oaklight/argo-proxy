@@ -34,6 +34,7 @@ from llm_rosetta.gateway.proxy import (
 )
 from llm_rosetta.gateway.headers import get_preflight_tokens_override
 from llm_rosetta.gateway.transport.http import HttpTransport
+from llm_rosetta.observability.error_dump import dump_error
 
 from .__init__ import __version__
 from .auth import (
@@ -340,11 +341,33 @@ async def _argo_proxy_handler(
     except ArgoAuthWarning:
         status_code = 403
         error_detail = "ARGO authentication warning"
+        dump_error(
+            persistence,
+            request_body=body,
+            response_text=error_detail,
+            model=model,
+            source_provider=source_provider,
+            target_provider=route.target_provider,
+            provider_name=route.provider_name,
+            status_code=403,
+            error_phase="transport",
+        )
         return argo_auth_error_response(source_provider)
     except Exception as exc:
         error_detail = str(exc)
         logger.exception("[%s] Proxy error", request_id)
         status_code = 502
+        dump_error(
+            persistence,
+            request_body=body,
+            response_text=error_detail,
+            model=model,
+            source_provider=source_provider,
+            target_provider=route.target_provider,
+            provider_name=route.provider_name,
+            status_code=502,
+            error_phase="transport",
+        )
         resp = error_response_for_source(source_provider, 502, "Upstream error")
         resp.headers["x-request-id"] = request_id
         return resp
