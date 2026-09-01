@@ -47,7 +47,14 @@ from .bridge import build_gateway_config, rebuild_gateway_models
 from .config import load_config
 from .models import ModelRegistry
 from .transport import ArgoAuthWarning, ArgoTransport
-from .utils.logging import log_debug, log_error, log_info, log_warning
+from .utils.logging import (
+    clear_request_user,
+    log_debug,
+    log_error,
+    log_info,
+    log_warning,
+    set_request_user,
+)
 from .utils.misc import build_user_agent
 
 logger = logging.getLogger("argo-proxy")
@@ -218,6 +225,9 @@ async def _argo_proxy_handler(
             body["user"] = api_key
     else:
         body["user"] = config.user
+
+    # Tag CLI log lines with the resolved user (contextvar-based)
+    user_token = set_request_user(body.get("user", ""))
 
     # Anthropic metadata.user_id injection
     if target_provider == "anthropic":
@@ -391,6 +401,8 @@ async def _argo_proxy_handler(
             error_detail=error_detail,
             profile=profile,
         )
+        if user_token is not None:
+            clear_request_user(user_token)
 
 
 async def _handle_with_retry(
