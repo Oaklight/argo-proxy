@@ -75,7 +75,10 @@ def create_argo_auth_hook() -> Any:
             else:
                 # Use the configured ARGO username when available.
                 argo_cfg = getattr(request.app, "argo_config", None)
-                label = getattr(argo_cfg, "user", None) or key[:8] + "..."
+                configured_user = getattr(argo_cfg, "user", None)
+                label = (
+                    configured_user if configured_user is not None else key[:8] + "..."
+                )
             api_key_context_var.set(
                 KeyContext(label=label, allowed_shims=frozenset({"*"}))
             )
