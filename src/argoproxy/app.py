@@ -172,6 +172,7 @@ async def _argo_proxy_handler(
 
     request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
 
+    user_token = None
     try:
         body: dict[str, Any] = request.json()
     except Exception:
