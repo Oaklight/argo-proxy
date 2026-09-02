@@ -64,6 +64,21 @@ def _build_providers(config: ArgoConfig) -> dict:
             "base_url": config.native_openai_base_url,
             "readonly": True,
             "embedding_format": "openai",
+            # ARGO's OpenAI upstream caps `tools[].custom.description` at 4096
+            # characters, which Codex's Code Mode `exec` tool blows past (~12-13k).
+            # Function tools carry no such cap, so let llm-rosetta downgrade
+            # custom tools to functions; the response path restores the original
+            # type from metadata, so clients still see `custom_tool_call`.
+            #
+            # Note this is a blanket downgrade: it applies to *every* custom
+            # tool, not just oversized ones, so a small custom tool loses its
+            # grammar constraint unnecessarily. A length-aware downgrade would
+            # be more correct but needs the threshold plumbed into llm-rosetta;
+            # not worth it while `exec` is the only custom tool in play.
+            #
+            # Revert this once ARGO lifts the 4096 cap — the constraint is
+            # theirs, not llm-rosetta's.
+            "supports_custom_tools": False,
         },
         "argo-anthropic": {
             "shim": "argo--anthropic",
