@@ -165,6 +165,9 @@ def _apply_env_overrides(config_data: ArgoConfig) -> ArgoConfig:
     if env_dump_dir := os.getenv("DUMP_DIR"):
         config_data._dump_dir = env_dump_dir
 
+    if env_data_dir := os.getenv("DATA_DIR"):
+        config_data._data_dir = env_data_dir
+
     return config_data
 
 

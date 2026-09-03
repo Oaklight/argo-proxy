@@ -222,22 +222,13 @@ class ArgoConfig:
     def data_dir(self) -> str:
         """Directory for runtime data (gateway.db, attack_logs, etc.).
 
-        Resolution order:
-        1. Explicitly configured ``_data_dir`` value.
-        2. ``data/`` subdirectory next to the config file (if CONFIG_PATH
-           is set).
-        3. Empty string (let downstream code decide the default).
+        Returns the explicitly configured value (from ``--data-dir`` CLI
+        flag, ``DATA_DIR`` env var, or ``data_dir`` config field), or an
+        empty string when not set.  An empty string lets downstream code
+        (llm-rosetta ``setup_admin``, ``AttackLogger``) fall back to
+        their own defaults, preserving backward compatibility.
         """
-        import os
-
-        if self._data_dir:
-            return self._data_dir
-        config_path = os.environ.get("CONFIG_PATH")
-        if config_path:
-            from pathlib import Path
-
-            return str(Path(config_path).parent / "data")
-        return ""
+        return self._data_dir
 
     @classmethod
     def from_dict(cls, config_dict: dict):
