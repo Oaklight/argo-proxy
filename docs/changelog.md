@@ -2,6 +2,12 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v3.3.1 (2026-09-03)
+
+### Fixed
+
+- **Bumped llm-rosetta to >=0.12.0**: picks up tool_call_id sanitization that prevents upstream 400 errors from clients generating non-conformant IDs (fixes #158).
+
 ## v3.3.0 (2026-08-30)
 
 **Architecture overhaul: llm-rosetta gateway integration, built-in admin panel, dev-proxy mode.**
