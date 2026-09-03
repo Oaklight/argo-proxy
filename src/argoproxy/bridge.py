@@ -52,6 +52,8 @@ def build_gateway_config(
     }
     if argo_config.socket:
         raw["server"]["socket"] = argo_config.socket
+    if argo_config.data_dir:
+        raw["server"]["data_dir"] = argo_config.data_dir
 
     return GatewayConfig(raw)
 

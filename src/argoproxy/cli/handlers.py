@@ -46,6 +46,8 @@ def set_config_envs(args: argparse.Namespace):
         os.environ["DUMP_REQUESTS"] = str(True)
     if args.dump_dir:
         os.environ["DUMP_DIR"] = args.dump_dir
+    if getattr(args, "data_dir", None):
+        os.environ["DATA_DIR"] = args.data_dir
 
 
 def handle_serve(args: argparse.Namespace):
@@ -76,6 +78,10 @@ def handle_serve(args: argparse.Namespace):
 
         if config_path is not None:
             get_attack_logger().set_config_path(config_path)
+
+        data_dir = config_instance.data_dir
+        if data_dir:
+            get_attack_logger().set_data_dir(Path(data_dir))
 
         if config_instance.socket:
             log_info(
@@ -393,7 +399,9 @@ _DIAGNOSTIC_LOG_TYPES: dict[str, tuple[str, list[str]]] = {
 
 
 def _collect_diagnostic_logs(
-    config_path: str | None = None, log_type: str = "all"
+    config_path: str | None = None,
+    log_type: str = "all",
+    data_dir: str | None = None,
 ) -> None:
     """Collect diagnostic logs into a tar.gz archive.
 
@@ -401,14 +409,22 @@ def _collect_diagnostic_logs(
         config_path: Optional explicit path to the config file.
         log_type: Type of logs to collect. One of the keys in
             ``_DIAGNOSTIC_LOG_TYPES`` or ``"all"``.
+        data_dir: Optional explicit data directory. When set, diagnostic
+            logs are looked up here instead of next to the config file.
     """
     import tarfile
     from datetime import datetime
 
     from ..config import load_config
 
-    _, actual_config_path = load_config(config_path, verbose=False)
-    base_dir = actual_config_path.parent if actual_config_path else Path.cwd()
+    config, actual_config_path = load_config(config_path, verbose=False)
+
+    if data_dir:
+        base_dir = Path(data_dir)
+    elif config and config.data_dir:
+        base_dir = Path(config.data_dir)
+    else:
+        base_dir = actual_config_path.parent if actual_config_path else Path.cwd()
 
     # Determine which log types to collect
     if log_type == "all":
@@ -474,7 +490,11 @@ def handle_logs(args: argparse.Namespace):
     config_path = getattr(args, "config", None)
 
     if args.logs_action == "collect":
-        _collect_diagnostic_logs(config_path, log_type=getattr(args, "type", "all"))
+        _collect_diagnostic_logs(
+            config_path,
+            log_type=getattr(args, "type", "all"),
+            data_dir=getattr(args, "data_dir", None),
+        )
 
 
 # ---------------------------------------------------------------------------

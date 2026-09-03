@@ -62,6 +62,9 @@ class ArgoConfig:
     _dump_requests: bool = False
     _dump_dir: str = ""
 
+    # Runtime data directory (attack_logs, gateway.db, etc.)
+    _data_dir: str = ""
+
     # Validation and resolver settings
     _skip_url_validation: bool = False
     _user_validated: bool = False  # Set after upstream user validation passes
@@ -215,6 +218,27 @@ class ArgoConfig:
             return str(Path(config_path).parent / "dumps")
         return "/tmp/argo_debug_dumps"
 
+    @property
+    def data_dir(self) -> str:
+        """Directory for runtime data (gateway.db, attack_logs, etc.).
+
+        Resolution order:
+        1. Explicitly configured ``_data_dir`` value.
+        2. ``data/`` subdirectory next to the config file (if CONFIG_PATH
+           is set).
+        3. Empty string (let downstream code decide the default).
+        """
+        import os
+
+        if self._data_dir:
+            return self._data_dir
+        config_path = os.environ.get("CONFIG_PATH")
+        if config_path:
+            from pathlib import Path
+
+            return str(Path(config_path).parent / "data")
+        return ""
+
     @classmethod
     def from_dict(cls, config_dict: dict):
         """Create ArgoConfig instance from a dictionary."""
@@ -230,6 +254,7 @@ class ArgoConfig:
             "anthropic_stream_mode": "_anthropic_stream_mode",
             "dump_requests": "_dump_requests",
             "dump_dir": "_dump_dir",
+            "data_dir": "_data_dir",
         }
         valid_fields = {
             k: v for k, v in config_dict.items() if k in cls.__annotations__
@@ -269,6 +294,8 @@ class ArgoConfig:
             serialized["dump_requests"] = True
         if self._dump_dir:
             serialized["dump_dir"] = self._dump_dir
+        if self._data_dir:
+            serialized["data_dir"] = self._data_dir
 
         # Persist model refresh interval only when non-default
         if self.model_refresh_interval_hours == 24:

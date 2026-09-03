@@ -826,12 +826,14 @@ async def _startup(app: App) -> None:
     from .config import ArgoConfigIO
 
     config_io = ArgoConfigIO(config, registry)
+    resolved_data_dir = config.data_dir or None
     setup_admin(
         app,
         gateway_config,
         str(config_path) if config_path else None,
         config_io=config_io,
         disabled_tabs=["keys"],
+        data_dir=resolved_data_dir,
         custom_head=_load_admin_custom_head(),
         branding={
             "title": "Argo Proxy",
