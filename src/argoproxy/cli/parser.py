@@ -113,6 +113,16 @@ def _add_serve_arguments(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
+        "--data-dir",
+        type=str,
+        default=None,
+        help=(
+            "Directory for runtime data (gateway.db, attack_logs, etc.).\n"
+            "Overrides the data_dir setting in the config file.\n"
+            "(default: data/ next to config file)"
+        ),
+    )
+    parser.add_argument(
         "--dev",
         action="store_true",
         default=False,
@@ -184,6 +194,12 @@ def _add_logs_subparsers(parser: argparse.ArgumentParser) -> None:
     )
     collect_parser.add_argument(
         "config", nargs="?", default=None, help="Config file path"
+    )
+    collect_parser.add_argument(
+        "--data-dir",
+        type=str,
+        default=None,
+        help="Directory containing runtime data (overrides config-relative default)",
     )
     collect_parser.add_argument(
         "--type",

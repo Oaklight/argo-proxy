@@ -96,13 +96,19 @@ class AttackLogger:
         """
         self.enabled = True
         self._log_dir: Path | None = None
+        self._data_dir: Path | None = None
         self._config_path = config_path
 
     @property
     def log_dir(self) -> Path:
-        """Get or create the attack log directory."""
+        """Get or create the attack log directory.
+
+        Resolution order: explicit data_dir > config file parent > cwd.
+        """
         if self._log_dir is None:
-            if self._config_path:
+            if self._data_dir:
+                base_dir = self._data_dir
+            elif self._config_path:
                 base_dir = self._config_path.parent
             else:
                 base_dir = Path.cwd()
@@ -119,6 +125,15 @@ class AttackLogger:
             config_path: New path to the config file.
         """
         self._config_path = config_path
+        self._log_dir = None  # Reset to recalculate on next access
+
+    def set_data_dir(self, data_dir: Path) -> None:
+        """Set an explicit data directory for attack logs.
+
+        Args:
+            data_dir: Directory where attack logs will be stored.
+        """
+        self._data_dir = data_dir
         self._log_dir = None  # Reset to recalculate on next access
 
     def classify_attack(self, raw_data: str) -> str:
