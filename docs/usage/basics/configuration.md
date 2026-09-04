@@ -1,5 +1,8 @@
 # Configuration
 
+!!! info "Last updated"
+    **argo-proxy v3.4.0** — September 2026
+
 ## Configuration File
 
 If you don't have a configuration file, the [First-Time Setup](../running.md#first-time-setup) will create one for you interactively. You can also migrate from v1/v2 configs using `argo-proxy config migrate`.
@@ -23,6 +26,9 @@ argo_base_url: https://apps-dev.inside.anl.gov/argoapi
 
 # Model list auto-refresh (0 to disable)
 model_refresh_interval_hours: 24
+
+# Runtime data directory (optional, see Data Directory section)
+# data_dir: ./data
 
 # Network & validation
 connection_test_timeout: 5
@@ -85,11 +91,70 @@ The following fields are only persisted to the config file when set to non-defau
 | Option | Description | Condition |
 |--------|-------------|-----------|
 | `socket` | Unix socket path | Only when non-empty |
-| `use_legacy_argo` | Enable legacy ARGO gateway mode | Only when `true` |
+| `data_dir` | Runtime data directory for gateway.db, attack logs, etc. | Only when explicitly set |
 | `skip_url_validation` | Skip URL connectivity check at startup | Only when `true` |
 | `native_openai_base_url` | Base URL for OpenAI-compatible endpoints | Only when explicitly set and differs from `{argo_base_url}/v1` |
 | `native_anthropic_base_url` | Base URL for Anthropic endpoint | Only when explicitly set and differs from `argo_base_url` |
-| `anthropic_stream_mode` | Anthropic non-streaming handling mode (`force`/`retry`/`passthrough`) | Only when not `force` |
+| `anthropic_stream_mode` | Anthropic non-streaming handling mode (`force`/`retry`/`passthrough`) | Only when not `retry` |
+| `dump_dir` | Directory for debug request/response dumps | Only when explicitly set |
+| `dump_requests` | Enable request/response dumping for debugging | Only when `true` |
+
+## Data Directory
+
+*Added in v3.4.0.*
+
+By default, runtime data files (`gateway.db`, `attack_logs/`, diagnostic dumps) are stored next to the configuration file. The `data_dir` option lets you place them in a separate directory — useful for profile-based deployments where you want to keep config and data apart.
+
+### Setting the Data Directory
+
+There are three ways to set the data directory, in order of precedence:
+
+1. **CLI flag**: `--data-dir /path/to/data` (highest priority)
+2. **Environment variable**: `DATA_DIR=/path/to/data`
+3. **Config file**: `data_dir: ./data`
+
+```yaml
+# In config.yaml — relative paths are resolved relative to the config file
+data_dir: ./data
+```
+
+```bash
+# Or via CLI flag (overrides config file)
+argo-proxy serve config.yaml --data-dir /var/lib/argoproxy/data
+```
+
+When `data_dir` is not set, files are stored in their traditional locations (next to the config file or in the working directory).
+
+### What Goes in the Data Directory
+
+| Content | Description |
+|---------|-------------|
+| `gateway.db` | SQLite database for metrics, request logs, and error dumps |
+| `attack_logs/` | Security event logs (gzipped JSONL, organized by date) |
+
+### Profile-Based Deployments
+
+The data directory feature enables clean multi-profile setups where each instance has its own config and isolated data:
+
+```
+~/.config/argoproxy/
+├── profile_prod/
+│   ├── config.yaml        # data_dir: ./data
+│   └── data/
+│       ├── gateway.db
+│       └── attack_logs/
+├── profile_dev/
+│   ├── config.yaml        # data_dir: ./data
+│   └── data/
+│       ├── gateway.db
+│       └── attack_logs/
+```
+
+```bash
+# Run each profile independently
+argo-proxy serve ~/.config/argoproxy/profile_prod/config.yaml
+argo-proxy serve ~/.config/argoproxy/profile_dev/config.yaml
+```
 
 ## Configuration File Locations
 

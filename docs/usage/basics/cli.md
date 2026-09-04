@@ -1,5 +1,8 @@
 # CLI Reference
 
+!!! info "Last updated"
+    **argo-proxy v3.4.0** — September 2026
+
 Argo Proxy v3 uses a subcommand-based CLI. If no subcommand is given, `serve` is assumed for backward compatibility.
 
 !!! tip "Typo Detection"
@@ -58,6 +61,10 @@ argo-proxy config.yaml --port 8080 --verbose
 | `--no-banner` | Suppress the ASCII banner on startup |
 | `--username-passthrough` | Use API key from request headers as user field |
 | `--anthropic-stream-mode MODE` | Anthropic non-streaming handling: `force` (default), `retry`, or `passthrough` |
+| `--data-dir DIR` | Directory for runtime data (`gateway.db`, `attack_logs/`, etc.). Overrides the `data_dir` config field. See [Data Directory](configuration.md#data-directory) |
+| `--dump-requests` | Dump request/response JSON at each processing stage for debugging |
+| `--dump-dir DIR` | Directory for debug dumps (default: `dumps/` next to config file) |
+| `--dev` | Run in dev-proxy mode: forward all requests to ARGO upstream without format conversion |
 
 ### Examples
 
@@ -76,6 +83,9 @@ argo-proxy serve --show --verbose
 
 # Listen on a Unix socket (secure on shared hosts)
 argo-proxy serve --socket /run/user/$(id -u)/argo-proxy.sock
+
+# Store runtime data in a separate directory
+argo-proxy serve config.yaml --data-dir /var/lib/argoproxy/data
 ```
 
 ---
@@ -217,7 +227,8 @@ argo-proxy logs collect --type stream-retry
 | Option | Description |
 |--------|-------------|
 | `config` | Config file path (optional) |
-| `--type, -t` | Log type to collect: `leaked-tool`, `stream-retry`, or `all` (default: `all`) |
+| `--data-dir DIR` | Directory containing runtime data (overrides config-relative default) |
+| `--type, -t` | Log type to collect: `leaked-tool`, `stream-retry`, `error-dump`, or `all` (default: `all`) |
 
 Log types and their directories:
 
@@ -225,6 +236,7 @@ Log types and their directories:
 |------|-----------|-------------|
 | `leaked-tool` | `leaked_tool_calls/` | Leaked tool call detection logs |
 | `stream-retry` | `stream_retry_dumps/` | Anthropic stream retry request dumps (from `--anthropic-stream-mode retry`) |
+| `error-dump` | `error_dumps/` | Upstream error request/response dumps |
 
 ---
 
@@ -336,6 +348,11 @@ The following environment variables override configuration file settings:
 | `ARGO_BASE_URL` | Override the Argo base URL |
 | `ANTHROPIC_STREAM_MODE` | Anthropic non-streaming handling: `force`, `retry`, or `passthrough` |
 | `SKIP_URL_VALIDATION` | Skip URL validation at startup |
+| `DATA_DIR` | Runtime data directory (overrides `data_dir` config field) |
+| `DUMP_DIR` | Debug request/response dump directory |
+| `DUMP_REQUESTS` | Enable request/response dumping (`true`/`false`) |
+| `DEV_MODE` | Enable dev-proxy mode (`true`/`false`) |
+| `USERNAME_PASSTHROUGH` | Use API key as username (`true`/`false`) |
 
 !!! note "Deprecated Environment Variables"
     The following variables are deprecated in v3.0.0 and will be ignored with a warning:
