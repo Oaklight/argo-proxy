@@ -1,7 +1,7 @@
 # Configuration
 
 !!! info "Last updated"
-    **argo-proxy v3.4.0** — September 2026
+    **argo-proxy v3.3.2** — September 2026
 
 ## Configuration File
 
@@ -101,7 +101,7 @@ The following fields are only persisted to the config file when set to non-defau
 
 ## Data Directory
 
-*Added in v3.4.0.*
+*Added in v3.3.2.*
 
 By default, runtime data files (`gateway.db`, `attack_logs/`, diagnostic dumps) are stored next to the configuration file. The `data_dir` option lets you place them in a separate directory — useful for profile-based deployments where you want to keep config and data apart.
 

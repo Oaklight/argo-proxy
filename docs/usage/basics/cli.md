@@ -1,7 +1,7 @@
 # CLI Reference
 
 !!! info "Last updated"
-    **argo-proxy v3.4.0** — September 2026
+    **argo-proxy v3.3.2** — September 2026
 
 Argo Proxy v3 uses a subcommand-based CLI. If no subcommand is given, `serve` is assumed for backward compatibility.
 
