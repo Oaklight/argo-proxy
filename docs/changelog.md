@@ -2,6 +2,18 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v3.3.2 (2026-09-04)
+
+### Added
+
+- **`--data-dir` CLI flag and `data_dir` config field** (#166): runtime data (`gateway.db`, `attack_logs/`) can now be placed in a separate directory, enabling profile-based deployments where config and data are isolated. Opt-in only — existing deployments are unaffected.
+- **`DATA_DIR` environment variable**: overrides the `data_dir` config field, matching the existing `DUMP_DIR` pattern.
+- **`--data-dir` for `logs collect`**: diagnostic log collection respects the data directory override.
+
+### Changed
+
+- Updated [Configuration](usage/basics/configuration.md) and [CLI Reference](usage/basics/cli.md) documentation with `data_dir` section, missing CLI flags (`--dump-requests`, `--dump-dir`, `--dev`), and environment variables.
+
 ## v3.3.1 (2026-09-03)
 
 ### Fixed
