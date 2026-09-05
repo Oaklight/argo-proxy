@@ -857,22 +857,6 @@ async def _startup(app: App) -> None:
         },
     )
 
-    # Auto-rebuild if counters lag behind the log (ungraceful shutdown).
-    # Only rebuild when counters < log — the reverse (counters > log) is
-    # expected when log retention caps purge old entries.
-    persistence = getattr(app, "persistence", None)
-    metrics = getattr(app, "metrics", None)
-    if persistence is not None and metrics is not None:
-        log_entries = persistence.count_log_entries()
-        if metrics.total_requests < log_entries:
-            log_warning(
-                f"Counter drift detected (counters={metrics.total_requests}, "
-                f"log={log_entries}), rebuilding from request log",
-                context="app",
-            )
-            metrics.rebuild_counters(persistence.iter_log_rows_for_rebuild())
-            persistence.save_metrics(metrics.export_counters())
-
     log_debug("Gateway transport initialized", context="app")
 
 
