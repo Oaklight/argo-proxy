@@ -127,7 +127,7 @@ def _record_telemetry(
 
         from llm_rosetta.gateway.auth import api_key_context_var
 
-        _kctx = api_key_context_var.get()
+        key_ctx = api_key_context_var.get()
         entry = RequestLogEntry.create(
             model=model,
             source_provider=source_provider,
@@ -137,7 +137,7 @@ def _record_telemetry(
             status_code=status_code,
             duration_ms=duration_ms,
             error_detail=error_detail,
-            api_key_label=_kctx.label if _kctx else None,
+            api_key_label=key_ctx.label if key_ctx else None,
             client_ip=_extract_client_ip(request),
             profile=profile,
         )
@@ -366,7 +366,7 @@ async def _argo_proxy_handler(
         return argo_auth_error_response(source_provider)
     except Exception as exc:
         error_detail = str(exc)
-        log_error(f"[{request_id}] Proxy error: {exc}", context="proxy")
+        log_error(f"[{request_id}] Proxy error: {exc}", context="proxy", exc_info=True)
         status_code = 502
         try:
             dump_error(
@@ -958,6 +958,8 @@ def create_app() -> App:
 
 
 async def _run_server(app: App, *, host: str, port: int, socket: str = "") -> None:
+    # Private imports — mirrors llm-rosetta's run_gateway() lifecycle.
+    # If llm-rosetta promotes these to public API, update the import path.
     from llm_rosetta.gateway.app import _flush_now, _periodic_flush
 
     await _startup(app)
