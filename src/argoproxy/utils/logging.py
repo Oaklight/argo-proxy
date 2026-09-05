@@ -669,9 +669,9 @@ def log_warning(message: str, *, context: str = "") -> None:
     _logger.warning(_format_log(message, context))
 
 
-def log_error(message: str, *, context: str = "") -> None:
+def log_error(message: str, *, context: str = "", exc_info: bool = False) -> None:
     """Log an error message in a consistent format."""
-    _logger.error(_format_log(message, context))
+    _logger.error(_format_log(message, context), exc_info=exc_info)
 
 
 def log_info(message: str, *, context: str = "") -> None:
