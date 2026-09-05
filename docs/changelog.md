@@ -2,6 +2,20 @@
 
 This page records the major version changes and important feature updates of the Argo Proxy project.
 
+## v3.3.3 (2026-09-05)
+
+### Fixed
+
+- **Dashboard metrics persistence** (#167): metrics counters (Total Requests, etc.) now survive instance restarts. Previously, `_run_server` bypassed llm-rosetta's flush lifecycle, so counters accumulated in memory but were never written to `gateway.db`.
+- **Shutdown flush** (#167): replaced `_force_exit` signal handler (which called `sys.exit(0)` and skipped cleanup) with proper asyncio signal handling, ensuring the `finally` block runs and flushes metrics on shutdown.
+- **User label in admin log dashboard** (#167): request log entries now include `api_key_label`, so the admin log panel shows the username instead of `–`.
+- **User prefix in CLI logs** (#167): switched the main request log line from direct `logger.info()` to `log_info()` so the `user=` prefix appears in CLI output.
+- **Counter rebuild cap awareness** (#168): auto-rebuild only triggers when counters lag behind the log (`<`), not when ahead — the latter is expected when log retention caps purge old entries.
+
+### Changed
+
+- Delegated counter drift auto-rebuild to llm-rosetta's `setup_admin()` (requires llm-rosetta ≥0.12.0).
+
 ## v3.3.2 (2026-09-04)
 
 ### Added
