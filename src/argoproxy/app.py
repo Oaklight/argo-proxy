@@ -8,9 +8,7 @@ and streaming logic on top.
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
-import signal
 import sys
 import time
 import uuid
@@ -56,8 +54,6 @@ from .utils.logging import (
     set_request_user,
 )
 from .utils.misc import build_user_agent
-
-logger = logging.getLogger("argo-proxy")
 
 
 def _load_admin_custom_head() -> str:
@@ -129,6 +125,9 @@ def _record_telemetry(
     if request_log is not None:
         from llm_rosetta.observability import RequestLogEntry
 
+        from llm_rosetta.gateway.auth import api_key_context_var
+
+        _kctx = api_key_context_var.get()
         entry = RequestLogEntry.create(
             model=model,
             source_provider=source_provider,
@@ -138,6 +137,7 @@ def _record_telemetry(
             status_code=status_code,
             duration_ms=duration_ms,
             error_detail=error_detail,
+            api_key_label=_kctx.label if _kctx else None,
             client_ip=_extract_client_ip(request),
             profile=profile,
         )
@@ -248,13 +248,10 @@ async def _argo_proxy_handler(
     model_label = (
         f"{model} (upstream={route.upstream_model})" if route.upstream_model else model
     )
-    logger.info(
-        "[%s] %s -> %s | model=%s stream=%s",
-        request_id,
-        source_provider,
-        route.target_provider,
-        model_label,
-        is_stream,
+    log_info(
+        f"[{request_id}] {source_provider} -> {route.target_provider}"
+        f" | model={model_label} stream={is_stream}",
+        context="proxy",
     )
 
     store: ProviderMetadataStore = request.app.metadata_store  # type: ignore[attr-defined]
@@ -365,11 +362,11 @@ async def _argo_proxy_handler(
                 error_phase="transport",
             )
         except Exception as e:
-            logger.debug("dump_error failed: %s", e)
+            log_debug(f"dump_error failed: {e}", context="proxy")
         return argo_auth_error_response(source_provider)
     except Exception as exc:
         error_detail = str(exc)
-        logger.exception("[%s] Proxy error", request_id)
+        log_error(f"[{request_id}] Proxy error: {exc}", context="proxy")
         status_code = 502
         try:
             dump_error(
@@ -384,7 +381,7 @@ async def _argo_proxy_handler(
                 error_phase="transport",
             )
         except Exception as e:
-            logger.debug("dump_error failed: %s", e)
+            log_debug(f"dump_error failed: {e}", context="proxy")
         resp = error_response_for_source(source_provider, 502, "Upstream error")
         resp.headers["x-request-id"] = request_id
         return resp
@@ -860,6 +857,20 @@ async def _startup(app: App) -> None:
         },
     )
 
+    # Auto-rebuild counters if persisted total drifted from actual log entries
+    persistence = getattr(app, "persistence", None)
+    metrics = getattr(app, "metrics", None)
+    if persistence is not None and metrics is not None:
+        log_entries = persistence.count_log_entries()
+        if metrics.total_requests != log_entries:
+            log_warning(
+                f"Counter drift detected (counters={metrics.total_requests}, "
+                f"log={log_entries}), rebuilding from request log",
+                context="app",
+            )
+            metrics.rebuild_counters(persistence.iter_log_rows_for_rebuild())
+            persistence.save_metrics(metrics.export_counters())
+
     log_debug("Gateway transport initialized", context="app")
 
 
@@ -947,12 +958,21 @@ def create_app() -> App:
 
 
 async def _run_server(app: App, *, host: str, port: int, socket: str = "") -> None:
+    from llm_rosetta.gateway.app import _flush_now, _periodic_flush
+
     await _startup(app)
     app._bind_host = host  # type: ignore[attr-defined]
     app._bind_port = port  # type: ignore[attr-defined]
+    flush_task = asyncio.create_task(_periodic_flush(app))
     try:
         await app._serve(host, port, socket=socket or None)
     finally:
+        flush_task.cancel()
+        try:
+            await flush_task
+        except asyncio.CancelledError:
+            pass
+        _flush_now(app)
         transport = getattr(app, "transport", None)
         metadata_store = getattr(app, "metadata_store", None)
         await close_resources(transport=transport, metadata_store=metadata_store)
@@ -961,15 +981,10 @@ async def _run_server(app: App, *, host: str, port: int, socket: str = "") -> No
 def run(*, host: str = "0.0.0.0", port: int = 8080, socket: str = ""):
     app = create_app()
 
-    def _force_exit(*_: Any) -> None:
-        log_info("Force exiting on signal", context="app")
-        sys.exit(0)
-
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        signal.signal(sig, _force_exit)
-
     try:
         asyncio.run(_run_server(app, host=host, port=port, socket=socket))
+    except KeyboardInterrupt:
+        pass
     except Exception as e:
         log_error(f"An error occurred while starting the server: {e}", context="app")
         sys.exit(1)
