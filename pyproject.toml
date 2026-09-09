@@ -74,3 +74,6 @@ exclude = ["src/argoproxy/_legacy"]
 [tool.ty.rules]
 unresolved-import = "ignore"
 unresolved-attribute = "ignore"
+
+[tool.zerodep]
+vendor-dir = "src/argoproxy/_vendor"
