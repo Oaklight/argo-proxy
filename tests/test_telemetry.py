@@ -107,3 +107,20 @@ class TestRecordTelemetry:
             error_detail=None,
         )
         assert req.app.metrics.active_streams == 0
+
+    def test_stream_skips_decrement_when_disabled(self):
+        req = self._make_request()
+        req.app.metrics.active_streams = 0
+        record_telemetry(
+            req,
+            model="gpt-4o",
+            source_provider="openai_chat",
+            target_provider="openai_chat",
+            provider_name="argo-dev",
+            is_stream=True,
+            status_code=200,
+            duration_ms=42.0,
+            error_detail=None,
+            decrement_active_streams=False,
+        )
+        assert req.app.metrics.active_streams == 0
