@@ -54,6 +54,7 @@ from .utils.logging import (
     set_request_user,
 )
 from .utils.misc import build_user_agent
+from .utils.telemetry import record_telemetry
 
 
 def _load_admin_custom_head() -> str:
@@ -86,72 +87,6 @@ def _get_registry(app: App) -> ModelRegistry:
 
 def _get_gateway_config(app: App) -> Any:
     return app.gateway_config  # type: ignore[attr-defined]
-
-
-# ---------------------------------------------------------------------------
-# Telemetry — record metrics + request log for the admin dashboard
-# ---------------------------------------------------------------------------
-
-
-def _record_telemetry(
-    request: Any,
-    *,
-    model: str,
-    source_provider: ProviderType,
-    target_provider: ProviderType,
-    provider_name: str,
-    is_stream: bool,
-    status_code: int,
-    duration_ms: float,
-    error_detail: str | None,
-    profile: dict[str, Any] | None = None,
-) -> None:
-    metrics = getattr(request.app, "metrics", None)
-    if is_stream and metrics:
-        metrics.active_streams -= 1
-    if metrics:
-        metrics.record_request(
-            model=model,
-            source=source_provider,
-            target=target_provider,
-            status_code=status_code,
-            duration_ms=duration_ms,
-            is_stream=is_stream,
-            provider_name=provider_name,
-            error_detail=error_detail,
-        )
-
-    request_log = getattr(request.app, "request_log", None)
-    if request_log is not None:
-        from llm_rosetta.observability import RequestLogEntry
-
-        from llm_rosetta.gateway.auth import api_key_context_var
-
-        key_ctx = api_key_context_var.get()
-        entry = RequestLogEntry.create(
-            model=model,
-            source_provider=source_provider,
-            target_provider=target_provider,
-            target_provider_name=provider_name,
-            is_stream=is_stream,
-            status_code=status_code,
-            duration_ms=duration_ms,
-            error_detail=error_detail,
-            api_key_label=key_ctx.label if key_ctx else None,
-            client_ip=_extract_client_ip(request),
-            profile=profile,
-        )
-        request_log.add(entry)
-
-
-def _extract_client_ip(request: Any) -> str | None:
-    xff = request.headers.get("x-forwarded-for", "")
-    if xff:
-        return xff.split(",")[0].strip()
-    addr = getattr(request, "client_addr", None)
-    if addr:
-        return str(addr[0])
-    return None
 
 
 # ---------------------------------------------------------------------------
@@ -387,7 +322,7 @@ async def _argo_proxy_handler(
         return resp
     finally:
         duration_ms = (time.monotonic() - t0) * 1000
-        _record_telemetry(
+        record_telemetry(
             request,
             model=model,
             source_provider=source_provider,

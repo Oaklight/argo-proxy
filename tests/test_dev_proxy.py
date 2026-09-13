@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from argoproxy.dev_proxy import (
+    _DEV_PROVIDER_NAME,
     _detect_stream,
     _extract_api_key,
     _parse_and_inject,
@@ -385,3 +386,137 @@ async def test_upstream_error_returns_502(mock_passthrough):
     assert resp.status_code == 502
     body = json.loads(resp.body)
     assert body["error"]["type"] == "server_error"
+
+
+# ---------------------------------------------------------------------------
+# Telemetry recording in dev-proxy handlers
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@patch("argoproxy.dev_proxy.record_telemetry")
+@patch("argoproxy.dev_proxy.should_use_username_passthrough", return_value=False)
+async def test_openai_chat_records_telemetry(mock_passthrough, mock_telemetry):
+    req = FakeRequest(
+        body={"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}]}
+    )
+    mock_client = _setup_transport_mock(req)
+    mock_client.post.return_value = FakeHttpResponse(
+        200, {"choices": [{"message": {"content": "hello"}}]}
+    )
+
+    resp = await handle_dev_openai_chat(req)
+    assert resp.status_code == 200
+
+    mock_telemetry.assert_called_once()
+    kwargs = mock_telemetry.call_args[1]
+    assert kwargs["model"] == "gpt-4o"
+    assert kwargs["source_provider"] == "openai_chat"
+    assert kwargs["target_provider"] == "openai_chat"
+    assert kwargs["provider_name"] == _DEV_PROVIDER_NAME
+    assert kwargs["status_code"] == 200
+    assert kwargs["error_detail"] is None
+    assert kwargs["duration_ms"] >= 0
+
+
+@pytest.mark.asyncio
+@patch("argoproxy.dev_proxy.record_telemetry")
+@patch("argoproxy.dev_proxy.should_use_username_passthrough", return_value=False)
+async def test_openai_chat_records_telemetry_on_error(mock_passthrough, mock_telemetry):
+    req = FakeRequest(body={"model": "gpt-4o", "messages": []})
+    mock_client = _setup_transport_mock(req)
+    mock_client.post.side_effect = ConnectionError("upstream down")
+
+    resp = await handle_dev_openai_chat(req)
+    assert resp.status_code == 502
+
+    mock_telemetry.assert_called_once()
+    kwargs = mock_telemetry.call_args[1]
+    assert kwargs["status_code"] == 502
+    assert kwargs["error_detail"] is not None
+
+
+@pytest.mark.asyncio
+@patch("argoproxy.dev_proxy.record_telemetry")
+@patch("argoproxy.dev_proxy.should_use_username_passthrough", return_value=False)
+async def test_anthropic_records_telemetry(mock_passthrough, mock_telemetry):
+    req = FakeRequest(
+        body={
+            "model": "claude-sonnet-4-6-20250514",
+            "messages": [{"role": "user", "content": "hi"}],
+            "max_tokens": 100,
+        }
+    )
+    mock_client = _setup_transport_mock(req)
+    mock_client.post.return_value = FakeHttpResponse(
+        200, {"content": [{"text": "hello"}]}
+    )
+
+    resp = await handle_dev_anthropic(req)
+    assert resp.status_code == 200
+
+    mock_telemetry.assert_called_once()
+    kwargs = mock_telemetry.call_args[1]
+    assert kwargs["model"] == "claude-sonnet-4-6-20250514"
+    assert kwargs["source_provider"] == "anthropic"
+    assert kwargs["provider_name"] == _DEV_PROVIDER_NAME
+
+
+@pytest.mark.asyncio
+@patch("argoproxy.dev_proxy.record_telemetry")
+@patch("argoproxy.dev_proxy.should_use_username_passthrough", return_value=False)
+async def test_google_records_telemetry(mock_passthrough, mock_telemetry):
+    req = FakeRequest(body={"contents": [{"parts": [{"text": "hi"}]}]})
+    mock_client = _setup_transport_mock(req)
+    mock_client.post.return_value = FakeHttpResponse(
+        200, {"candidates": [{"content": {"parts": [{"text": "hello"}]}}]}
+    )
+
+    resp = await handle_dev_google(req, model_path="gemini-2.5-pro:generateContent")
+    assert resp.status_code == 200
+
+    mock_telemetry.assert_called_once()
+    kwargs = mock_telemetry.call_args[1]
+    assert kwargs["model"] == "gemini-2.5-pro"
+    assert kwargs["source_provider"] == "google"
+    assert kwargs["is_stream"] is False
+
+
+@pytest.mark.asyncio
+@patch("argoproxy.dev_proxy.record_telemetry")
+@patch("argoproxy.dev_proxy.should_use_username_passthrough", return_value=False)
+async def test_embeddings_records_telemetry(mock_passthrough, mock_telemetry):
+    req = FakeRequest(body={"input": "test text", "model": "text-embedding-3-small"})
+    mock_client = _setup_transport_mock(req)
+    mock_client.post.return_value = FakeHttpResponse(
+        200, {"data": [{"embedding": [0.1, 0.2]}]}
+    )
+
+    resp = await handle_dev_embeddings(req)
+    assert resp.status_code == 200
+
+    mock_telemetry.assert_called_once()
+    kwargs = mock_telemetry.call_args[1]
+    assert kwargs["model"] == "text-embedding-3-small"
+    assert kwargs["is_stream"] is False
+    assert kwargs["provider_name"] == _DEV_PROVIDER_NAME
+
+
+@pytest.mark.asyncio
+@patch("argoproxy.dev_proxy.record_telemetry")
+@patch("argoproxy.dev_proxy.should_use_username_passthrough", return_value=False)
+async def test_responses_records_telemetry(mock_passthrough, mock_telemetry):
+    req = FakeRequest(body={"model": "gpt-4o", "input": "What is 2+2?"})
+    mock_client = _setup_transport_mock(req)
+    mock_client.post.return_value = FakeHttpResponse(
+        200, {"output": [{"content": [{"text": "4"}]}]}
+    )
+
+    resp = await handle_dev_openai_responses(req)
+    assert resp.status_code == 200
+
+    mock_telemetry.assert_called_once()
+    kwargs = mock_telemetry.call_args[1]
+    assert kwargs["model"] == "gpt-4o"
+    assert kwargs["source_provider"] == "openai_responses"
+    assert kwargs["provider_name"] == _DEV_PROVIDER_NAME
