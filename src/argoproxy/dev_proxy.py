@@ -212,6 +212,36 @@ def _parse_and_inject(request: Any, config: Any) -> tuple[dict[str, Any] | None,
 # ---------------------------------------------------------------------------
 
 
+async def _passthrough_with_telemetry(
+    request: Any,
+    url: str,
+    body: dict[str, Any],
+    *,
+    is_stream: bool,
+    request_id: str,
+    source: str,
+    model: str,
+) -> Response | StreamingResponse:
+    """Forward a request and record telemetry for the admin dashboard."""
+    t0 = time.monotonic()
+    resp = await _raw_passthrough(
+        request, url, body, is_stream=is_stream, request_id=request_id, source=source
+    )
+    record_telemetry(
+        request,
+        model=model,
+        source_provider=source,
+        target_provider=source,
+        provider_name=_DEV_PROVIDER_NAME,
+        is_stream=is_stream,
+        status_code=resp.status_code,
+        duration_ms=(time.monotonic() - t0) * 1000,
+        error_detail=None if resp.status_code < 400 else "upstream error",
+        decrement_active_streams=False,
+    )
+    return resp
+
+
 async def handle_dev_openai_chat(request: Any) -> Response | StreamingResponse:
     """Passthrough for ``/v1/chat/completions``."""
     log_info("[dev] /v1/chat/completions", context="app")
@@ -231,22 +261,15 @@ async def handle_dev_openai_chat(request: Any) -> Response | StreamingResponse:
     url = f"{config.native_openai_base_url}/chat/completions"
     is_stream = _detect_stream(body, "openai_chat")
     log_debug(f"[dev] -> {url} stream={is_stream}", context="app")
-    t0 = time.monotonic()
-    resp = await _raw_passthrough(
-        request, url, body, is_stream=is_stream, request_id=rid, source="openai_chat"
-    )
-    record_telemetry(
+    return await _passthrough_with_telemetry(
         request,
-        model=body.get("model", "unknown"),
-        source_provider="openai_chat",
-        target_provider="openai_chat",
-        provider_name=_DEV_PROVIDER_NAME,
+        url,
+        body,
         is_stream=is_stream,
-        status_code=resp.status_code,
-        duration_ms=(time.monotonic() - t0) * 1000,
-        error_detail=None if resp.status_code < 400 else "upstream error",
+        request_id=rid,
+        source="openai_chat",
+        model=body.get("model", "unknown"),
     )
-    return resp
 
 
 async def handle_dev_openai_responses(request: Any) -> Response | StreamingResponse:
@@ -268,27 +291,15 @@ async def handle_dev_openai_responses(request: Any) -> Response | StreamingRespo
     url = f"{config.native_openai_base_url}/responses"
     is_stream = _detect_stream(body, "openai_responses")
     log_debug(f"[dev] -> {url} stream={is_stream}", context="app")
-    t0 = time.monotonic()
-    resp = await _raw_passthrough(
+    return await _passthrough_with_telemetry(
         request,
         url,
         body,
         is_stream=is_stream,
         request_id=rid,
         source="openai_responses",
-    )
-    record_telemetry(
-        request,
         model=body.get("model", "unknown"),
-        source_provider="openai_responses",
-        target_provider="openai_responses",
-        provider_name=_DEV_PROVIDER_NAME,
-        is_stream=is_stream,
-        status_code=resp.status_code,
-        duration_ms=(time.monotonic() - t0) * 1000,
-        error_detail=None if resp.status_code < 400 else "upstream error",
     )
-    return resp
 
 
 async def handle_dev_anthropic(request: Any) -> Response | StreamingResponse:
@@ -317,22 +328,15 @@ async def handle_dev_anthropic(request: Any) -> Response | StreamingResponse:
     url = f"{config.native_anthropic_base_url}/v1/messages"
     is_stream = _detect_stream(body, "anthropic")
     log_debug(f"[dev] -> {url} stream={is_stream}", context="app")
-    t0 = time.monotonic()
-    resp = await _raw_passthrough(
-        request, url, body, is_stream=is_stream, request_id=rid, source="anthropic"
-    )
-    record_telemetry(
+    return await _passthrough_with_telemetry(
         request,
-        model=body.get("model", "unknown"),
-        source_provider="anthropic",
-        target_provider="anthropic",
-        provider_name=_DEV_PROVIDER_NAME,
+        url,
+        body,
         is_stream=is_stream,
-        status_code=resp.status_code,
-        duration_ms=(time.monotonic() - t0) * 1000,
-        error_detail=None if resp.status_code < 400 else "upstream error",
+        request_id=rid,
+        source="anthropic",
+        model=body.get("model", "unknown"),
     )
-    return resp
 
 
 async def handle_dev_google(
@@ -358,23 +362,16 @@ async def handle_dev_google(
     # Google GenAI lives under argo_base_url, not the OpenAI-compatible /v1 tree
     url = f"{config.argo_base_url}/v1beta/models/{model_path}"
     log_debug(f"[dev] -> {url} stream={is_stream}", context="app")
-    t0 = time.monotonic()
-    resp = await _raw_passthrough(
-        request, url, body, is_stream=is_stream, request_id=rid, source="google"
-    )
     model_name = model_path.split(":")[0] if model_path else "unknown"
-    record_telemetry(
+    return await _passthrough_with_telemetry(
         request,
-        model=model_name,
-        source_provider="google",
-        target_provider="google",
-        provider_name=_DEV_PROVIDER_NAME,
+        url,
+        body,
         is_stream=is_stream,
-        status_code=resp.status_code,
-        duration_ms=(time.monotonic() - t0) * 1000,
-        error_detail=None if resp.status_code < 400 else "upstream error",
+        request_id=rid,
+        source="google",
+        model=model_name,
     )
-    return resp
 
 
 async def handle_dev_embeddings(request: Any) -> Response | StreamingResponse:
@@ -395,22 +392,15 @@ async def handle_dev_embeddings(request: Any) -> Response | StreamingResponse:
         )
     url = f"{config.native_openai_base_url}/embeddings"
     log_debug(f"[dev] -> {url}", context="app")
-    t0 = time.monotonic()
-    resp = await _raw_passthrough(
-        request, url, body, is_stream=False, request_id=rid, source="openai_chat"
-    )
-    record_telemetry(
+    return await _passthrough_with_telemetry(
         request,
-        model=body.get("model", "unknown"),
-        source_provider="openai_chat",
-        target_provider="openai_chat",
-        provider_name=_DEV_PROVIDER_NAME,
+        url,
+        body,
         is_stream=False,
-        status_code=resp.status_code,
-        duration_ms=(time.monotonic() - t0) * 1000,
-        error_detail=None if resp.status_code < 400 else "upstream error",
+        request_id=rid,
+        source="openai_chat",
+        model=body.get("model", "unknown"),
     )
-    return resp
 
 
 async def handle_dev_models(request: Any) -> Response | StreamingResponse:

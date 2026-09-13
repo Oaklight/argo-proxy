@@ -28,10 +28,17 @@ def record_telemetry(
     duration_ms: float,
     error_detail: str | None,
     profile: dict[str, Any] | None = None,
+    decrement_active_streams: bool = True,
 ) -> None:
-    """Record metrics and a request log entry for the admin dashboard."""
+    """Record metrics and a request log entry for the admin dashboard.
+
+    Args:
+        decrement_active_streams: When False, skip the ``active_streams -= 1``
+            bookkeeping.  Dev-proxy mode never increments the counter, so it
+            must pass False to avoid driving the gauge negative.
+    """
     metrics = getattr(request.app, "metrics", None)
-    if is_stream and metrics:
+    if is_stream and metrics and decrement_active_streams:
         metrics.active_streams -= 1
     if metrics:
         metrics.record_request(
