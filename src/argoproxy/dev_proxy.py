@@ -12,6 +12,7 @@ SSE responses are relayed correctly.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 import uuid
@@ -220,8 +221,6 @@ def _extract_error_detail(resp: Response | StreamingResponse) -> str | None:
     if not body:
         return f"HTTP {resp.status_code}"
     try:
-        import json
-
         data = json.loads(body)
         err = data.get("error", data)
         if isinstance(err, dict):
