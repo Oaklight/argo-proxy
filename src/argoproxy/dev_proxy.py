@@ -212,6 +212,26 @@ def _parse_and_inject(request: Any, config: Any) -> tuple[dict[str, Any] | None,
 # ---------------------------------------------------------------------------
 
 
+def _extract_error_detail(resp: Response | StreamingResponse) -> str | None:
+    """Extract a short error message from an error response body."""
+    if resp.status_code < 400:
+        return None
+    body = getattr(resp, "body", None)
+    if not body:
+        return f"HTTP {resp.status_code}"
+    try:
+        import json
+
+        data = json.loads(body)
+        err = data.get("error", data)
+        if isinstance(err, dict):
+            return err.get("message") or err.get("type") or f"HTTP {resp.status_code}"
+        return str(err)[:200]
+    except Exception:
+        text = body.decode("utf-8", errors="replace")[:200]
+        return text or f"HTTP {resp.status_code}"
+
+
 async def _passthrough_with_telemetry(
     request: Any,
     url: str,
@@ -236,7 +256,7 @@ async def _passthrough_with_telemetry(
         is_stream=is_stream,
         status_code=resp.status_code,
         duration_ms=(time.monotonic() - t0) * 1000,
-        error_detail=None if resp.status_code < 400 else "upstream error",
+        error_detail=_extract_error_detail(resp),
         decrement_active_streams=False,
     )
     return resp
@@ -398,7 +418,7 @@ async def handle_dev_embeddings(request: Any) -> Response | StreamingResponse:
         body,
         is_stream=False,
         request_id=rid,
-        source="openai_chat",
+        source="openai_embeddings",
         model=body.get("model", "unknown"),
     )
 

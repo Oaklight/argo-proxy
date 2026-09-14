@@ -12,6 +12,7 @@ from argoproxy.dev_proxy import (
     _DEV_PROVIDER_NAME,
     _detect_stream,
     _extract_api_key,
+    _extract_error_detail,
     _parse_and_inject,
     handle_dev_anthropic,
     handle_dev_embeddings,
@@ -498,6 +499,7 @@ async def test_embeddings_records_telemetry(mock_passthrough, mock_telemetry):
     mock_telemetry.assert_called_once()
     kwargs = mock_telemetry.call_args[1]
     assert kwargs["model"] == "text-embedding-3-small"
+    assert kwargs["source_provider"] == "openai_embeddings"
     assert kwargs["is_stream"] is False
     assert kwargs["provider_name"] == _DEV_PROVIDER_NAME
 
@@ -520,3 +522,51 @@ async def test_responses_records_telemetry(mock_passthrough, mock_telemetry):
     assert kwargs["model"] == "gpt-4o"
     assert kwargs["source_provider"] == "openai_responses"
     assert kwargs["provider_name"] == _DEV_PROVIDER_NAME
+
+
+# ---------------------------------------------------------------------------
+# _extract_error_detail
+# ---------------------------------------------------------------------------
+
+
+class _FakeGatewayResponse:
+    """Stub matching httpserver.Response (uses .body, not .content)."""
+
+    def __init__(self, status_code: int, body: Any = b""):
+        self.status_code = status_code
+        if isinstance(body, dict):
+            self.body = json.dumps(body).encode()
+        elif isinstance(body, str):
+            self.body = body.encode()
+        else:
+            self.body = body
+
+
+class TestExtractErrorDetail:
+    def _resp(self, status_code: int, body: Any = b"") -> _FakeGatewayResponse:
+        return _FakeGatewayResponse(status_code, body)
+
+    def test_success_returns_none(self):
+        assert _extract_error_detail(self._resp(200)) is None
+
+    def test_json_error_message(self):
+        resp = self._resp(
+            400, {"error": {"message": "Invalid model", "type": "invalid_request"}}
+        )
+        assert _extract_error_detail(resp) == "Invalid model"
+
+    def test_json_error_type_fallback(self):
+        resp = self._resp(400, {"error": {"type": "rate_limit_exceeded"}})
+        assert _extract_error_detail(resp) == "rate_limit_exceeded"
+
+    def test_json_string_error(self):
+        resp = self._resp(500, {"error": "something broke"})
+        assert _extract_error_detail(resp) == "something broke"
+
+    def test_plain_text_body(self):
+        resp = self._resp(502, "Bad Gateway")
+        assert _extract_error_detail(resp) == "Bad Gateway"
+
+    def test_no_body_fallback(self):
+        resp = self._resp(504, b"")
+        assert _extract_error_detail(resp) == "HTTP 504"
