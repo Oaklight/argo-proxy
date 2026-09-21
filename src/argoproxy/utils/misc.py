@@ -141,18 +141,6 @@ def should_use_username_passthrough() -> bool:
     return os.getenv("USERNAME_PASSTHROUGH", "False").lower() == "true"
 
 
-def apply_username_passthrough(data: dict, request: Any, fallback_user: str) -> str:
-    """Apply username passthrough logic to the request body ``user`` field."""
-    if should_use_username_passthrough():
-        api_key = extract_api_key_from_request(request)
-        if api_key:
-            data["user"] = api_key
-            return api_key
-
-    data["user"] = fallback_user
-    return fallback_user
-
-
 # ---------------------------------------------------------------------------
 # ARGO authentication warning detection
 # ---------------------------------------------------------------------------

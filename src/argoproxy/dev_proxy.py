@@ -81,6 +81,7 @@ async def _raw_passthrough(
     is_stream: bool = False,
     request_id: str = "",
     source: str = "openai_chat",
+    effective_user: str | None = None,
 ) -> Response | StreamingResponse:
     """Forward *body* to *upstream_url* and relay the response.
 
@@ -101,9 +102,10 @@ async def _raw_passthrough(
     if ua:
         extra_headers["User-Agent"] = ua
 
-    # Inject ARGO auth — provider info carries the API key
+    # Inject ARGO auth — use passthrough user when available
     config = request.app.argo_config  # type: ignore[attr-defined]
-    extra_headers["Authorization"] = f"Bearer {config.user}"
+    auth_user = effective_user or config.user
+    extra_headers["Authorization"] = f"Bearer {auth_user}"
 
     try:
         if is_stream:
@@ -187,25 +189,27 @@ async def _raw_passthrough(
 # ---------------------------------------------------------------------------
 
 
-def _parse_and_inject(request: Any, config: Any) -> tuple[dict[str, Any] | None, str]:
-    """Parse request JSON and inject the ARGO user field.
+def _parse_and_inject(
+    request: Any, config: Any
+) -> tuple[dict[str, Any] | None, str, str]:
+    """Parse request JSON and resolve the effective ARGO username.
 
-    Returns ``(body, request_id)``.  *body* is ``None`` on parse failure.
+    Returns ``(body, request_id, effective_user)``.  *body* is ``None``
+    on parse failure.
     """
     request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
     try:
         body: dict[str, Any] = request.json()
     except Exception:
-        return None, request_id
+        return None, request_id, config.user
 
     if should_use_username_passthrough():
         api_key = _extract_api_key(request)
-        if api_key:
-            body["user"] = api_key
+        effective_user = api_key or config.user
     else:
-        body["user"] = config.user
+        effective_user = config.user
 
-    return body, request_id
+    return body, request_id, effective_user
 
 
 # ---------------------------------------------------------------------------
@@ -240,11 +244,18 @@ async def _passthrough_with_telemetry(
     request_id: str,
     source: str,
     model: str,
+    effective_user: str | None = None,
 ) -> Response | StreamingResponse:
     """Forward a request and record telemetry for the admin dashboard."""
     t0 = time.monotonic()
     resp = await _raw_passthrough(
-        request, url, body, is_stream=is_stream, request_id=request_id, source=source
+        request,
+        url,
+        body,
+        is_stream=is_stream,
+        request_id=request_id,
+        source=source,
+        effective_user=effective_user,
     )
     record_telemetry(
         request,
@@ -265,7 +276,7 @@ async def handle_dev_openai_chat(request: Any) -> Response | StreamingResponse:
     """Passthrough for ``/v1/chat/completions``."""
     log_info("[dev] /v1/chat/completions", context="app")
     config = request.app.argo_config  # type: ignore[attr-defined]
-    body, rid = _parse_and_inject(request, config)
+    body, rid, eff_user = _parse_and_inject(request, config)
     if body is None:
         return JSONResponse(
             {
@@ -288,6 +299,7 @@ async def handle_dev_openai_chat(request: Any) -> Response | StreamingResponse:
         request_id=rid,
         source="openai_chat",
         model=body.get("model", "unknown"),
+        effective_user=eff_user,
     )
 
 
@@ -295,7 +307,7 @@ async def handle_dev_openai_responses(request: Any) -> Response | StreamingRespo
     """Passthrough for ``/v1/responses``."""
     log_info("[dev] /v1/responses", context="app")
     config = request.app.argo_config  # type: ignore[attr-defined]
-    body, rid = _parse_and_inject(request, config)
+    body, rid, eff_user = _parse_and_inject(request, config)
     if body is None:
         return JSONResponse(
             {
@@ -318,6 +330,7 @@ async def handle_dev_openai_responses(request: Any) -> Response | StreamingRespo
         request_id=rid,
         source="openai_responses",
         model=body.get("model", "unknown"),
+        effective_user=eff_user,
     )
 
 
@@ -325,7 +338,7 @@ async def handle_dev_anthropic(request: Any) -> Response | StreamingResponse:
     """Passthrough for ``/v1/messages``."""
     log_info("[dev] /v1/messages", context="app")
     config = request.app.argo_config  # type: ignore[attr-defined]
-    body, rid = _parse_and_inject(request, config)
+    body, rid, eff_user = _parse_and_inject(request, config)
     if body is None:
         return JSONResponse(
             {
@@ -339,10 +352,9 @@ async def handle_dev_anthropic(request: Any) -> Response | StreamingResponse:
         )
 
     # Anthropic-specific: inject metadata.user_id
-    user = body.get("user", config.user)
     body.setdefault("metadata", {})
     if isinstance(body["metadata"], dict):
-        body["metadata"]["user_id"] = user
+        body["metadata"]["user_id"] = eff_user
 
     url = f"{config.native_anthropic_base_url}/v1/messages"
     is_stream = _detect_stream(body, "anthropic")
@@ -355,6 +367,7 @@ async def handle_dev_anthropic(request: Any) -> Response | StreamingResponse:
         request_id=rid,
         source="anthropic",
         model=body.get("model", "unknown"),
+        effective_user=eff_user,
     )
 
 
@@ -364,7 +377,7 @@ async def handle_dev_google(
     """Passthrough for ``/v1beta/models/<model_path>``."""
     log_info(f"[dev] /v1beta/models/{model_path}", context="app")
     config = request.app.argo_config  # type: ignore[attr-defined]
-    body, rid = _parse_and_inject(request, config)
+    body, rid, eff_user = _parse_and_inject(request, config)
     if body is None:
         return JSONResponse(
             {
@@ -390,6 +403,7 @@ async def handle_dev_google(
         request_id=rid,
         source="google",
         model=model_name,
+        effective_user=eff_user,
     )
 
 
@@ -397,7 +411,7 @@ async def handle_dev_embeddings(request: Any) -> Response | StreamingResponse:
     """Passthrough for ``/v1/embeddings``."""
     log_info("[dev] /v1/embeddings", context="app")
     config = request.app.argo_config  # type: ignore[attr-defined]
-    body, rid = _parse_and_inject(request, config)
+    body, rid, eff_user = _parse_and_inject(request, config)
     if body is None:
         return JSONResponse(
             {
@@ -419,6 +433,7 @@ async def handle_dev_embeddings(request: Any) -> Response | StreamingResponse:
         request_id=rid,
         source="openai_embeddings",
         model=body.get("model", "unknown"),
+        effective_user=eff_user,
     )
 
 
