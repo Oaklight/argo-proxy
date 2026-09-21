@@ -413,8 +413,12 @@ def _build_auth_override(provider_info: Any, username: str) -> dict[str, str]:
     Anthropic, etc.) is produced automatically for any provider type.
 
     Note: couples to ``ProviderInfo._auth_header_fn`` (llm-rosetta internal).
+    Falls back to OpenAI-style Bearer if the internal API is unavailable.
     """
-    return provider_info._auth_header_fn(username)
+    try:
+        return provider_info._auth_header_fn(username)
+    except AttributeError:
+        return {"Authorization": f"Bearer {username}"}
 
 
 def _extract_api_key_from_headers(request: Any) -> str | None:
