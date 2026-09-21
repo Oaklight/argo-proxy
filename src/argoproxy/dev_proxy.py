@@ -102,7 +102,9 @@ async def _raw_passthrough(
     if ua:
         extra_headers["User-Agent"] = ua
 
-    # Inject ARGO auth — use passthrough user when available
+    # Inject ARGO auth — use passthrough user when available.
+    # Dev proxy always targets ARGO directly (no provider-specific shim),
+    # and ARGO accepts Bearer uniformly across all its endpoints.
     config = request.app.argo_config  # type: ignore[attr-defined]
     auth_user = effective_user or config.user
     extra_headers["Authorization"] = f"Bearer {auth_user}"

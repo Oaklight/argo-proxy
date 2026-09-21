@@ -411,6 +411,8 @@ def _build_auth_override(provider_info: Any, username: str) -> dict[str, str]:
     Reuses the provider's own auth-header function so the correct header
     format (``Authorization: Bearer`` for OpenAI, ``x-api-key`` for
     Anthropic, etc.) is produced automatically for any provider type.
+
+    Note: couples to ``ProviderInfo._auth_header_fn`` (llm-rosetta internal).
     """
     return provider_info._auth_header_fn(username)
 
