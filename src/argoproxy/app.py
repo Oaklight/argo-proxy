@@ -57,6 +57,15 @@ from .utils.misc import build_user_agent
 from .utils.telemetry import record_telemetry
 
 
+def _rosetta_version() -> str:
+    try:
+        from llm_rosetta import __version__
+
+        return __version__
+    except (ImportError, AttributeError):
+        return "unknown"
+
+
 def _load_admin_custom_head() -> str:
     """Load admin panel customization from static resource files."""
     from pathlib import Path
@@ -807,7 +816,7 @@ async def _startup(app: App) -> None:
                     "icon": "docs",
                 },
             ],
-            "attribution": "Powered by llm-rosetta gateway",
+            "attribution": f"Powered by llm-rosetta gateway v{_rosetta_version()}",
         },
     )
 
