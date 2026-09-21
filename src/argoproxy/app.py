@@ -154,23 +154,24 @@ async def _argo_proxy_handler(
     if route.upstream_model:
         body["model"] = route.upstream_model
 
-    # Username passthrough
+    # Resolve the effective ARGO username for this request.
+    auth_override: dict[str, str] = {}
     if should_use_username_passthrough():
         api_key = _extract_api_key_from_headers(request)
+        effective_user = api_key or config.user
         if api_key:
-            body["user"] = api_key
+            auth_override = _build_auth_override(provider_info, api_key)
     else:
-        body["user"] = config.user
+        effective_user = config.user
 
     # Tag CLI log lines with the resolved user (contextvar-based)
-    user_token = set_request_user(body.get("user", ""))
+    user_token = set_request_user(effective_user)
 
     # Anthropic metadata.user_id injection
     if target_provider == "anthropic":
-        user = body.get("user", config.user)
         body.setdefault("metadata", {})
         if isinstance(body["metadata"], dict):
-            body["metadata"]["user_id"] = user
+            body["metadata"]["user_id"] = effective_user
 
     # Determine streaming with anthropic_stream_mode
     is_stream = force_stream or detect_stream_request(source_provider, body)
@@ -196,6 +197,8 @@ async def _argo_proxy_handler(
     ua = build_user_agent(request.headers.get("user-agent"))
     if ua:
         extra_headers["User-Agent"] = ua
+    if auth_override:
+        extra_headers.update(auth_override)
 
     if is_stream:
         metrics = getattr(request.app, "metrics", None)
@@ -400,6 +403,16 @@ def _find_gateway_model(
             return alias
 
     return None
+
+
+def _build_auth_override(provider_info: Any, username: str) -> dict[str, str]:
+    """Build auth headers that override the default ProviderInfo credentials.
+
+    Reuses the provider's own auth-header function so the correct header
+    format (``Authorization: Bearer`` for OpenAI, ``x-api-key`` for
+    Anthropic, etc.) is produced automatically for any provider type.
+    """
+    return provider_info._auth_header_fn(username)
 
 
 def _extract_api_key_from_headers(request: Any) -> str | None:

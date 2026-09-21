@@ -132,14 +132,14 @@ class TestExtractApiKey:
 
 
 class TestParseAndInject:
-    def test_valid_body_injects_user(self):
+    def test_valid_body_returns_effective_user(self):
         req = FakeRequest(body={"model": "gpt-4o", "messages": []})
         with patch(
             "argoproxy.dev_proxy.should_use_username_passthrough", return_value=False
         ):
-            body, rid = _parse_and_inject(req, FakeConfig())
+            body, rid, eff_user = _parse_and_inject(req, FakeConfig())
         assert body is not None
-        assert body["user"] == "test-user"
+        assert eff_user == "test-user"
         assert body["model"] == "gpt-4o"
         assert rid  # non-empty
 
@@ -148,8 +148,9 @@ class TestParseAndInject:
         with patch(
             "argoproxy.dev_proxy.should_use_username_passthrough", return_value=False
         ):
-            body, rid = _parse_and_inject(req, FakeConfig())
+            body, rid, eff_user = _parse_and_inject(req, FakeConfig())
         assert body is None
+        assert eff_user == "test-user"
 
     def test_passthrough_mode_uses_api_key(self):
         req = FakeRequest(
@@ -159,8 +160,8 @@ class TestParseAndInject:
         with patch(
             "argoproxy.dev_proxy.should_use_username_passthrough", return_value=True
         ):
-            body, rid = _parse_and_inject(req, FakeConfig())
-        assert body["user"] == "user-key"
+            body, rid, eff_user = _parse_and_inject(req, FakeConfig())
+        assert eff_user == "user-key"
 
 
 # ---------------------------------------------------------------------------
@@ -196,9 +197,9 @@ async def test_handle_dev_openai_chat_non_streaming(mock_passthrough):
     url = call_args[0][0]
     assert url == "https://example.com/v1/chat/completions"
 
-    # Verify user injected
-    body = call_args[1]["json"]
-    assert body["user"] == "test-user"
+    # Verify auth header uses config user
+    headers = call_args[1]["headers"]
+    assert headers["Authorization"] == "Bearer test-user"
 
 
 @pytest.mark.asyncio
