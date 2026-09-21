@@ -1,0 +1,48 @@
+name: Test Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to test-release (e.g. 3.4.0.dev1)"
+        required: true
+        type: string
+
+jobs:
+  build-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify version matches package
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          PKG_VER=$(python -c "import re; m=re.search(r'__version__\s*=\s*\"(.+?)\"', open('src/argoproxy/__init__.py').read()); print(m.group(1))")
+          echo "Package version: $PKG_VER"
+          echo "Requested version: $INPUT_VERSION"
+          [ "$PKG_VER" = "$INPUT_VERSION" ] || \
+            (echo "::error::Version mismatch: __init__.py has $PKG_VER but release requested $INPUT_VERSION"; exit 1)
+
+      - name: Build wheel + sdist
+        run: |
+          pip install --upgrade pip build
+          python -m build
+
+      - name: Publish to Test PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/*
+          retention-days: 7
