@@ -64,16 +64,14 @@ def create_argo_auth_hook() -> Any:
     async def argo_auth_hook(request: Any) -> Response | None:
         api_key_context_var.set(None)
 
-        if request.path in _PUBLIC_PATHS:
+        if request.path in _PUBLIC_PATHS or request.path.startswith("/admin"):
             return None
 
         key = _extract_api_key(request)
         if key:
             if should_use_username_passthrough():
-                # Key IS the ANL username; show it in full.
                 label = key
             else:
-                # Use the configured ARGO username when available.
                 argo_cfg = getattr(request.app, "argo_config", None)
                 configured_user = getattr(argo_cfg, "user", None)
                 label = (
@@ -82,6 +80,8 @@ def create_argo_auth_hook() -> Any:
             api_key_context_var.set(
                 KeyContext(label=label, allowed_shims=frozenset({"*"}))
             )
+        elif should_use_username_passthrough():
+            return _missing_key_response(request)
         return None
 
     return argo_auth_hook
@@ -116,6 +116,34 @@ def _extract_text_from_response(response_data: dict, provider: str) -> str:
     except (KeyError, IndexError, TypeError):
         pass
     return ""
+
+
+_MISSING_KEY_MESSAGE = (
+    "Username passthrough is enabled on this proxy. "
+    "Please set your ARGO username as the API key "
+    "(e.g. Authorization: Bearer <your-argo-username>)."
+)
+
+
+def _missing_key_response(request: Any) -> Response:
+    path = getattr(request, "path", "")
+    if "/messages" in path:
+        body = {
+            "type": "error",
+            "error": {
+                "type": "authentication_error",
+                "message": _MISSING_KEY_MESSAGE,
+            },
+        }
+    else:
+        body = {
+            "error": {
+                "message": _MISSING_KEY_MESSAGE,
+                "type": "authentication_error",
+                "code": "missing_api_key",
+            }
+        }
+    return JSONResponse(body, status_code=401)
 
 
 def argo_auth_error_response(source_provider: str) -> Response:
