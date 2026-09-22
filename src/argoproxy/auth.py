@@ -70,8 +70,10 @@ def create_argo_auth_hook() -> Any:
         key = _extract_api_key(request)
         if key:
             if should_use_username_passthrough():
+                # Key IS the ANL username; show it in full.
                 label = key
             else:
+                # Use the configured ARGO username when available.
                 argo_cfg = getattr(request.app, "argo_config", None)
                 configured_user = getattr(argo_cfg, "user", None)
                 label = (
