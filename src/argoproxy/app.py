@@ -30,7 +30,7 @@ from llm_rosetta.gateway.proxy import (
     handle_non_streaming,
     handle_streaming,
 )
-from llm_rosetta.gateway.headers import get_preflight_tokens_override
+from llm_rosetta.gateway.middleware.headers import get_preflight_tokens_override
 from llm_rosetta.gateway.transport.http import HttpTransport
 from llm_rosetta.observability.error_dump import dump_error
 
@@ -493,7 +493,9 @@ async def handle_google_genai(
 
 async def handle_embeddings(request: Any) -> Response:
     """Delegate to llm-rosetta's built-in embedding handler."""
-    from llm_rosetta.gateway.embeddings import handle_embeddings as _gw_embeddings
+    from llm_rosetta.gateway.pipelines.embeddings import (
+        handle_embeddings as _gw_embeddings,
+    )
 
     return await _gw_embeddings(request, _get_gateway_config(request.app))
 

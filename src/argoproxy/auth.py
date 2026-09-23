@@ -13,7 +13,7 @@ import re
 from typing import Any
 
 from llm_rosetta._vendor.httpserver import JSONResponse, Response
-from llm_rosetta.gateway.auth import api_key_context_var
+from llm_rosetta.gateway.middleware.auth import api_key_context_var
 from llm_rosetta.gateway.keystore import KeyContext
 
 _ARGO_AUTH_WARNING_PATTERN = re.compile(

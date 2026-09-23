@@ -54,7 +54,7 @@ def record_telemetry(
 
     request_log = getattr(request.app, "request_log", None)
     if request_log is not None:
-        from llm_rosetta.gateway.auth import api_key_context_var
+        from llm_rosetta.gateway.middleware.auth import api_key_context_var
         from llm_rosetta.observability import RequestLogEntry
 
         key_ctx = api_key_context_var.get()
