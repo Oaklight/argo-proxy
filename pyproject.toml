@@ -19,6 +19,10 @@ classifiers = [
 ]
 
 dependencies = [
+    # TODO(native-responses): raise before merging. bridge.py needs #799
+    # (argo--openai_responses shim), #800 (.done tool arguments) and
+    # 8c7b6275 (prefer_same_format) -- none released. Below that floor the
+    # bridge silently falls back to the translation path.
     "llm-rosetta[gateway]>=0.12.0",
 ]
 
