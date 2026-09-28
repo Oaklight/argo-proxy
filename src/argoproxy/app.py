@@ -871,10 +871,8 @@ async def create_app() -> App:
 
     app = gateway_create_app(gateway_config, extensions=extensions)
     if inspect.isawaitable(app):
-        # llm-rosetta >= 0.14 builds the app asynchronously (aiosqlite-backed
-        # persistence). 0.13 returns the App directly, and pyproject still
-        # allows it, so accept either.
         app = await app
+    assert isinstance(app, App)
 
     # --- Argo routes ---
     if dev_mode:
