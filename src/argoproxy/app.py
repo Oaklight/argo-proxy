@@ -8,6 +8,7 @@ and streaming logic on top.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import os
 import sys
 import time
@@ -789,7 +790,7 @@ async def _startup(app: App) -> None:
 
     config_io = ArgoConfigIO(config, registry)
     resolved_data_dir = config.data_dir or None
-    setup_admin(
+    admin_ready = setup_admin(
         app,
         gateway_config,
         str(config_path) if config_path else None,
@@ -821,16 +822,22 @@ async def _startup(app: App) -> None:
             "attribution": f"Powered by llm-rosetta gateway v{_rosetta_version()}",
         },
     )
+    if inspect.isawaitable(admin_ready):
+        # Async since llm-rosetta 0.14; returns None on 0.13.
+        await admin_ready
 
     log_debug("Gateway transport initialized", context="app")
 
 
-def create_app() -> App:
+async def create_app() -> App:
     """Create the argo-proxy application.
 
     Uses llm-rosetta's composable :func:`~llm_rosetta.gateway.app.create_app`
     for shared infrastructure (admin panel, CORS, error handlers, auth) and
     layers ARGO-specific routes and middleware on top.
+
+    Coroutine because the gateway's ``create_app`` became a coroutine in
+    llm-rosetta 0.14; both that and the 0.13 synchronous form are accepted.
     """
     from .utils.attack_logger import create_security_hook
     from .utils.misc import str_to_bool
@@ -863,6 +870,11 @@ def create_app() -> App:
     )
 
     app = gateway_create_app(gateway_config, extensions=extensions)
+    if inspect.isawaitable(app):
+        # llm-rosetta >= 0.14 builds the app asynchronously (aiosqlite-backed
+        # persistence). 0.13 returns the App directly, and pyproject still
+        # allows it, so accept either.
+        app = await app
 
     # --- Argo routes ---
     if dev_mode:
@@ -932,10 +944,14 @@ async def _run_server(app: App, *, host: str, port: int, socket: str = "") -> No
 
 
 def run(*, host: str = "0.0.0.0", port: int = 8080, socket: str = ""):
-    app = create_app()
+    async def _main() -> None:
+        # Build inside the loop: the gateway's async create_app opens
+        # resources that must belong to the loop that will serve them.
+        app = await create_app()
+        await _run_server(app, host=host, port=port, socket=socket)
 
     try:
-        asyncio.run(_run_server(app, host=host, port=port, socket=socket))
+        asyncio.run(_main())
     except KeyboardInterrupt:
         pass
     except Exception as e:
