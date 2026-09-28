@@ -132,6 +132,17 @@ def _add_serve_arguments(parser: argparse.ArgumentParser) -> None:
             "Useful for debugging and testing upstream API compatibility."
         ),
     )
+    parser.add_argument(
+        "--no-native-responses",
+        action="store_true",
+        default=False,
+        help=(
+            "Disable same-format /v1/responses routing. By default, GPT\n"
+            "models are routed to ARGO's native Responses endpoint, so no\n"
+            "conversion to Chat Completions happens; this flag routes them\n"
+            "through the responses<->chat-completions translation instead."
+        ),
+    )
 
 
 def _add_config_subparsers(parser: argparse.ArgumentParser) -> None:
