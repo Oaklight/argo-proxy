@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from llm_rosetta.gateway.config import GatewayConfig
 
-from .models.constants import classify_model_family
+from .models.constants import classify_model_family, supports_native_responses
 
 if TYPE_CHECKING:
     from .config.model import ArgoConfig
@@ -33,9 +33,14 @@ def build_gateway_config(
     The resulting config has two providers ("argo-anthropic" and
     "argo-openai") backed by the ARGO upstream URLs, and a model table
     built from the live :class:`ModelRegistry`.
+
+    With ``native_responses`` on, a third provider speaking the Responses
+    API is added and ``prefer_same_format`` enabled, so ``/v1/responses``
+    reaches ARGO's own Responses endpoint unconverted.
     """
-    providers = _build_providers(argo_config)
-    models = _build_models(model_registry)
+    native = argo_config.native_responses
+    providers = _build_providers(argo_config, native_responses=native)
+    models = _build_models(model_registry, native_responses=native)
 
     raw: dict = {
         "providers": providers,
@@ -43,6 +48,8 @@ def build_gateway_config(
         "server": {
             "host": argo_config.host,
             "port": argo_config.port,
+            # Prefer the provider already speaking the client's wire format.
+            "prefer_same_format": native,
         },
         "debug": {
             "verbose": argo_config.verbose,
@@ -58,8 +65,8 @@ def build_gateway_config(
     return GatewayConfig(raw)
 
 
-def _build_providers(config: ArgoConfig) -> dict:
-    return {
+def _build_providers(config: ArgoConfig, *, native_responses: bool = True) -> dict:
+    providers: dict = {
         "argo-openai": {
             "shim": "argo--openai_chat",
             "api_key": config.user,
@@ -74,9 +81,18 @@ def _build_providers(config: ArgoConfig) -> dict:
             "readonly": True,
         },
     }
+    if native_responses:
+        # Same host as argo-openai -- only the wire format differs.
+        providers["argo-openai-responses"] = {
+            "shim": "argo--openai_responses",
+            "api_key": config.user,
+            "base_url": config.native_openai_base_url,
+            "readonly": True,
+        }
+    return providers
 
 
-def _build_models(registry: ModelRegistry) -> dict:
+def _build_models(registry: ModelRegistry, *, native_responses: bool = True) -> dict:
     """Map every model alias to a provider based on family classification."""
     embed_models = set(registry.available_embed_models)
     models: dict = {}
@@ -90,10 +106,25 @@ def _build_models(registry: ModelRegistry) -> dict:
             capabilities = ["embedding"]
         else:
             capabilities = ["text", "vision", "tools", "reasoning"]
-        entry: dict = {
-            "provider": provider_name,
-            "capabilities": capabilities,
-        }
+        entry: dict
+        if (
+            native_responses
+            and alias not in embed_models
+            and supports_native_responses(model_id)
+        ):
+            # Gemini is non-anthropic too but 500s on ARGO's Responses
+            # endpoint, hence the probe-verified gate rather than the
+            # anthropic/else split. A source matching neither dialect
+            # round-robins across the pair -- see tests.
+            entry = {
+                "providers": [provider_name, "argo-openai-responses"],
+                "capabilities": capabilities,
+            }
+        else:
+            entry = {
+                "provider": provider_name,
+                "capabilities": capabilities,
+            }
         if alias in embed_models:
             entry["type"] = "embedding"
         if model_id != alias:
@@ -109,9 +140,14 @@ def rebuild_gateway_models(
     """Rebuild the model routing table in-place after a model refresh.
 
     Called by the ``/refresh`` endpoint when the upstream model list
-    changes at runtime.
+    changes at runtime. The native-responses flag is read back off
+    *gateway_config* so a refresh cannot disagree with the running
+    routing.
     """
-    new_models = _build_models(model_registry)
+    new_models = _build_models(
+        model_registry,
+        native_responses=getattr(gateway_config, "prefer_same_format", False),
+    )
     # Re-parse through GatewayConfig's model parser
     models, capabilities, upstream_names = GatewayConfig._parse_models(
         new_models, gateway_config._raw_providers
