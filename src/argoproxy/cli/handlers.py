@@ -12,7 +12,7 @@ from .._vendor.semver import version_parse
 from ..__init__ import __version__
 from ..config import PATHS_TO_TRY, validate_config
 from ..utils.attack_logger import get_attack_logger
-from ..utils.logging import log_error, log_info
+from ..utils.logging import log_error
 from .display import CHANGELOG_URL, display_startup_banner
 
 
@@ -82,17 +82,6 @@ def handle_serve(args: argparse.Namespace):
         data_dir = config_instance.data_dir
         if data_dir:
             get_attack_logger().set_data_dir(Path(data_dir))
-
-        if config_instance.socket:
-            log_info(
-                f"🌐 Listening on unix://{config_instance.socket}",
-                context="cli",
-            )
-        else:
-            log_info(
-                f"🌐 Listening on http://{config_instance.host}:{config_instance.port}",
-                context="cli",
-            )
 
         run(
             host=config_instance.host,

@@ -98,7 +98,6 @@ def validate_port(config: ArgoConfig) -> None:
         config: The ArgoConfig instance to validate.
     """
     if config.port and is_port_available(config.port):
-        log_info(f"Using port {config.port}...", context="config")
         return  # Valid port already set
 
     if config.port:
@@ -109,7 +108,6 @@ def validate_port(config: ArgoConfig) -> None:
         prompt=f"Enter port [{suggested_port}] [Y/n/number]: ",
         default_port=suggested_port,
     )
-    log_info(f"Using port {config.port}...", context="config")
 
 
 def validate_urls(config: ArgoConfig) -> None:
@@ -132,8 +130,6 @@ def validate_urls(config: ArgoConfig) -> None:
     get_urls: list[str] = [
         f"{config.native_openai_base_url}/models",
     ]
-
-    log_info("Validating URL connectivity...", context="config")
 
     async def _validate_post(url: str, payload: dict) -> None:
         if not url.startswith(("http://", "https://")):
@@ -196,7 +192,7 @@ def validate_urls(config: ArgoConfig) -> None:
             "Continuing with configuration despite URL issues...", context="config"
         )
     else:
-        log_info("All URLs connectivity validated successfully.", context="config")
+        log_info("URL connectivity validated.", context="config")
 
 
 def _validate_base_url(base_url: str, timeout: int = 5) -> bool:

@@ -751,14 +751,28 @@ async def _startup(app: App) -> None:
     await registry.initialize()
 
     stats = registry.get_model_stats()
-    log_info("=" * 60, context="app")
-    log_warning(
-        f"MODEL REGISTRY: [{stats['unique_models']} MODELS, "
-        f"{stats['total_aliases']} ALIASES]",
+    bar = "=" * 60
+    div = "-" * 60
+
+    log_info(bar, context="app")
+
+    bind_socket = getattr(app, "_bind_socket", "")
+    bind_host = getattr(app, "_bind_host", "0.0.0.0")
+    bind_port = getattr(app, "_bind_port", 8080)
+    if bind_socket:
+        log_info(f"🌐 API:    unix://{bind_socket}", context="app")
+    else:
+        base = f"http://{bind_host}:{bind_port}"
+        log_info(f"🌐 API:    {base}", context="app")
+        log_info(f"🔧 Admin:  {base}/admin", context="app")
+
+    log_info(div, context="app")
+    log_info(
+        f"📦 Models: {stats['unique_models']} models, {stats['total_aliases']} aliases",
         context="app",
     )
     log_info(
-        f"   Chat: {stats['unique_chat_models']} models "
+        f"   Chat:  {stats['unique_chat_models']} models "
         f"({stats['chat_aliases']} aliases)",
         context="app",
     )
@@ -767,7 +781,7 @@ async def _startup(app: App) -> None:
         f"({stats['embed_aliases']} aliases)",
         context="app",
     )
-    log_info("=" * 60, context="app")
+    log_info(bar, context="app")
 
     gateway_config = build_gateway_config(config, registry)
 
@@ -923,9 +937,10 @@ async def _run_server(app: App, *, host: str, port: int, socket: str = "") -> No
     # If llm-rosetta promotes these to public API, update the import path.
     from llm_rosetta.gateway.app import _flush_now, _periodic_flush
 
-    await _startup(app)
     app._bind_host = host  # type: ignore[attr-defined]
     app._bind_port = port  # type: ignore[attr-defined]
+    app._bind_socket = socket  # type: ignore[attr-defined]
+    await _startup(app)
     flush_task = asyncio.create_task(_periodic_flush(app))
     try:
         await app._serve(host, port, socket=socket or None)
