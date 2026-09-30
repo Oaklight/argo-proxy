@@ -259,7 +259,7 @@ async def _passthrough_with_telemetry(
         source=source,
         effective_user=effective_user,
     )
-    record_telemetry(
+    await record_telemetry(
         request,
         model=model,
         source_provider=source,
