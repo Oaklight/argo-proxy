@@ -58,6 +58,10 @@ class ArgoConfig:
     # Anthropic non-streaming request handling mode
     _anthropic_stream_mode: str = "retry"  # "force", "retry", or "passthrough"
 
+    # Route /v1/responses to ARGO's native Responses endpoint instead of
+    # converting down to Chat Completions and back
+    native_responses: bool = True
+
     # Debug request/response dumping
     _dump_requests: bool = False
     _dump_dir: str = ""
@@ -287,6 +291,10 @@ class ArgoConfig:
             serialized["dump_dir"] = self._dump_dir
         if self._data_dir:
             serialized["data_dir"] = self._data_dir
+
+        # Only persist the native-responses opt-out, not the default
+        if self.native_responses:
+            serialized.pop("native_responses", None)
 
         # Persist model refresh interval only when non-default
         if self.model_refresh_interval_hours == 24:

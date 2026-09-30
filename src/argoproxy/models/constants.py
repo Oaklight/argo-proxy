@@ -128,9 +128,25 @@ GEMINI_PATTERN = "gemini*"
 
 ANTHROPIC_PATTERNS = ("claude*", "sonnet*", "opus*", "haiku*", "fable*")
 
+# Models ARGO serves from its native /v1/responses endpoint. All 20 registry
+# models matching ``gpt*`` answer 200 there; every Claude and Gemini model
+# returns 500 despite working on its own endpoint (tools/probe_responses.py).
+# Re-run that probe when ARGO adds models -- this pattern will match a new
+# ``gpt*`` id whether or not the native endpoint serves it.
+NATIVE_RESPONSES_PATTERN = "gpt*"
+
 
 def is_anthropic_model(model_id: str) -> bool:
     return any(fnmatch.fnmatch(model_id, p) for p in ANTHROPIC_PATTERNS)
+
+
+def supports_native_responses(model_id: str) -> bool:
+    """True for ARGO models served by the native ``/v1/responses`` endpoint.
+
+    Deliberately narrower than ``classify_model_family(...) == "openai"``,
+    which also matches the ``ada*``/``v3*``/``*embedding*`` embedding models.
+    """
+    return fnmatch.fnmatch(model_id, NATIVE_RESPONSES_PATTERN)
 
 
 def classify_model_family(model_id: str) -> str:

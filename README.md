@@ -139,6 +139,7 @@ This will:
 | `native_openai_base_url` | Custom OpenAI endpoint (auto-derived if unset) | — |
 | `native_anthropic_base_url` | Custom Anthropic endpoint (auto-derived if unset) | — |
 | `anthropic_stream_mode` | Non-streaming Anthropic handling: `force`/`retry`/`passthrough` | `force` |
+| `native_responses` | Route `/v1/responses` to ARGO's native Responses endpoint for GPT models, skipping conversion | `true` |
 | `force_conversion` | Always run full format conversion | `false` |
 | `use_legacy_argo` | Use legacy ARGO gateway pipeline | `false` |
 | `skip_url_validation` | Skip upstream URL checks on startup | `false` |
@@ -178,6 +179,7 @@ argo-proxy serve --verbose               # verbose logging
 argo-proxy serve --force-conversion      # always convert via llm-rosetta
 argo-proxy serve --username-passthrough  # use API key as username
 argo-proxy serve --anthropic-stream-mode retry  # try non-streaming first
+argo-proxy serve --no-native-responses   # translate /v1/responses instead of routing same-format
 argo-proxy serve --legacy-argo           # use legacy ARGO gateway pipeline
 argo-proxy serve --dump-requests         # dump request/response for debugging
 ```

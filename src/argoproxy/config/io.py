@@ -51,6 +51,7 @@ def _format_config_yaml(data: dict) -> str:
                 "native_openai_base_url",
                 "native_anthropic_base_url",
                 "anthropic_stream_mode",
+                "native_responses",
             ],
         ),
         (
@@ -158,6 +159,9 @@ def _apply_env_overrides(config_data: ArgoConfig) -> ArgoConfig:
                 f"expected one of {valid_modes}. Using default 'force'.",
                 context="config",
             )
+
+    if env_native_responses := os.getenv("NATIVE_RESPONSES"):
+        config_data.native_responses = str_to_bool(env_native_responses)
 
     if env_dump_requests := os.getenv("DUMP_REQUESTS"):
         config_data._dump_requests = str_to_bool(env_dump_requests)

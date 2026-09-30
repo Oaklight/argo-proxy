@@ -42,6 +42,8 @@ def set_config_envs(args: argparse.Namespace):
         os.environ["DEV_MODE"] = str(True)
     if args.anthropic_stream_mode:
         os.environ["ANTHROPIC_STREAM_MODE"] = args.anthropic_stream_mode
+    if getattr(args, "no_native_responses", False):
+        os.environ["NATIVE_RESPONSES"] = str(False)
     if args.dump_requests:
         os.environ["DUMP_REQUESTS"] = str(True)
     if args.dump_dir:
