@@ -53,6 +53,7 @@ class FakeRequest:
         self.query_params: dict[str, list[str]] = {}
         self.app = MagicMock()
         self.app.argo_config = FakeConfig()
+        self.app.request_log.add = AsyncMock()
 
     def json(self) -> dict[str, Any]:
         if self._body is None:

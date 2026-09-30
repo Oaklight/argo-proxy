@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from argoproxy.utils.telemetry import extract_client_ip, record_telemetry
 
@@ -40,15 +42,21 @@ class TestRecordTelemetry:
     def _make_request(self, *, has_metrics=True, has_log=True):
         req = MagicMock()
         req.app.metrics = MagicMock() if has_metrics else None
-        req.app.request_log = MagicMock() if has_log else None
+        if has_log:
+            log = MagicMock()
+            log.add = AsyncMock()
+            req.app.request_log = log
+        else:
+            req.app.request_log = None
         req.headers.get.return_value = ""
         del req.client_addr
         return req
 
+    @pytest.mark.asyncio
     @patch("argoproxy.utils.telemetry.extract_client_ip", return_value="1.2.3.4")
-    def test_records_metrics_and_log(self, _mock_ip):
+    async def test_records_metrics_and_log(self, _mock_ip):
         req = self._make_request()
-        record_telemetry(
+        await record_telemetry(
             req,
             model="gpt-4o",
             source_provider="openai_chat",
@@ -62,9 +70,10 @@ class TestRecordTelemetry:
         req.app.metrics.record_request.assert_called_once()
         req.app.request_log.add.assert_called_once()
 
-    def test_no_metrics_no_crash(self):
+    @pytest.mark.asyncio
+    async def test_no_metrics_no_crash(self):
         req = self._make_request(has_metrics=False)
-        record_telemetry(
+        await record_telemetry(
             req,
             model="gpt-4o",
             source_provider="openai_chat",
@@ -77,9 +86,10 @@ class TestRecordTelemetry:
         )
         req.app.request_log.add.assert_called_once()
 
-    def test_no_request_log_no_crash(self):
+    @pytest.mark.asyncio
+    async def test_no_request_log_no_crash(self):
         req = self._make_request(has_log=False)
-        record_telemetry(
+        await record_telemetry(
             req,
             model="gpt-4o",
             source_provider="openai_chat",
@@ -92,10 +102,11 @@ class TestRecordTelemetry:
         )
         req.app.metrics.record_request.assert_called_once()
 
-    def test_stream_decrements_active_streams(self):
+    @pytest.mark.asyncio
+    async def test_stream_decrements_active_streams(self):
         req = self._make_request()
         req.app.metrics.active_streams = 1
-        record_telemetry(
+        await record_telemetry(
             req,
             model="gpt-4o",
             source_provider="openai_chat",
@@ -108,10 +119,11 @@ class TestRecordTelemetry:
         )
         assert req.app.metrics.active_streams == 0
 
-    def test_stream_skips_decrement_when_disabled(self):
+    @pytest.mark.asyncio
+    async def test_stream_skips_decrement_when_disabled(self):
         req = self._make_request()
         req.app.metrics.active_streams = 0
-        record_telemetry(
+        await record_telemetry(
             req,
             model="gpt-4o",
             source_provider="openai_chat",
