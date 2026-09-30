@@ -298,7 +298,7 @@ async def _argo_proxy_handler(
         status_code = 403
         error_detail = str(warn)
         try:
-            dump_error(
+            await dump_error(
                 persistence,
                 request_body=body,
                 response_text=error_detail,
@@ -317,7 +317,7 @@ async def _argo_proxy_handler(
         log_error(f"[{request_id}] Proxy error: {exc}", context="proxy", exc_info=True)
         status_code = 502
         try:
-            dump_error(
+            await dump_error(
                 persistence,
                 request_body=body,
                 response_text=error_detail,
