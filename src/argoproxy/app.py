@@ -950,7 +950,7 @@ async def _run_server(app: App, *, host: str, port: int, socket: str = "") -> No
             await flush_task
         except asyncio.CancelledError:
             pass
-        _flush_now(app)
+        await _flush_now(app)
         transport = getattr(app, "transport", None)
         metadata_store = getattr(app, "metadata_store", None)
         await close_resources(transport=transport, metadata_store=metadata_store)
