@@ -16,7 +16,7 @@ def extract_client_ip(request: Any) -> str | None:
     return None
 
 
-def record_telemetry(
+async def record_telemetry(
     request: Any,
     *,
     model: str,
@@ -71,4 +71,4 @@ def record_telemetry(
             client_ip=extract_client_ip(request),
             profile=profile,
         )
-        request_log.add(entry)
+        await request_log.add(entry)

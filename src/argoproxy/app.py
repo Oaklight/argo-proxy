@@ -335,7 +335,7 @@ async def _argo_proxy_handler(
         return resp
     finally:
         duration_ms = (time.monotonic() - t0) * 1000
-        record_telemetry(
+        await record_telemetry(
             request,
             model=model,
             source_provider=source_provider,
