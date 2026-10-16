@@ -152,18 +152,48 @@ Argo Proxy v3 serves all major LLM API formats, which means it works out of the 
 
 ## Google Antigravity CLI (agy)
 
-[Google Antigravity CLI](https://developers.google.com/gemini/agy) (`agy`, tested with v1.1.20) is the successor to Gemini CLI. It connects via the **Google GenAI API** (`/v1beta/models/{model}:generateContent`), the same protocol as the former Gemini CLI.
+[Google Antigravity CLI](https://developers.google.com/gemini/agy) (`agy`; legacy mode first documented on v1.1.20, gateway mode verified on v1.3.5) is the successor to Gemini CLI. It speaks the **Google GenAI API** (`/v1beta/models/{model}:generateContent`) and also has an undocumented **gateway mode** that accepts the OpenAI wire protocol.
 
-=== "Config Files (Recommended)"
+=== "Gateway Mode (Recommended)"
+
+    Gateway mode is configured entirely through environment variables. It authenticates with a bearer token, sends the model id **verbatim**, and skips agy's built-in Gemini catalog — which is what makes non-Google models such as `argo:claude-opus-4.6` actually take effect.
+
+    **1. `~/.gemini/antigravity-cli/settings.json`** — `model` is a **string** (v1.3.5 rejects `{"name": ...}`), and `modelProvider` must be **absent**:
+
+    ```json
+    {
+        "model": "argo:claude-opus-4.6"
+    }
+    ```
+
+    **2. Environment variables** (add to shell profile):
+
+    ```bash
+    export AGY_LLM_GATEWAY_URL="http://localhost:44497"
+    export AGY_LLM_GATEWAY_API_KEY="your-anl-username"
+    export AGY_LLM_GATEWAY_WIRE_PROTOCOL="openai"
+    export AGY_LLM_GATEWAY_MODELS="argo:claude-opus-4.6"
+    ```
+
+    Then just run `agy`.
+
+    `AGY_LLM_GATEWAY_WIRE_PROTOCOL` accepts only two values:
+
+    - `openai` — `/v1/models` plus chat completions
+    - `genai` — `/v1beta/models/{model}:streamGenerateContent`
+
+    Any other value is rejected (`gateway wireProtocol "<x>" is unsupported; must be "genai" or "openai"`). argo-proxy serves both.
+
+    Set `AGY_LLM_GATEWAY_MODELS` (comma-separated) as well. Without it, agy fetches the gateway's model catalog, and that **discovery stops at 32 models** (`44 custom gateway model(s) exceeded the maximum placeholder limit (32); skipped to prevent Model enum collision`); a `model` outside the first 32 silently resolves to whichever model sits at index 0. With the list set, discovery is skipped entirely and `model` is matched against it verbatim.
+
+=== "Legacy GenAI Mode"
 
     **1. `~/.gemini/antigravity-cli/settings.json`**:
 
     ```json
     {
         "modelProvider": "gemini",
-        "model": {
-            "name": "argo:gpt-5"
-        }
+        "model": "argo:gpt-5"
     }
     ```
 
@@ -174,23 +204,20 @@ Argo Proxy v3 serves all major LLM API formats, which means it works out of the 
     export GOOGLE_GEMINI_BASE_URL="http://localhost:44497"
     ```
 
+    `model` must be a plain string. The `{"name": ...}` object form used by older agy versions is rejected on v1.3.x with `invalid settings: model`.
+
     Then just run `agy`.
 
-=== "Environment Variables"
-
-    ```bash
-    GOOGLE_GEMINI_BASE_URL=http://localhost:44497 \
-    GEMINI_API_KEY=your-anl-username \
-    agy
-    ```
+    This path still works against argo-proxy, but agy resolves `model` against its own built-in Gemini catalog first, so a non-Google id is replaced before the request is sent (`model alias "argo:claude-opus-4.6" resolved to "Gemini 3.1 Pro (Low)"`). Prefer gateway mode when you want a specific non-Google model.
 
 !!! important "Planner model requirement"
     agy uses a hardcoded internal planner model (`gemini-3.1-pro-preview`) alongside your chosen model. This **cannot be overridden** via `settings.json` or CLI flags — there is no user-facing configuration for it. The model must be available on the upstream — argo-proxy maps it automatically if the upstream provides it.
 
 !!! note
     - Config path changed from Gemini CLI's `~/.gemini/settings.json` to `~/.gemini/antigravity-cli/settings.json`
-    - `modelProvider` must be set to `"gemini"` in the settings file
+    - `modelProvider: "gemini"` belongs to legacy mode only. In gateway mode it must be absent — with it set, agy demands a `GEMINI_API_KEY` that gateway mode never reads and exits with `modelProvider is set to "gemini" ... but the GEMINI_API_KEY environment variable is not set`
     - agy sends `x-goog-api-key` header for auth, which argo-proxy supports natively
+    - HTTP/2 is not required; agy works over both HTTP/2 and HTTP/1.1
 
 ---
 
@@ -294,7 +321,8 @@ print(message.content[0].text)
 | Aider (OpenAI) | OpenAI | `OPENAI_API_BASE` | `http://localhost:44497/v1` |
 | Aider (Anthropic) | Anthropic | `ANTHROPIC_BASE_URL` | `http://localhost:44497` |
 | Gemini CLI (discontinued) | Google GenAI | `GOOGLE_GEMINI_BASE_URL` | `http://localhost:44497` |
-| agy | Google GenAI | `GOOGLE_GEMINI_BASE_URL` | `http://localhost:44497` |
+| agy (legacy mode) | Google GenAI | `GOOGLE_GEMINI_BASE_URL` | `http://localhost:44497` |
+| agy (gateway mode) | GenAI or OpenAI | `AGY_LLM_GATEWAY_URL` | `http://localhost:44497` |
 | OpenCode | OpenAI | `OPENAI_BASE_URL` | `http://localhost:44497/v1` |
 | OpenAI SDK | OpenAI | `OPENAI_BASE_URL` | `http://localhost:44497/v1` |
 | Anthropic SDK | Anthropic | `ANTHROPIC_BASE_URL` | `http://localhost:44497` |
