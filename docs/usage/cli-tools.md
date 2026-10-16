@@ -44,6 +44,8 @@ Argo Proxy v3 serves all major LLM API formats, which means it works out of the 
     - `CLAUDE_CODE_SKIP_ANTHROPIC_AUTH=1` is **required** — it skips Anthropic's default authentication flow
     - Set `ANTHROPIC_BASE_URL` to the proxy root (e.g., `http://localhost:44497`), **not** `http://localhost:44497/v1/messages` — Claude Code appends the path automatically
 
+**Supported**: chat, multi-turn, images, tool calls, streaming ✅
+
 ---
 
 ## Codex CLI (OpenAI)
@@ -82,6 +84,8 @@ Argo Proxy v3 serves all major LLM API formats, which means it works out of the 
 !!! note
     Codex CLI uses the **Responses API** wire format by default. When using the config file approach, `wire_api = "responses"` makes this explicit.
 
+**Supported**: chat, multi-turn, tool calls, streaming ✅
+
 ---
 
 ## Aider
@@ -107,46 +111,7 @@ Argo Proxy v3 serves all major LLM API formats, which means it works out of the 
 !!! tip
     You can add these to your `.aider.conf.yml` or shell profile for persistence.
 
----
-
-## Gemini CLI (Discontinued)
-
-!!! warning "Discontinued"
-    Gemini CLI stopped serving on 2026-06-18 and has been replaced by [Google Antigravity CLI (agy)](#google-antigravity-cli-agy). The section below is kept for reference only.
-
-[Gemini CLI](https://github.com/google-gemini/gemini-cli) connected via the **Google GenAI API** (`/v1beta/models/{model}:generateContent`).
-
-=== "Config Files"
-
-    **1. `~/.gemini/.env`**:
-
-    ```bash
-    GEMINI_API_KEY=your-anl-username
-    GOOGLE_GEMINI_BASE_URL=http://localhost:44497
-    ```
-
-    **2. `~/.gemini/settings.json`**:
-
-    ```json
-    {
-        "model": {
-            "name": "argo:gpt-4.1"
-        },
-        "security": {
-            "auth": {
-                "selectedType": "gemini-api-key"
-            }
-        }
-    }
-    ```
-
-=== "Environment Variables"
-
-    ```bash
-    GOOGLE_GEMINI_BASE_URL=http://localhost:44497 \
-    GEMINI_API_KEY=your-anl-username \
-    gemini -m argo:gpt-4.1
-    ```
+**Supported**: chat, multi-turn, tool calls, streaming ✅
 
 ---
 
@@ -213,11 +178,16 @@ Argo Proxy v3 serves all major LLM API formats, which means it works out of the 
 !!! important "Planner model requirement"
     agy uses a hardcoded internal planner model (`gemini-3.1-pro-preview`) alongside your chosen model. This **cannot be overridden** via `settings.json` or CLI flags — there is no user-facing configuration for it. The model must be available on the upstream — argo-proxy maps it automatically if the upstream provides it.
 
+!!! tip "Using non-Google models"
+    This is the key use case: run agy against Claude, GPT, or any other model served by Argo. argo-proxy converts between Google GenAI format and the target provider's format automatically. Use **gateway mode** so that the model id you configure is the one that is actually requested.
+
 !!! note
     - Config path changed from Gemini CLI's `~/.gemini/settings.json` to `~/.gemini/antigravity-cli/settings.json`
     - `modelProvider: "gemini"` belongs to legacy mode only. In gateway mode it must be absent — with it set, agy demands a `GEMINI_API_KEY` that gateway mode never reads and exits with `modelProvider is set to "gemini" ... but the GEMINI_API_KEY environment variable is not set`
     - agy sends `x-goog-api-key` header for auth, which argo-proxy supports natively
     - HTTP/2 is not required; agy works over both HTTP/2 and HTTP/1.1
+
+**Supported**: chat, streaming, vision, tool calls ✅
 
 ---
 
@@ -260,16 +230,43 @@ Argo Proxy v3 serves all major LLM API formats, which means it works out of the 
     opencode
     ```
 
+**Supported**: chat, multi-turn, tool calls, streaming ✅
+
 ---
 
 ## Kilo Code
 
-[Kilo Code](https://kilocode.ai/) (VS Code extension) supports Anthropic API.
+[Kilo Code](https://kilocode.ai/) (VS Code extension) uses the OpenAI Chat Completions API (`/v1/chat/completions`).
 
-Configure in Kilo Code settings:
+In `~/.config/kilo/kilo.jsonc`, add a custom provider:
 
-- **Base URL**: `http://localhost:44497`
-- **API Key**: `your-anl-username`
+```jsonc
+{
+  "provider": {
+    "argo-proxy": {
+      "api": "openai",
+      "name": "Argo Proxy",
+      "models": {
+        "argo:claude-4.5-sonnet": {
+          "name": "Claude 4.5 Sonnet",
+          "attachment": true,
+          "tool_call": true,
+          "cost": { "input": 0, "output": 0 },
+          "limit": { "context": 200000, "output": 8192 }
+        }
+      },
+      "options": {
+        "apiKey": "your-anl-username",
+        "baseURL": "http://localhost:44497/v1"
+      }
+    }
+  }
+}
+```
+
+Then use: `kilo --model argo-proxy/argo:claude-4.5-sonnet`
+
+**Supported**: chat, multi-turn, tool calls, streaming ✅
 
 ---
 
@@ -312,6 +309,45 @@ message = client.messages.create(
 print(message.content[0].text)
 ```
 
+## Gemini CLI (Discontinued)
+
+!!! warning "Discontinued"
+    Gemini CLI stopped serving on 2026-06-18 and has been replaced by [Google Antigravity CLI (agy)](#google-antigravity-cli-agy). The configuration below is preserved for reference only.
+
+??? note "Legacy Gemini CLI configuration"
+
+    **`~/.gemini/.env`**:
+
+    ```bash
+    GEMINI_API_KEY=your-anl-username
+    GOOGLE_GEMINI_BASE_URL=http://localhost:44497
+    ```
+
+    **`~/.gemini/settings.json`**:
+
+    ```json
+    {
+        "model": {
+            "name": "argo:gpt-4.1"
+        },
+        "security": {
+            "auth": {
+                "selectedType": "gemini-api-key"
+            }
+        }
+    }
+    ```
+
+    Or with environment variables only:
+
+    ```bash
+    GOOGLE_GEMINI_BASE_URL=http://localhost:44497 \
+    GEMINI_API_KEY=your-anl-username \
+    gemini -m argo:gpt-4.1
+    ```
+
+---
+
 ## Summary
 
 | Tool | API Format | Base URL Env Var | Value |
@@ -324,6 +360,7 @@ print(message.content[0].text)
 | agy (legacy mode) | Google GenAI | `GOOGLE_GEMINI_BASE_URL` | `http://localhost:44497` |
 | agy (gateway mode) | GenAI or OpenAI | `AGY_LLM_GATEWAY_URL` | `http://localhost:44497` |
 | OpenCode | OpenAI | `OPENAI_BASE_URL` | `http://localhost:44497/v1` |
+| Kilo Code | OpenAI | — (config file) | `http://localhost:44497/v1` |
 | OpenAI SDK | OpenAI | `OPENAI_BASE_URL` | `http://localhost:44497/v1` |
 | Anthropic SDK | Anthropic | `ANTHROPIC_BASE_URL` | `http://localhost:44497` |
 
