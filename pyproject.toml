@@ -19,7 +19,8 @@ classifiers = [
 ]
 
 dependencies = [
-    "llm-rosetta[gateway]>=0.14.0.dev17",
+    # dev19 renames the Argo shims; dev21 removes them; dev25 splits out the gateway.
+    "llm-rosetta[gateway]>=0.14.0.dev17,<0.14.0.dev19",
 ]
 
 [project.optional-dependencies]
