@@ -30,9 +30,12 @@ def build_gateway_config(
 ) -> GatewayConfig:
     """Build a :class:`GatewayConfig` from ARGO's config and model registry.
 
-    The resulting config has two providers ("argo-anthropic" and
-    "argo-openai") backed by the ARGO upstream URLs, and a model table
-    built from the live :class:`ModelRegistry`.
+    The resulting config has three providers ("argo-anthropic", "argo-openai",
+    and "argo-openai-responses") backed by the ARGO upstream URLs, and a model
+    table built from the live :class:`ModelRegistry`.
+
+    All GPT models get both OpenAI providers so ``prefer_same_format`` can
+    route ``/v1/responses`` to ARGO's own Responses endpoint unconverted.
     """
     providers = _build_providers(argo_config)
     models = _build_models(model_registry)
@@ -43,6 +46,8 @@ def build_gateway_config(
         "server": {
             "host": argo_config.host,
             "port": argo_config.port,
+            # Prefer the provider already speaking the client's wire format.
+            "prefer_same_format": True,
         },
         "debug": {
             "verbose": argo_config.verbose,
@@ -73,6 +78,13 @@ def _build_providers(config: ArgoConfig) -> dict:
             "base_url": config.native_anthropic_base_url,
             "readonly": True,
         },
+        # Same host as argo-openai -- only the wire format differs.
+        "argo-openai-responses": {
+            "shim": "argo--openai_responses",
+            "api_key": config.user,
+            "base_url": config.native_openai_base_url,
+            "readonly": True,
+        },
     }
 
 
@@ -90,10 +102,20 @@ def _build_models(registry: ModelRegistry) -> dict:
             capabilities = ["embedding"]
         else:
             capabilities = ["text", "vision", "tools", "reasoning"]
-        entry: dict = {
-            "provider": provider_name,
-            "capabilities": capabilities,
-        }
+        entry: dict
+        if family == "openai" and alias not in embed_models:
+            # All GPT models serve ARGO's Responses endpoint natively.
+            # A source matching neither dialect round-robins across the
+            # pair -- see tests.
+            entry = {
+                "providers": [provider_name, "argo-openai-responses"],
+                "capabilities": capabilities,
+            }
+        else:
+            entry = {
+                "provider": provider_name,
+                "capabilities": capabilities,
+            }
         if alias in embed_models:
             entry["type"] = "embedding"
         if model_id != alias:
