@@ -457,7 +457,7 @@ async def handle_openai_chat(request: Any) -> Response | StreamingResponse:
 
 async def handle_openai_responses(request: Any) -> Response | StreamingResponse:
     log_info("/v1/responses", context="app")
-    return await _argo_proxy_handler(request, source_provider="openai_responses")
+    return await _argo_proxy_handler(request, source_provider="open_responses")
 
 
 async def handle_anthropic_messages(request: Any) -> Response | StreamingResponse:
