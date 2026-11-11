@@ -177,11 +177,7 @@ async def _argo_proxy_handler(
     # Tag CLI log lines with the resolved user (contextvar-based)
     user_token = set_request_user(effective_user)
 
-    # Anthropic metadata.user_id injection
-    if target_provider == "anthropic":
-        body.setdefault("metadata", {})
-        if isinstance(body["metadata"], dict):
-            body["metadata"]["user_id"] = effective_user
+    _apply_identity(body, effective_user, target_provider)
 
     # Determine streaming with anthropic_stream_mode
     is_stream = force_stream or detect_stream_request(source_provider, body)
@@ -413,6 +409,24 @@ def _find_gateway_model(
             return alias
 
     return None
+
+
+def _apply_identity(
+    body: dict[str, Any], effective_user: str, target_provider: str
+) -> None:
+    """Stamp the resolved ARGO user onto *body*, in place.
+
+    ARGO treats a body-level ``user`` as an override of the bearer, so a
+    client-supplied one is *replaced*, not defaulted -- otherwise a
+    passthrough client could attribute requests to another ANL user.
+    Anthropic bodies have no ``user`` field and use metadata instead.
+    """
+    if target_provider == "anthropic":
+        body.setdefault("metadata", {})
+        if isinstance(body["metadata"], dict):
+            body["metadata"]["user_id"] = effective_user
+    else:
+        body["user"] = effective_user
 
 
 def _build_auth_override(provider_info: Any, username: str) -> dict[str, str]:
