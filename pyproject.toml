@@ -46,6 +46,7 @@ Issuses = "https://github.com/Oaklight/argo-openai-proxy/issues"
 
 [project.scripts]
 argo-proxy = "argoproxy.cli:main"
+argo-proxy-launch = "argoproxy.launcher:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
